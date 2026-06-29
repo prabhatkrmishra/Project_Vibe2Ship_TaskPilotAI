@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, doc, addDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Task, DailyPlan } from '../types';
@@ -9,7 +9,7 @@ import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Ta
 import { toast } from 'sonner';
 
 export function Dashboard() {
-  const { user, getAccessToken } = useAuth();
+  const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [decisions, setDecisions] = useState<any[]>([]);
@@ -99,7 +99,8 @@ export function Dashboard() {
     setIsGenerating(true);
     try {
       const token = await user?.getIdToken();
-      await fetch('/api/autonomous-pipeline', {
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+      const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -108,9 +109,31 @@ export function Dashboard() {
         body: JSON.stringify({ 
           eventName: 'Manual Replan Request',
           eventDetail: 'User requested a forced replan of the schedule.',
-          tasks: tasks
+          tasks: tasks,
+          model: selectedModel
         })
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
+      }
+
+      const result = await res.json();
+      const db = getDb();
+      if (result.decision && user) {
+        await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
+          ...result.decision,
+          timestamp: new Date().toISOString()
+        });
+      }
+      if (result.plan && user) {
+        await setDoc(doc(db, 'users', user.uid, 'daily_plan', today), {
+          ...result.plan,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
       toast.success("AI is recalculating your optimal schedule...");
     } catch (error) {
        console.error(error);
@@ -128,7 +151,7 @@ export function Dashboard() {
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
       <header className="flex items-center justify-between mb-2 px-2">
         <div>
           <h1 className="text-3xl font-light text-white leading-tight">{greeting}, <br/><span className="font-semibold italic text-indigo-300">{user?.displayName?.split(' ')[0] || 'User'}</span></h1>
@@ -289,8 +312,11 @@ export function Dashboard() {
             </h3>
             <div className="space-y-2">
               <Button onClick={async () => {
-                const token = getAccessToken();
-                if (!token) return toast.error("Please sign in again to access Workspace.");
+                let token = getAccessToken();
+                if (!token) {
+                  token = await requestWorkspaceAccess();
+                }
+                if (!token) return;
                 try {
                   toast.loading("Syncing Calendar...");
                   const { fetchCalendarEvents } = await import('../lib/workspace');
@@ -302,7 +328,8 @@ export function Dashboard() {
                   const events = await fetchCalendarEvents(token, startOfDay, endOfDay);
                   
                   const idToken = await user?.getIdToken();
-                  await fetch('/api/autonomous-pipeline', {
+                  const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+                  const res = await fetch('/api/autonomous-pipeline', {
                     method: 'POST',
                     headers: { 
                       'Authorization': `Bearer ${idToken}`,
@@ -312,14 +339,36 @@ export function Dashboard() {
                       eventName: 'Calendar Synced',
                       eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today.`,
                       tasks: tasks,
-                      calendarEvents: events.items || []
+                      calendarEvents: events.items || [],
+                      model: selectedModel
                     })
                   });
+
+                  if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
+                  }
+
+                  const result = await res.json();
+                  const db = getDb();
+                  if (result.decision && user) {
+                    await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
+                      ...result.decision,
+                      timestamp: new Date().toISOString()
+                    });
+                  }
+                  if (result.plan && user) {
+                    await setDoc(doc(db, 'users', user.uid, 'daily_plan', today), {
+                      ...result.plan,
+                      updatedAt: new Date().toISOString()
+                    });
+                  }
+
                   toast.dismiss();
                   toast.success("Calendar synced and schedule re-optimized!");
-                } catch (e) {
+                } catch (e: any) {
                   toast.dismiss();
-                  toast.error("Failed to sync calendar.");
+                  toast.error(e.message || "Failed to sync calendar.");
                 }
               }} className="w-full bg-[#161b22] hover:bg-indigo-900/40 text-[#f0f6fc] text-xs justify-start h-10 border border-[#21262d] shadow-sm mb-4 transition-colors">
                 <CalendarIcon className="w-4 h-4 mr-2 text-indigo-400" />
@@ -327,8 +376,11 @@ export function Dashboard() {
               </Button>
               <div className="h-[1px] bg-[#21262d] w-full mb-4"></div>
               <Button onClick={async () => {
-                const token = getAccessToken();
-                if (!token) return toast.error("Please sign in again to access Workspace.");
+                let token = getAccessToken();
+                if (!token) {
+                  token = await requestWorkspaceAccess();
+                }
+                if (!token) return;
                 if (!window.confirm("Generate a daily progress report and save it to your Google Drive?")) return;
                 try {
                   toast.loading("Generating report...");
@@ -346,8 +398,11 @@ export function Dashboard() {
                 Export Daily Report (Docs)
               </Button>
               <Button onClick={async () => {
-                const token = getAccessToken();
-                if (!token) return toast.error("Please sign in again to access Workspace.");
+                let token = getAccessToken();
+                if (!token) {
+                  token = await requestWorkspaceAccess();
+                }
+                if (!token) return;
                 if (!window.confirm("Generate a project status presentation in Google Slides?")) return;
                 try {
                   toast.loading("Generating slides...");
@@ -364,8 +419,11 @@ export function Dashboard() {
                 Generate Presentation (Slides)
               </Button>
               <Button onClick={async () => {
-                const token = getAccessToken();
-                if (!token) return toast.error("Please sign in again to access Workspace.");
+                let token = getAccessToken();
+                if (!token) {
+                  token = await requestWorkspaceAccess();
+                }
+                if (!token) return;
                 if (!window.confirm("Export your task history to Google Sheets?")) return;
                 try {
                   toast.loading("Exporting to Sheets...");
@@ -375,7 +433,7 @@ export function Dashboard() {
                     ...tasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0]),
                     ...completedTasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0])
                   ];
-                  await createGoogleSheet(token, `TaskPilot Analytics - ${new Date().toLocaleDateString()}`, data);
+                  await createGoogleSheet(token, `TaskPilot AI Analytics - ${new Date().toLocaleDateString()}`, data);
                   toast.dismiss();
                   toast.success("Spreadsheet created in Google Drive!");
                 } catch (e) {

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, limit } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, limit, setDoc } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Task, Subtask } from '../types';
+import { Task, Subtask, TaskStatus } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
@@ -28,6 +29,11 @@ export function Tasks() {
   const [time, setTime] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
+
+  const toggleExpand = (taskId: string) => {
+    setExpandedTasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -50,7 +56,8 @@ export function Tasks() {
     if (!user) return;
     try {
       const token = await user.getIdToken();
-      await fetch('/api/autonomous-pipeline', {
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+      const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -59,9 +66,32 @@ export function Tasks() {
         body: JSON.stringify({
           eventName,
           eventDetail,
-          tasks: currentTasks
+          tasks: currentTasks,
+          model: selectedModel
         })
       });
+      if (res.ok) {
+        const result = await res.json();
+        const db = getDb();
+        if (result.decision) {
+          await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
+            ...result.decision,
+            timestamp: new Date().toISOString()
+          });
+        }
+        const todayDateStr = new Date().toISOString().split('T')[0];
+        if (result.plan && result.plan.sessions) {
+          await setDoc(doc(db, 'users', user.uid, 'daily_plan', todayDateStr), {
+            ...result.plan,
+            updatedAt: new Date().toISOString()
+          });
+        } else if (currentTasks.length === 0) {
+          await setDoc(doc(db, 'users', user.uid, 'daily_plan', todayDateStr), {
+            sessions: [],
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
     } catch (error) {
       console.error("Pipeline failed", error);
     }
@@ -81,14 +111,21 @@ export function Tasks() {
 
       // 1. Ask Gemini to analyze the task
       const token = await user.getIdToken();
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
       const res = await fetch('/api/analyze-task', {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json' 
         },
-        body: JSON.stringify({ title, description, deadline: deadlineString })
+        body: JSON.stringify({ title, description, deadline: deadlineString, model: selectedModel })
       });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "The AI is currently busy or out of quota. Please switch the AI Brain model in Mission Control.");
+      }
+      
       const analysis = await res.json();
       
       const subtasks: Subtask[] = (analysis.subtasks || []).map((t: string) => ({
@@ -123,7 +160,7 @@ export function Tasks() {
       setTime('');
 
       // 3. Trigger AI Pipeline
-      triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, newTask as any]);
+      triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, { ...newTask, id: 'temp' } as any]);
     } catch (error) {
       console.error(error);
       toast.error("Failed to create task");
@@ -175,7 +212,7 @@ export function Tasks() {
   });
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
       <header className="flex flex-col gap-4 mb-2 px-2">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Your <br/><span className="font-semibold italic text-indigo-400">Commitments</span></h1>
@@ -292,32 +329,52 @@ export function Tasks() {
                 </div>
                 
                 <div className="space-y-3 mt-auto">
-                  <div className="flex items-center justify-between text-[10px] mb-1">
-                    <span className="text-[#8b949e] uppercase tracking-widest font-bold">Subtasks</span>
-                    <span className="text-indigo-400 font-data">{done}/{total}</span>
-                  </div>
-                  <div className="h-1 bg-[#161b22] rounded-full mb-3 overflow-hidden">
+                  <button 
+                    onClick={() => toggleExpand(task.id)}
+                    className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                  >
+                    <span className="flex items-center gap-1">
+                      Subtasks <span className="text-indigo-400 font-mono">({done}/{total})</span>
+                    </span>
+                    <span className="text-[9px] transition-transform duration-200" style={{ transform: expandedTasks[task.id] ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                      ▼
+                    </span>
+                  </button>
+                  <div className="h-1 bg-[#161b22] rounded-full overflow-hidden">
                     <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${progress}%` }}></div>
                   </div>
-                  {task.subtasks?.map(sub => (
-                    <div 
-                      key={sub.id} 
-                      className="flex items-center gap-3 group/sub cursor-pointer p-2 bg-[#161b22]/50 rounded-xl border border-transparent hover:border-[#21262d] hover:bg-[#161b22] transition-colors"
-                      onClick={() => toggleSubtask(task.id, sub.id, tasks)}
-                    >
-                      {sub.completed ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-[#8b949e] group-hover/sub:text-indigo-400 flex-shrink-0" />
-                      )}
-                      <span className={`text-xs font-medium ${sub.completed ? 'text-[#8b949e] line-through' : 'text-[#f0f6fc]'}`}>
-                        {sub.title}
-                      </span>
-                    </div>
-                  ))}
-                  {task.subtasks?.length === 0 && (
-                     <p className="text-xs text-[#8b949e] italic">No subtasks generated.</p>
-                  )}
+                  
+                  <AnimatePresence initial={false}>
+                    {expandedTasks[task.id] && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: "easeInOut" }}
+                        className="overflow-hidden space-y-2 pt-1"
+                      >
+                        {task.subtasks?.map(sub => (
+                          <div 
+                            key={sub.id} 
+                            className="flex items-center gap-3 group/sub cursor-pointer p-2 bg-[#161b22]/50 rounded-xl border border-transparent hover:border-[#21262d] hover:bg-[#161b22] transition-colors"
+                            onClick={() => toggleSubtask(task.id, sub.id, tasks)}
+                          >
+                            {sub.completed ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                            ) : (
+                              <Circle className="w-4 h-4 text-[#8b949e] group-hover/sub:text-indigo-400 flex-shrink-0" />
+                            )}
+                            <span className={`text-xs font-medium ${sub.completed ? 'text-[#8b949e] line-through' : 'text-[#f0f6fc]'}`}>
+                              {sub.title}
+                            </span>
+                          </div>
+                        ))}
+                        {(!task.subtasks || task.subtasks.length === 0) && (
+                           <p className="text-xs text-[#8b949e] italic p-1">No subtasks generated.</p>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             );

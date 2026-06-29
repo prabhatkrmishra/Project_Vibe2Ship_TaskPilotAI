@@ -15,7 +15,7 @@ TaskPilot AI is a next-generation autonomous productivity assistant that goes be
 - **Frontend**: React 19, Vite, Tailwind CSS, shadcn/ui
 - **Backend**: Express (Server-side rendering / API via Vite middleware)
 - **Database / Auth**: Firebase Firestore & Firebase Authentication
-- **AI Models**: Google GenAI SDK (`gemini-3.1-pro-preview`)
+- **AI Models**: Google GenAI SDK (`gemini-2.0-flash`)
 - **Workspace**: Google APIs (Drive, Docs, Sheets, Slides)
 
 ## Setup & Running

@@ -2,40 +2,37 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 
-let firestoreInstance: Firestore | null = null;
-let authInstance: Auth | null = null;
+let app: any;
+let db: Firestore;
+let auth: Auth;
+let databaseId: string | undefined;
 
 export const initFirebase = async () => {
-  if (getApps().length > 0) {
-      return { db: firestoreInstance!, auth: authInstance! };
-  }
-  
-  try {
+  if (getApps().length === 0) {
     const res = await fetch('/api/firebase-config');
     const config = await res.json();
-    
-    if (config.error) {
-        throw new Error(config.error);
-    }
-
-    const app = initializeApp(config);
-    firestoreInstance = getFirestore(app, config.databaseId);
-    authInstance = getAuth(app);
-    
-    return { db: firestoreInstance, auth: authInstance };
-  } catch (error) {
-    console.error("Failed to initialize Firebase:", error);
-    throw error;
+    app = initializeApp(config);
+    databaseId = config.databaseId;
+  } else {
+    app = getApps()[0];
   }
+  
+  if (databaseId && databaseId !== '(default)') {
+    db = getFirestore(app, databaseId);
+  } else {
+    db = getFirestore(app);
+  }
+  
+  auth = getAuth(app);
+  return { db, auth };
 };
 
-export const getDb = () => {
-    if (!firestoreInstance) throw new Error("Firebase not initialized");
-    return firestoreInstance;
-}
+export const getDb = (): Firestore => {
+  if (!db) throw new Error('Firebase not initialized');
+  return db;
+};
 
-export const getFirebaseAuth = () => {
-    if (!authInstance) throw new Error("Firebase not initialized");
-    return authInstance;
-}
-
+export const getFirebaseAuth = (): Auth => {
+  if (!auth) throw new Error('Firebase not initialized');
+  return auth;
+};

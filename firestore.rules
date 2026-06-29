@@ -1,17 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    match /tasks/{taskId} {
-      allow read, write: if request.auth != null && (request.method == 'create' ? request.resource.data.userId == request.auth.uid : resource.data.userId == request.auth.uid);
-    }
-    match /subtasks/{subtaskId} {
-      allow read, write: if request.auth != null && (request.method == 'create' ? request.resource.data.userId == request.auth.uid : resource.data.userId == request.auth.uid);
-    }
-    match /plans/{planId} {
-      allow read, write: if request.auth != null && (request.method == 'create' ? request.resource.data.userId == request.auth.uid : resource.data.userId == request.auth.uid);
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }
