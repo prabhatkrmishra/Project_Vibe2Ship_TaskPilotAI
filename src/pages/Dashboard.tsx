@@ -16,6 +16,7 @@ export function Dashboard() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  const [activeBriefTab, setActiveBriefTab] = useState<'brief' | 'insight'>('brief');
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -178,34 +179,94 @@ export function Dashboard() {
         </div>
       </header>
       
-      {/* AI Daily Brief */}
+      {/* AI Daily Brief & Insights Unified Tabbed Card */}
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="bg-gradient-to-r from-indigo-900/40 to-[#0d1117] border border-indigo-500/30 rounded-3xl p-5 flex items-start gap-4 shadow-lg shadow-indigo-500/5"
+        className="bg-gradient-to-r from-indigo-950/40 to-[#0d1117] border border-indigo-500/30 rounded-3xl p-6 shadow-lg shadow-indigo-500/5"
       >
-        <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center shrink-0 border border-indigo-500/50">
-          <Sparkles className="w-5 h-5 text-indigo-400" />
-        </div>
-        <div>
-          <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest mb-1">AI Daily Brief</h3>
-          <p className="text-[#f0f6fc] text-sm leading-relaxed">
-            {tasks.length === 0 && completedTasks.length === 0 ? (
-              "Your schedule is completely clear. Start by adding a task or a quest!"
-            ) : tasksAtRisk > 0 ? (
-              <span>Your workload requires attention. You have <strong>{tasksAtRisk} task(s)</strong> at risk of missing deadlines. I strongly suggest prioritizing <strong className="text-indigo-400">{topTask?.title}</strong> today.</span>
-            ) : tasks.length > 0 ? (
-              <span>Your schedule looks perfectly balanced today. You have <strong>{tasks.length} pending task(s)</strong> with no immediate risks detected. Your productivity score is currently at {productivityScore}%. Keep up the momentum!</span>
-            ) : (
-              "Excellent work! All of your tasks are completed. You're operating at 100% efficiency today."
-            )}
+        <div className="flex items-center justify-between border-b border-[#21262d] pb-3 mb-4">
+          <div className="flex gap-6">
+            <button
+              onClick={() => setActiveBriefTab('brief')}
+              className={`pb-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                activeBriefTab === 'brief'
+                  ? 'border-indigo-500 text-indigo-300 font-extrabold'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+              AI Daily Brief
+            </button>
             {decisions.length > 0 && (
-              <span className="block mt-2 text-xs text-slate-400 border-t border-slate-700/50 pt-2 italic">
-                Latest insight: {decisions[0].reason || decisions[0].title}
-              </span>
+              <button
+                onClick={() => setActiveBriefTab('insight')}
+                className={`pb-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                  activeBriefTab === 'insight'
+                    ? 'border-emerald-500 text-emerald-400 font-extrabold'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                Latest AI Insight
+                <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Live</span>
+              </button>
             )}
-          </p>
+          </div>
+          <div className="hidden sm:flex px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+            <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-widest">Active</span>
+          </div>
+        </div>
+
+        <div className="min-h-[60px]">
+          {activeBriefTab === 'brief' ? (
+            <motion.div 
+              key="brief"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex items-start gap-4"
+            >
+              <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                <Sparkles className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-[#f0f6fc] text-base leading-relaxed font-medium">
+                  {tasks.length === 0 && completedTasks.length === 0 ? (
+                    "Your schedule is completely clear. Start by adding a task or a quest!"
+                  ) : tasksAtRisk > 0 ? (
+                    <span>Your workload requires attention. You have <strong className="text-indigo-300">{tasksAtRisk} task(s)</strong> at risk of missing deadlines. I strongly suggest prioritizing <strong className="text-indigo-400">{topTask?.title}</strong> today.</span>
+                  ) : tasks.length > 0 ? (
+                    <span>Your schedule looks perfectly balanced today. You have <strong className="text-indigo-300">{tasks.length} pending task(s)</strong> with no immediate risks detected. Your productivity score is currently at {productivityScore}%. Keep up the momentum!</span>
+                  ) : (
+                    "Excellent work! All of your tasks are completed. You're operating at 100% efficiency today."
+                  )}
+                </p>
+              </div>
+            </motion.div>
+          ) : (
+            decisions.length > 0 && (
+              <motion.div 
+                key="insight"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3 }}
+                className="flex items-start gap-4"
+              >
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                  <Sparkles className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="text-white text-base font-semibold mb-1">{decisions[0].title}</h4>
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    {decisions[0].reason}
+                  </p>
+                </div>
+              </motion.div>
+            )
+          )}
         </div>
       </motion.div>
 
