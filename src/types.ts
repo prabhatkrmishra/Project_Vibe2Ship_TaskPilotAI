@@ -50,3 +50,16 @@ export interface AIDecision {
   title: string;
   reason: string;
 }
+
+export interface Goal {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  targetDate?: string; // ISO string for milestones
+  type: 'habit' | 'milestone';
+  progress: number; // 0-100 for milestone, or completion count for habits
+  streak?: number; // for habits
+  completed: boolean;
+  createdAt: any;
+}

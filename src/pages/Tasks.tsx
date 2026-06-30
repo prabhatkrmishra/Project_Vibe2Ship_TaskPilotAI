@@ -227,7 +227,25 @@ export function Tasks() {
             <form onSubmit={handleCreateTask} className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label className="text-slate-400">What do you need to do?</Label>
-                <Input className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Complete Spring Boot Backend" required />
+                <div className="flex gap-2">
+                  <Input className="flex-1 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-600" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Complete Spring Boot Backend" required />
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    className="bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white"
+                    onClick={() => {
+                      if (!('webkitSpeechRecognition' in window)) {
+                        toast.error("Speech recognition is not supported in this browser.");
+                        return;
+                      }
+                      const recognition = new (window as any).webkitSpeechRecognition();
+                      recognition.onresult = (e: any) => setTitle(e.results[0][0].transcript);
+                      recognition.start();
+                    }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/><line x1="8" x2="16" y1="22" y2="22"/></svg>
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label className="text-slate-400">Description (Optional)</Label>
