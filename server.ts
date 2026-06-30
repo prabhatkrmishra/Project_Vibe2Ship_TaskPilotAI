@@ -73,6 +73,84 @@ async function startServer() {
       res.status(401).json({ error: 'Invalid token' });
     }
   };
+
+  async function processGamificationOnTaskComplete(userId: string, task: any) {
+    try {
+      const user = await User.findOne({ _id: userId });
+      if (!user) return null;
+      
+      let gamification = user.gamification || {
+        currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
+      };
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      if (gamification.lastActiveDate !== today) {
+        if (gamification.lastActiveDate) {
+          const lastActive = new Date(gamification.lastActiveDate);
+          const todayDate = new Date(today);
+          const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            gamification.currentStreak += 1;
+          } else {
+            gamification.currentStreak = 1;
+          }
+        } else {
+          gamification.currentStreak = 1;
+        }
+        gamification.lastActiveDate = today;
+      }
+      
+      if (gamification.currentStreak > gamification.longestStreak) {
+        gamification.longestStreak = gamification.currentStreak;
+      }
+      
+      gamification.totalTasksCompleted += 1;
+      
+      const isOnTime = !task.deadline || new Date(task.deadline) >= new Date();
+      if (isOnTime) {
+        gamification.onTimeTasksCompleted += 1;
+      }
+      
+      const xpEarned = isOnTime ? 50 : 25;
+      gamification.xp += xpEarned;
+      
+      const nextLevelXP = gamification.level * 200;
+      let levelUp = null;
+      if (gamification.xp >= nextLevelXP) {
+        gamification.level += 1;
+        levelUp = gamification.level;
+      }
+      
+      const newBadges: string[] = [];
+      const checkBadge = (id: string, condition: boolean) => {
+        if (condition && !gamification.earnedBadges.includes(id)) {
+          gamification.earnedBadges.push(id);
+          newBadges.push(id);
+        }
+      };
+      
+      checkBadge('streak_3', gamification.currentStreak >= 3);
+      checkBadge('streak_7', gamification.currentStreak >= 7);
+      checkBadge('streak_30', gamification.currentStreak >= 30);
+      checkBadge('streak_100', gamification.currentStreak >= 100);
+      
+      checkBadge('tasks_50', gamification.totalTasksCompleted >= 50);
+      checkBadge('tasks_500', gamification.totalTasksCompleted >= 500);
+      
+      checkBadge('punctual_10', gamification.onTimeTasksCompleted >= 10);
+      checkBadge('deadline_50', gamification.onTimeTasksCompleted >= 50);
+      
+      user.gamification = gamification;
+      await user.save();
+      
+      return { xpEarned, newBadges, levelUp };
+    } catch(e) {
+      console.error("Gamification error:", e);
+      return null;
+    }
+  }
   
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
@@ -192,7 +270,10 @@ async function startServer() {
         email: user.email,
         name: user.name,
         picture: user.picture,
-        address: user.address || ""
+        address: user.address || "",
+        gamification: user.gamification || {
+          currentStreak: 0, longestStreak: 0, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
+        }
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -328,9 +409,20 @@ async function startServer() {
   app.put("/api/tasks/:id", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
+      const existingTask = await Task.findOne({ _id: req.params.id, userId: req.uid });
+      if (!existingTask) return res.status(404).json({ error: "Task not found" });
+
+      const isNowCompleted = req.body.status === 'completed';
+      const shouldAwardGamification = isNowCompleted && !existingTask.hasBeenCompleted;
+      
+      const updateData = { ...req.body };
+      if (shouldAwardGamification) {
+        updateData.hasBeenCompleted = true;
+      }
+
       const updatedTask = await Task.findOneAndUpdate(
         { _id: req.params.id, userId: req.uid },
-        { $set: req.body },
+        { $set: updateData },
         { new: true }
       );
       if (!updatedTask) return res.status(404).json({ error: "Task not found" });
@@ -338,7 +430,13 @@ async function startServer() {
       obj.id = obj._id.toString();
       delete obj._id;
       delete obj.__v;
-      res.json(obj);
+
+      let gamificationUpdates = null;
+      if (shouldAwardGamification) {
+        gamificationUpdates = await processGamificationOnTaskComplete(req.uid, obj);
+      }
+
+      res.json({ ...obj, gamificationUpdates });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

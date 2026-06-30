@@ -30,6 +30,19 @@ const UserSchema = new mongoose.Schema({
   // should be encrypted at rest (e.g. via KMS) rather than stored as plain text.
   googleRefreshToken: { type: String },
   address: { type: String, default: '' },
+  
+  // Gamification Profile
+  gamification: {
+    currentStreak: { type: Number, default: 0 },
+    longestStreak: { type: Number, default: 0 },
+    lastActiveDate: { type: String, default: null }, // YYYY-MM-DD
+    xp: { type: Number, default: 0 },
+    level: { type: Number, default: 1 },
+    totalTasksCompleted: { type: Number, default: 0 },
+    onTimeTasksCompleted: { type: Number, default: 0 },
+    earnedBadges: { type: [String], default: [] }
+  },
+
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -71,6 +84,7 @@ const TaskSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'in_progress', 'completed'], default: 'pending' },
   category: { type: String, default: 'General' },
   estimatedHours: { type: Number, default: 1 },
+  hasBeenCompleted: { type: Boolean, default: false },
   riskScore: { type: Number },
   confidenceScore: { type: Number },
   subtasks: { type: [SubtaskSchema], default: [] },

@@ -154,9 +154,26 @@ export function Dashboard() {
           <h1 className="text-3xl font-light text-white leading-tight">{greeting}, <br/><span className="font-semibold italic text-indigo-300">{user?.name?.split(' ')[0] || 'User'}</span></h1>
         </div>
         <div className="flex items-center gap-4">
+          
+          {/* Gamification Streak & Level */}
+          {user?.gamification && (
+            <div className="hidden sm:flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
+                <Flame className={`w-4 h-4 ${user.gamification.currentStreak > 0 ? 'text-orange-500' : 'text-slate-500'}`} />
+                <span className="text-xs font-bold text-white">{user.gamification.currentStreak} Day Streak</span>
+              </div>
+              <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
+                <span className="text-xs font-bold text-indigo-400">LVL {user.gamification.level}</span>
+                <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500" style={{ width: `${(user.gamification.xp / (user.gamification.level * 200)) * 100}%` }}></div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-2">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            <span className="text-xs font-semibold text-emerald-400 uppercase tracking-tighter">AI Core Active</span>
+            <span className="hidden sm:inline text-xs font-semibold text-emerald-400 uppercase tracking-tighter">AI Core Active</span>
           </div>
         </div>
       </header>

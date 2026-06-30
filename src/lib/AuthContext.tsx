@@ -8,6 +8,7 @@ export interface CustomUser {
   displayName?: string;
   picture?: string;
   address?: string;
+  gamification?: any; // Ideally import GamificationState but any for now
   getIdToken: () => Promise<string>;
 }
 
@@ -21,7 +22,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
   requestWorkspaceAccess: () => Promise<string | null>;
-  updateUser: (updatedUser: { name: string; address: string }) => void;
+  updateUser: (updatedUser: { name?: string; address?: string; gamification?: any }) => void;
+  refreshGamification: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -47,8 +49,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       displayName: userData.name,
       picture: userData.picture,
       address: userData.address,
+      gamification: userData.gamification,
       getIdToken: async () => token
     };
+  };
+
+  const refreshGamification = async () => {
+    const token = localStorage.getItem('taskpilot_jwt');
+    if (!token || !user) return;
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const userData = await res.json();
+        setUser(makeUserObject(userData, token));
+      }
+    } catch (err) {
+      console.error("Failed to refresh gamification data:", err);
+    }
   };
 
   useEffect(() => {
@@ -276,14 +295,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const getAccessToken = () => cachedAccessToken;
 
-  const updateUser = (updatedUser: { name: string; address: string }) => {
+  const updateUser = (updatedUser: { name?: string; address?: string; gamification?: any }) => {
     if (user) {
-      setUser({ ...user, name: updatedUser.name, displayName: updatedUser.name, address: updatedUser.address });
+      setUser({ 
+        ...user, 
+        name: updatedUser.name ?? user.name, 
+        displayName: updatedUser.name ?? user.displayName, 
+        address: updatedUser.address ?? user.address,
+        gamification: updatedUser.gamification ?? user.gamification
+      });
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, updateUser, refreshGamification }}>
       {children}
     </AuthContext.Provider>
   );

@@ -16,7 +16,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 
 export function Tasks() {
-  const { user } = useAuth();
+  const { user, refreshGamification } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -523,7 +523,7 @@ export function Tasks() {
     
     try {
       const token = await user?.getIdToken();
-      await fetch(`/api/tasks/${task.id}`, {
+      const res = await fetch(`/api/tasks/${task.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -534,9 +534,27 @@ export function Tasks() {
           subtasks: updatedSubtasks
         })
       });
+      
+      const data = await res.json();
 
       if (isNowCompleted) {
         toast.success("Task completed!");
+        if (data.gamificationUpdates) {
+          const { xpEarned, newBadges, levelUp } = data.gamificationUpdates;
+          if (xpEarned > 0) {
+            toast.success(`+${xpEarned} XP Earned!`, { duration: 3000, icon: '🌟' });
+          }
+          if (levelUp) {
+            toast.success(`Level Up! You reached Level ${levelUp}!`, { duration: 6000, icon: '📈' });
+          }
+          if (newBadges && newBadges.length > 0) {
+            newBadges.forEach((bId: string) => {
+              toast.success(`Achievement Unlocked! ${bId}`, { duration: 6000, icon: '🏆' });
+            });
+          }
+          if (refreshGamification) refreshGamification();
+        }
+        
         triggerAutonomousPipeline("Task Completed", `Completed task: ${task.title}`, tasks.filter(t => t.id !== task.id));
       } else {
         toast.success("Task marked active");

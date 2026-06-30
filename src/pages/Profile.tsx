@@ -11,14 +11,23 @@ import {
   ShieldCheck, 
   Lock,
   Loader2,
-  LogOut
+  LogOut,
+  Trophy,
+  Flame,
+  CheckCircle,
+  Clock,
+  Star,
+  Target
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
+import { ACHIEVEMENTS, Achievement } from '../types';
 
 export function Profile() {
   const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
+
+  const [activeTab, setActiveTab] = useState<'achievements' | 'settings'>('achievements');
 
   // Profile fields state
   const [name, setName] = useState(user?.name || '');
@@ -177,6 +186,33 @@ export function Profile() {
               </div>
             </div>
 
+            {user?.gamification && (
+              <div className="w-full border-t border-[#21262d] mt-6 pt-6 space-y-4 text-left">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-300">Level {user.gamification.level}</span>
+                  </div>
+                  <span className="text-xs text-slate-500 font-mono">{user.gamification.xp} XP</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500" style={{ width: `${(user.gamification.xp / (user.gamification.level * 200)) * 100}%` }}></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 flex flex-col gap-1 items-center justify-center text-center">
+                    <Flame className="h-4 w-4 text-orange-500" />
+                    <span className="text-sm font-bold text-white">{user.gamification.currentStreak}</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-500">Day Streak</span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 flex flex-col gap-1 items-center justify-center text-center">
+                    <Star className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm font-bold text-white">{user.gamification.earnedBadges?.length || 0}</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-500">Badges</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="w-full border-t border-[#21262d] mt-6 pt-6">
               <Button 
                 onClick={async () => {
@@ -196,15 +232,35 @@ export function Profile() {
             </div>
           </div>
 
-          {/* Profile Forms */}
-          <div className="md:col-span-8 space-y-8">
+          {/* Profile Forms & Achievements */}
+          <div className="md:col-span-8 space-y-6">
             
-            {/* General Settings */}
-            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
-              <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
-                <UserIcon className="h-5 w-5 text-indigo-400" />
-                <h3 className="text-lg font-bold text-[#f0f6fc]">General Information</h3>
-              </div>
+            {/* Tabs */}
+            <div className="flex gap-2 p-1 bg-[#0d1117] border border-[#21262d] rounded-2xl">
+              <button
+                onClick={() => setActiveTab('achievements')}
+                className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'achievements' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Trophy className="w-4 h-4" />
+                Achievements
+              </button>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'settings' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <UserIcon className="w-4 h-4" />
+                Settings
+              </button>
+            </div>
+            
+            {activeTab === 'settings' && (
+              <div className="space-y-8">
+                {/* General Settings */}
+                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
+                  <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                    <UserIcon className="h-5 w-5 text-indigo-400" />
+                    <h3 className="text-lg font-bold text-[#f0f6fc]">General Information</h3>
+                  </div>
 
               <form onSubmit={handleUpdateProfile} className="space-y-5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -339,6 +395,58 @@ export function Profile() {
                 </div>
               </form>
             </div>
+          </div>
+          )}
+
+          {activeTab === 'achievements' && (
+            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
+              <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                <Trophy className="h-6 w-6 text-yellow-500" />
+                <h3 className="text-xl font-bold text-[#f0f6fc]">Achievement Badges</h3>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {ACHIEVEMENTS.map((achievement) => {
+                  const isEarned = user?.gamification?.earnedBadges?.includes(achievement.id);
+                  let Icon = Trophy;
+                  if (achievement.icon === 'Flame') Icon = Flame;
+                  if (achievement.icon === 'CheckCircle') Icon = CheckCircle;
+                  if (achievement.icon === 'Clock') Icon = Clock;
+
+                  const tierColors = {
+                    'Common': 'from-slate-500 to-slate-400 border-slate-500 text-slate-100',
+                    'Rare': 'from-blue-600 to-blue-400 border-blue-500 text-blue-100',
+                    'Epic': 'from-purple-600 to-purple-400 border-purple-500 text-purple-100',
+                    'Legendary': 'from-orange-500 to-yellow-400 border-yellow-500 text-yellow-100'
+                  };
+
+                  return (
+                    <div 
+                      key={achievement.id}
+                      className={`relative flex flex-col items-center p-5 rounded-2xl border transition-all ${
+                        isEarned 
+                          ? 'bg-[#161b22] border-[#30363d] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:border-indigo-500/50' 
+                          : 'bg-[#0a0d14] border-[#161b22] opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
+                      }`}
+                    >
+                      <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${tierColors[achievement.tier]} flex items-center justify-center mb-4 shadow-lg border-2 ${isEarned ? 'animate-pulse-slow' : ''}`}>
+                        <Icon className={`h-7 w-7 ${isEarned ? 'drop-shadow-md' : 'opacity-50'}`} />
+                      </div>
+                      <h4 className="text-sm font-bold text-white text-center mb-1">{achievement.name}</h4>
+                      <p className="text-xs text-slate-400 text-center mb-3">{achievement.description}</p>
+                      
+                      <div className="mt-auto w-full flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
+                        <span className="text-indigo-400">{achievement.category}</span>
+                        <span className={`${isEarned ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {isEarned ? 'Unlocked' : 'Locked'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           </div>
 
