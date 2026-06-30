@@ -1048,23 +1048,84 @@ async function startServer() {
       const { sub: googleUid, email, name, picture } = userInfo;
       if (!email) return res.status(400).send("Google account has no email address to sign in with.");
 
+      // Check for an existing authenticated user session
+      let currentUserId: string | null = null;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split('Bearer ')[1];
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET) as any;
+          currentUserId = decoded.uid;
+        } catch (err) {
+          // ignore invalid token in header
+        }
+      }
+
       await connectDB();
-      let user = await User.findOne({ email: email.toLowerCase() });
-      if (!user) {
-        user = await User.create({
-          email: email.toLowerCase(),
-          name: name || email,
-          picture,
-          authProvider: "google",
-          googleId: googleUid,
-          googleRefreshToken: tokens.refresh_token || undefined,
-        });
+
+      // Check if this Google account is already linked to another user
+      const existingLinkedUser = await User.findOne({
+        $or: [
+          { googleId: googleUid },
+          { googleEmail: email.toLowerCase() },
+          { email: email.toLowerCase(), authProvider: 'google' }
+        ]
+      });
+
+      let user: any;
+
+      if (currentUserId) {
+        // Active session: bind Google account to current user
+        const currentUser = await User.findById(currentUserId);
+        if (!currentUser) {
+          return res.status(404).send("Current user session not found");
+        }
+
+        if (existingLinkedUser) {
+          if (existingLinkedUser._id.toString() !== currentUserId) {
+            return res.status(400).send("google email already connected to other email, sign in with google or with other email");
+          }
+          user = existingLinkedUser;
+        } else {
+          currentUser.googleId = googleUid;
+          currentUser.googleEmail = email.toLowerCase();
+          if (tokens.refresh_token) {
+            currentUser.googleRefreshToken = tokens.refresh_token;
+          }
+          if (picture && !currentUser.picture) currentUser.picture = picture;
+          await currentUser.save();
+          user = currentUser;
+        }
       } else {
-        user.authProvider = "google";
-        user.googleId = googleUid;
-        if (picture && !user.picture) user.picture = picture;
-        if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
-        await user.save();
+        // Direct login / sign-in (no active session)
+        if (existingLinkedUser) {
+          user = existingLinkedUser;
+          if (tokens.refresh_token) {
+            user.googleRefreshToken = tokens.refresh_token;
+          }
+          if (picture && !user.picture) user.picture = picture;
+          await user.save();
+        } else {
+          user = await User.findOne({ email: email.toLowerCase() });
+          if (!user) {
+            user = await User.create({
+              email: email.toLowerCase(),
+              name: name || email,
+              picture,
+              authProvider: "google",
+              googleId: googleUid,
+              googleEmail: email.toLowerCase(),
+              googleRefreshToken: tokens.refresh_token || undefined,
+            });
+          } else {
+            user.authProvider = "google";
+            user.googleId = googleUid;
+            user.googleEmail = email.toLowerCase();
+            if (picture && !user.picture) user.picture = picture;
+            if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+            await user.save();
+          }
+        }
       }
 
       const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
@@ -1072,7 +1133,7 @@ async function startServer() {
       res.json({
         accessToken,
         taskpilotToken,
-        user: { email: user.email, name: user.name, picture: user.picture, uid: user._id.toString() }
+        user: { email: user.email, name: user.name, picture: user.picture, uid: user._id.toString(), gamification: user.gamification }
       });
     } catch (err: any) {
       console.error("Google OAuth error:", err);
@@ -1143,7 +1204,17 @@ async function startServer() {
     // the callback request) so the redirect_uri used to exchange the code is
     // guaranteed to be the exact same one used to generate this auth URL,
     // and can't be swapped by a malicious callback request.
-    const state = jwt.sign({ purpose: "oauth_state", origin }, JWT_SECRET, { expiresIn: "10m" });
+    let currentUserId: string | null = null;
+    const authHeader = req.headers.authorization || req.query.token;
+    if (authHeader) {
+      const token = (authHeader as string).replace('Bearer ', '');
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        currentUserId = decoded.uid;
+      } catch {}
+    }
+
+    const state = jwt.sign({ purpose: "oauth_state", origin, currentUserId }, JWT_SECRET, { expiresIn: "10m" });
 
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: "offline",
@@ -1171,10 +1242,12 @@ async function startServer() {
     // origin out of it (signed, so it can't be tampered with) rather than
     // trusting the request's Host header again here.
     let origin: string;
+    let currentUserId: string | null = null;
     try {
       const decoded = jwt.verify(state as string, JWT_SECRET) as any;
       if (decoded.purpose !== "oauth_state" || !decoded.origin) throw new Error("bad state payload");
       origin = decoded.origin;
+      currentUserId = decoded.currentUserId || null;
       if (!ALLOWED_ORIGINS.includes(origin)) throw new Error("origin no longer allowed");
     } catch {
       return res.status(401).send("Invalid or expired authentication request. Please try signing in again.");
@@ -1215,28 +1288,70 @@ async function startServer() {
       }
 
       await connectDB();
-      let user = await User.findOne({ email: email.toLowerCase() });
-      if (!user) {
-        // New user: created via Google, so no local password — login via
-        // the regular email/password form is intentionally disabled for them.
-        user = await User.create({
-          email: email.toLowerCase(),
-          name: name || email,
-          picture,
-          authProvider: "google",
-          googleId: googleUid,
-          googleRefreshToken: tokens.refresh_token || undefined,
-        });
+
+      // Check if this Google account is already linked to another user
+      const existingLinkedUser = await User.findOne({
+        $or: [
+          { googleId: googleUid },
+          { googleEmail: email.toLowerCase() },
+          { email: email.toLowerCase(), authProvider: 'google' }
+        ]
+      });
+
+      let user: any;
+
+      if (currentUserId) {
+        // Active session: bind Google account to current user
+        const currentUser = await User.findById(currentUserId);
+        if (!currentUser) {
+          return res.status(404).send("Current user session not found");
+        }
+
+        if (existingLinkedUser) {
+          if (existingLinkedUser._id.toString() !== currentUserId) {
+            return res.status(400).send("google email already connected to other email, sign in with google or with other email");
+          }
+          user = existingLinkedUser;
+        } else {
+          currentUser.googleId = googleUid;
+          currentUser.googleEmail = email.toLowerCase();
+          if (tokens.refresh_token) {
+            currentUser.googleRefreshToken = tokens.refresh_token;
+          }
+          if (picture && !currentUser.picture) currentUser.picture = picture;
+          await currentUser.save();
+          user = currentUser;
+        }
       } else {
-        // Existing user (possibly originally a local account) signing in
-        // with Google: link the Google identity, don't touch their password.
-        user.authProvider = "google";
-        user.googleId = googleUid;
-        if (picture && !user.picture) user.picture = picture;
-        // Google only issues a refresh_token on the first consent, so only
-        // overwrite ours if we actually got a new one.
-        if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
-        await user.save();
+        // Direct login / sign-in (no active session)
+        if (existingLinkedUser) {
+          user = existingLinkedUser;
+          if (tokens.refresh_token) {
+            user.googleRefreshToken = tokens.refresh_token;
+          }
+          if (picture && !user.picture) user.picture = picture;
+          await user.save();
+        } else {
+          user = await User.findOne({ email: email.toLowerCase() });
+          if (!user) {
+            user = await User.create({
+              email: email.toLowerCase(),
+              name: name || email,
+              picture,
+              authProvider: "google",
+              googleId: googleUid,
+              googleEmail: email.toLowerCase(),
+              googleRefreshToken: tokens.refresh_token || undefined,
+            });
+          } else {
+            user.authProvider = "google";
+            user.googleId = googleUid;
+            user.googleEmail = email.toLowerCase();
+            if (picture && !user.picture) user.picture = picture;
+            if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+            await user.save();
+          }
+        }
       }
 
       const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });

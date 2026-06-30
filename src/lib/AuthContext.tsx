@@ -161,9 +161,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
             if (response.code) {
               try {
+                const headers: Record<string, string> = { "Content-Type": "application/json" };
+                const jwtToken = localStorage.getItem("taskpilot_jwt");
+                if (jwtToken) {
+                  headers["Authorization"] = `Bearer ${jwtToken}`;
+                }
                 const res = await fetch("/api/auth/google/callback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers,
                   body: JSON.stringify({ code: response.code }),
                 });
                 if (!res.ok) throw new Error(await res.text());

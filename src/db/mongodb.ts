@@ -25,6 +25,7 @@ const UserSchema = new mongoose.Schema({
   // 'local' = email/password account, 'google' = signed in via Google OAuth.
   authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
   googleId: { type: String, index: true },
+  googleEmail: { type: String, index: true },
   // Stored so we can refresh Workspace (Calendar/Docs/Sheets) access without
   // re-prompting the user every hour. In a real production deployment this
   // should be encrypted at rest (e.g. via KMS) rather than stored as plain text.
