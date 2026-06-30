@@ -29,40 +29,26 @@ export function Dashboard() {
     if (!user) return;
     const db = getDb();
     
-    // Fetch pending tasks
-    const qPending = query(
+    // Fetch all user tasks to avoid composite index requirements
+    const qAllTasks = query(
       collection(db, 'tasks'), 
-      where('userId', '==', user.uid),
-      where('status', 'in', ['pending', 'in_progress'])
+      where('userId', '==', user.uid)
     );
     
-    // Fetch completed tasks
-    const qCompleted = query(
-      collection(db, 'tasks'), 
-      where('userId', '==', user.uid),
-      where('status', '==', 'completed')
-    );
-
     // Fetch AI decisions
     const qDecisions = query(
       collection(db, 'users', user.uid, 'ai_decisions')
     );
     
-    const unsubscribePending = onSnapshot(qPending, (snapshot) => {
-      const tasksData = snapshot.docs.map(doc => ({
+    const unsubscribeTasks = onSnapshot(qAllTasks, (snapshot) => {
+      const allTasksData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Task[];
-      setTasks(tasksData);
+      
+      setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress'));
+      setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
       setLoadingTasks(false);
-    });
-
-    const unsubscribeCompleted = onSnapshot(qCompleted, (snapshot) => {
-      const tasksData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Task[];
-      setCompletedTasks(tasksData);
     });
 
     const unsubscribeDecisions = onSnapshot(qDecisions, (snapshot) => {
@@ -83,8 +69,7 @@ export function Dashboard() {
     });
 
     return () => {
-      unsubscribePending();
-      unsubscribeCompleted();
+      unsubscribeTasks();
       unsubscribeDecisions();
       unsubscribePlan();
     };

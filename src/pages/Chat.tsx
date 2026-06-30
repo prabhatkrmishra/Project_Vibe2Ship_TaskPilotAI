@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Send, Bot, Mic, Loader2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
+import { Task } from '../types';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -19,6 +20,8 @@ interface Message {
 export function Chat() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [goals, setGoals] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -80,19 +83,50 @@ export function Chat() {
   useEffect(() => {
     if (!user) return;
     const db = getDb();
-    const q = query(
+    const qMessages = query(
       collection(db, 'users', user.uid, 'chat_messages'),
       orderBy('timestamp', 'asc')
     );
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeMessages = onSnapshot(qMessages, (snapshot) => {
       const messagesData = snapshot.docs.map(doc => ({
         ...doc.data()
       })) as Message[];
       setMessages(messagesData);
     });
 
-    return () => unsubscribe();
+    const qTasks = query(
+      collection(db, 'tasks'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribeTasks = onSnapshot(qTasks, (snapshot) => {
+      const tasksData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Task[];
+      const pendingTasks = tasksData.filter(t => t.status === 'pending' || t.status === 'in_progress');
+      setTasks(pendingTasks);
+    });
+
+    const qGoals = query(
+      collection(db, 'goals'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribeGoals = onSnapshot(qGoals, (snapshot) => {
+      const goalsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setGoals(goalsData);
+    });
+
+    return () => {
+      unsubscribeMessages();
+      unsubscribeTasks();
+      unsubscribeGoals();
+    };
   }, [user]);
 
   const handleSend = async (e: React.FormEvent) => {
@@ -112,6 +146,29 @@ export function Chat() {
         timestamp: serverTimestamp()
       });
 
+      const cleanMessages = messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+      cleanMessages.push({ role: 'user', content: userMsg });
+
+      const cleanTasks = tasks.map(t => ({
+        title: t.title,
+        description: t.description || '',
+        status: t.status,
+        priority: t.priority,
+        estimatedHours: t.estimatedHours || 0,
+        deadline: t.deadline || null
+      }));
+
+      const cleanGoals = goals.map(g => ({
+        title: g.title,
+        type: g.type,
+        progress: g.progress,
+        completed: g.completed,
+        targetDate: g.targetDate || null
+      }));
+
       const token = await user.getIdToken();
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -120,8 +177,11 @@ export function Chat() {
           'Content-Type': 'application/json' 
         },
         body: JSON.stringify({ 
-          messages: [...messages, { role: 'user', content: userMsg }], 
-          context: [],
+          messages: cleanMessages,
+          context: {
+            tasks: cleanTasks,
+            goals: cleanGoals
+          },
           model: selectedModel
         })
       });

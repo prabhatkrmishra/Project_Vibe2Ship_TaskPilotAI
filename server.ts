@@ -661,12 +661,15 @@ async function startServer() {
         You are TaskPilot AI, an intelligent productivity executive assistant.
         The user is asking you for help.
         
-        Current Context (Tasks): 
+        CRITICAL INSTRUCTION: Here is the CURRENT, up-to-date Context of their Tasks and Goals. 
+        Even if you said they had no tasks in the past conversation history, you MUST use this NEW context as the absolute truth for their current state:
+        
+        Current Context: 
         ${JSON.stringify(context, null, 2)}
         
         Conversation History: ${JSON.stringify(messages, null, 2)}
         
-        Respond conversationally, helpfully, and concisely. If they ask about their workload or what to do next, analyze the provided context.
+        Respond conversationally, helpfully, and concisely. If they ask about their workload or what to do next, strictly analyze the CURRENT context provided above. Do not claim their task list is empty if the Current Context above contains items.
       `;
       
       const response = await ai.models.generateContent({

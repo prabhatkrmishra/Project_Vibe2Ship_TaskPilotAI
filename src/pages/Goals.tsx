@@ -26,7 +26,7 @@ function GoalStepItem({ step, goal, toggleStep, updateStepTitle }: { step: any, 
     <div className="flex items-center gap-2 group/step">
       <button 
         onClick={() => toggleStep(goal, step.id)}
-        className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors ${step.completed ? 'text-cyan-400' : 'text-slate-600 hover:text-cyan-400'}`}
+        className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors ${step.completed ? 'text-emerald-400 hover:text-emerald-300' : 'text-red-400/80 hover:text-red-400'}`}
       >
         {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
       </button>
