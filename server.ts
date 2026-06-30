@@ -9,6 +9,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import * as fs from 'fs';
 import { GoogleGenAI } from "@google/genai";
+import { google } from "googleapis";
 
 // Initialize Firebase Admin
 const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
@@ -146,6 +147,149 @@ async function startServer() {
     }
   });
   
+  app.get("/api/calendar/events", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      console.log('GET Access Token:', accessToken);
+      
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+      
+      const { timeMin, timeMax } = req.query;
+      const response = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin: timeMin,
+        timeMax: timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+      
+      res.json(response.data);
+    } catch (error: any) {
+      console.error('Error fetching events:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/calendar/events", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+      
+      const response = await calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: req.body,
+      });
+      
+      res.json(response.data);
+    } catch (error: any) {
+      console.error('Error creating event:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/docs", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      const { title, content } = req.body;
+      
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const docs = google.docs({ version: 'v1', auth: oauth2Client });
+      
+      // 1. Create empty doc
+      const doc = await docs.documents.create({
+        requestBody: { title },
+      });
+      
+      // 2. Insert content
+      if (doc.data.documentId) {
+        await docs.documents.batchUpdate({
+          documentId: doc.data.documentId,
+          requestBody: {
+            requests: [
+              {
+                insertText: {
+                  location: { index: 1 },
+                  text: content
+                }
+              }
+            ]
+          }
+        });
+      }
+      
+      res.json(doc.data);
+    } catch (error: any) {
+      console.error('Error creating Google Doc:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/presentations", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      const { title } = req.body;
+      
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const slides = google.slides({ version: 'v1', auth: oauth2Client });
+      
+      const response = await slides.presentations.create({
+        requestBody: { title },
+      });
+      
+      res.json(response.data);
+    } catch (error: any) {
+      console.error('Error creating presentation:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/sheets", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      const { title, data } = req.body;
+      
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+      
+      // 1. Create spreadsheet
+      const spreadsheet = await sheets.spreadsheets.create({
+        requestBody: { properties: { title } }
+      });
+      
+      // 2. Append data
+      if (spreadsheet.data.spreadsheetId) {
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: spreadsheet.data.spreadsheetId,
+          range: 'Sheet1!A1',
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: data }
+        });
+      }
+      
+      res.json(spreadsheet.data);
+    } catch (error: any) {
+      console.error('Error creating Google Sheet:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // --- Custom Google OAuth Routes (Using user-provided credentials) ---
 
   app.get("/api/auth/google/url", (req, res) => {
