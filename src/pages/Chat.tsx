@@ -163,11 +163,16 @@ export function Chat() {
 
       const cleanGoals = goals.map(g => ({
         title: g.title,
-        type: g.type,
+        type: g.type === 'quest' ? 'Quest' : 'Habit',
+        description: g.description || '',
         progress: g.progress,
+        streak: g.type === 'habit' ? (g.streak || 0) : undefined,
         completed: g.completed,
         targetDate: g.targetDate || null
       }));
+
+      const cleanQuests = cleanGoals.filter(g => g.type === 'Quest');
+      const cleanHabits = cleanGoals.filter(g => g.type === 'Habit');
 
       const token = await user.getIdToken();
       const res = await fetch('/api/chat', {
@@ -180,7 +185,8 @@ export function Chat() {
           messages: cleanMessages,
           context: {
             tasks: cleanTasks,
-            goals: cleanGoals
+            quests: cleanQuests,
+            habits: cleanHabits
           },
           model: selectedModel
         })
@@ -237,7 +243,13 @@ export function Chat() {
           </label>
           <Select value={selectedModel} onValueChange={handleModelChange} disabled={isLoadingModels}>
             <SelectTrigger className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500">
-              <SelectValue placeholder={isLoadingModels ? "Syncing core brains..." : "Choose model"} />
+              <SelectValue placeholder={isLoadingModels ? "Syncing core brains..." : "Choose model"}>
+                {(value: string) => {
+                  if (isLoadingModels) return "Syncing core brains...";
+                  const m = models.find(m => m.name === value);
+                  return m ? m.displayName : (value ? value.replace(/^models\//, '') : "Choose model");
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc]">
               {isLoadingModels ? (

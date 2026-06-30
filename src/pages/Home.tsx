@@ -200,7 +200,7 @@ export function Home() {
               </div>
               <h3 className="text-lg font-bold text-[#f0f6fc] mt-4 mb-2">Smart Tasks</h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                Add milestones, assign direct priorities, and evaluate security risk matrices for every project.
+                Add quests, assign direct priorities, and evaluate security risk matrices for every project.
               </p>
             </div>
 

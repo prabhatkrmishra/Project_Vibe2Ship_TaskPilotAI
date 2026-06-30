@@ -21,6 +21,7 @@ export interface Task {
   createdAt: string;
   riskScore?: number;
   confidenceScore?: number;
+  goalId?: string | null;
 }
 
 export interface ScheduledSession {
@@ -62,9 +63,9 @@ export interface Goal {
   userId: string;
   title: string;
   description: string;
-  targetDate?: string; // ISO string for milestones
-  type: 'habit' | 'milestone';
-  progress: number; // 0-100 for milestone, or completion count for habits
+  targetDate?: string; // ISO string for quests
+  type: 'habit' | 'quest';
+  progress: number; // 0-100 for quest, or completion count for habits
   streak?: number; // for habits
   steps?: GoalStep[];
   completed: boolean;

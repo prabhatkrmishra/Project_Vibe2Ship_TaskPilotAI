@@ -66,7 +66,7 @@ export function PrivacyPolicy() {
                 <strong className="text-slate-200">Google Sheets (<code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300">.../auth/spreadsheets</code>):</strong> Used to fetch status trackers and synchronize structured task checklists.
               </li>
               <li>
-                <strong className="text-slate-200">Google Slides (<code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300">.../auth/presentations</code>):</strong> Used to export mission summaries and project milestones into slides.
+                <strong className="text-slate-200">Google Slides (<code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-300">.../auth/presentations</code>):</strong> Used to export mission summaries and project quests into slides.
               </li>
             </ul>
             <p className="text-sm">

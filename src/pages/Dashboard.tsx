@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { collection, query, where, getDocs, onSnapshot, doc, addDoc, setDoc } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Task, DailyPlan } from '../types';
+import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Table } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Table, Target, Flame } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
@@ -17,6 +18,7 @@ export function Dashboard() {
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [decisions, setDecisions] = useState<any[]>([]);
   const [plan, setPlan] = useState<DailyPlan | null>(null);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
   
@@ -59,6 +61,19 @@ export function Dashboard() {
       setDecisions(decisionsData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 3));
     });
 
+    const qGoals = query(
+      collection(db, 'goals'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribeGoals = onSnapshot(qGoals, (snapshot) => {
+      const goalsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Goal[];
+      setGoals(goalsData);
+    });
+
     const planRef = doc(db, 'users', user.uid, 'daily_plan', today);
     const unsubscribePlan = onSnapshot(planRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -71,12 +86,15 @@ export function Dashboard() {
     return () => {
       unsubscribeTasks();
       unsubscribeDecisions();
+      unsubscribeGoals();
       unsubscribePlan();
     };
   }, [user]);
 
   const tasksAtRisk = tasks.filter(t => (t.riskScore || 0) > 60).length;
-  const topTask = tasks.sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))[0];
+  const topTask = [...tasks].sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))[0];
+  const focusGoal = goals.find(g => g.type === 'quest' && !g.completed) || goals.find(g => !g.completed) || goals[0];
+  const focusGoalTitle = focusGoal?.title || topTask?.title || 'None';
   const productivityScore = tasks.length + completedTasks.length > 0 
     ? Math.round((completedTasks.length / (tasks.length + completedTasks.length)) * 100) 
     : 0;
@@ -149,15 +167,51 @@ export function Dashboard() {
         </div>
         <div className="flex items-center gap-4">
           <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
             <span className="text-xs font-semibold text-emerald-400 uppercase tracking-tighter">AI Core Active</span>
           </div>
         </div>
       </header>
+      
+      {/* AI Daily Brief */}
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="bg-gradient-to-r from-indigo-900/40 to-[#0d1117] border border-indigo-500/30 rounded-3xl p-5 flex items-start gap-4 shadow-lg shadow-indigo-500/5"
+      >
+        <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center shrink-0 border border-indigo-500/50">
+          <Sparkles className="w-5 h-5 text-indigo-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-indigo-300 uppercase tracking-widest mb-1">AI Daily Brief</h3>
+          <p className="text-[#f0f6fc] text-sm leading-relaxed">
+            {tasks.length === 0 && completedTasks.length === 0 ? (
+              "Your schedule is completely clear. Start by adding a task or a quest!"
+            ) : tasksAtRisk > 0 ? (
+              <span>Your workload requires attention. You have <strong>{tasksAtRisk} task(s)</strong> at risk of missing deadlines. I strongly suggest prioritizing <strong className="text-indigo-400">{topTask?.title}</strong> today.</span>
+            ) : tasks.length > 0 ? (
+              <span>Your schedule looks perfectly balanced today. You have <strong>{tasks.length} pending task(s)</strong> with no immediate risks detected. Your productivity score is currently at {productivityScore}%. Keep up the momentum!</span>
+            ) : (
+              "Excellent work! All of your tasks are completed. You're operating at 100% efficiency today."
+            )}
+            {decisions.length > 0 && (
+              <span className="block mt-2 text-xs text-slate-400 border-t border-slate-700/50 pt-2 italic">
+                Latest insight: {decisions[0].reasoning}
+              </span>
+            )}
+          </p>
+        </div>
+      </motion.div>
 
       <div className="grid grid-cols-12 gap-4 flex-grow">
         {/* Main Plan Area */}
-        <div className="col-span-12 lg:col-span-8 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group min-h-[400px]">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="col-span-12 lg:col-span-8 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group min-h-[400px]"
+        >
           <div className="relative z-10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
@@ -224,10 +278,15 @@ export function Dashboard() {
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Side panel */}
-        <div className="col-span-12 lg:col-span-4 flex flex-col gap-4">
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="col-span-12 lg:col-span-4 flex flex-col gap-4"
+        >
           {/* Workload card */}
           <div className="bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex-grow">
              <h3 className="text-xl font-bold text-white mb-6">Pending Workload</h3>
@@ -271,8 +330,46 @@ export function Dashboard() {
               </div>
               <div>
                 <p className="text-[10px] text-slate-500 uppercase font-bold">Focus Goal</p>
-                <p className="text-sm font-medium text-[#f0f6fc] truncate" title={topTask?.title}>{topTask?.title || 'None'}</p>
+                <p className="text-sm font-medium text-[#f0f6fc] truncate" title={focusGoalTitle}>{focusGoalTitle}</p>
               </div>
+            </div>
+          </div>
+          
+          {/* Goals & Habits Monitor */}
+          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5">
+            <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <Target className="w-4 h-4 text-cyan-400" />
+              Goals & Habits Monitor
+            </h3>
+            <div className="space-y-4">
+              {goals.length === 0 ? (
+                <div className="text-[10px] text-slate-500 italic">No goals or habits defined. Visit Goals & Habits to start tracking.</div>
+              ) : (
+                goals.slice(0, 3).map(g => (
+                  <div key={g.id} className="p-3 bg-[#161b22] border border-[#21262d] rounded-2xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-200 truncate pr-2 max-w-[150px]">{g.title}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${g.type === 'habit' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'}`}>
+                        {g.type}
+                      </span>
+                    </div>
+                    {g.type === 'quest' ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${g.progress}%` }}></div>
+                        </div>
+                        <span className="text-[10px] font-bold text-cyan-400 shrink-0 font-mono">{g.progress}%</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-orange-400 text-xs">
+                        <Flame className="w-3.5 h-3.5 fill-orange-500/20" />
+                        <span className="font-bold font-mono">{g.streak || 0}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">day streak</span>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
           
@@ -372,7 +469,7 @@ export function Dashboard() {
                   token = await requestWorkspaceAccess();
                 }
                 if (!token) return;
-                if (!window.confirm("Generate a daily progress report and save it to your Google Drive?")) return;
+                
                 try {
                   toast.loading("Generating report...");
                   const { createGoogleDoc } = await import('../lib/workspace');
@@ -398,7 +495,7 @@ export function Dashboard() {
                   token = await requestWorkspaceAccess();
                 }
                 if (!token) return;
-                if (!window.confirm("Export your task history to Google Sheets?")) return;
+                
                 try {
                   toast.loading("Exporting to Sheets...");
                   const { createGoogleSheet } = await import('../lib/workspace');
@@ -420,7 +517,7 @@ export function Dashboard() {
               </Button>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
       <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
         <DialogContent className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d]">

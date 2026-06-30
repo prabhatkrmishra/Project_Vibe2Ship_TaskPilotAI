@@ -47,7 +47,7 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
           <CheckSquare className="h-4 w-4 text-emerald-400" /> Mission Board
         </Link>
         <Link to="/goals" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/goals' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
-          <Target className="h-4 w-4 text-cyan-400" /> Goals & Habits
+          <Target className="h-4 w-4 text-cyan-400" /> Quest & Habit
         </Link>
         <Link to="/chat" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/chat' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <MessageSquare className="h-4 w-4 text-violet-400" /> Mission Control

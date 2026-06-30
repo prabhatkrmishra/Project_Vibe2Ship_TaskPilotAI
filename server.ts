@@ -527,32 +527,70 @@ async function startServer() {
 
   // --- AI Planning Routes ---
   
-  app.post("/api/generate-milestone-steps", verifyToken, async (req: any, res: any) => {
+  app.post("/api/generate-quest-steps", verifyToken, async (req: any, res: any) => {
     try {
       const { title, description, targetDate, model } = req.body;
       const selectedModel = getValidModel(model);
       const prompt = `
-        You are an intelligent productivity assistant. Analyze the following project milestone goal.
-        Goal: ${title}
-        Description: ${description || 'N/A'}
+        You are an intelligent productivity assistant. Analyze the following project quest.
+        Quest Title: ${title}
+        Quest Description: ${description || 'N/A'}
         Target Date: ${targetDate || 'N/A'}
+        Current Date/Time: ${new Date().toISOString()}
         
-        Generate a list of actionable steps needed to complete this milestone.
-        Return a JSON response exactly in this format, with no markdown formatting:
+        Decompose this quest into a series of required, actionable, logically sequenced tasks that will lead to its successful completion. Do not limit the tasks to any arbitrary number (like 3 to 6); instead, include all tasks required to fully and thoroughly achieve the quest's goals.
+        For each task, provide:
+        - "title" (string): A short, active, clear title for the task (e.g., "Research database schemas").
+        - "description" (string): A brief explanation of what needs to be done.
+        - "deadline" (string): An ISO 8601 datetime string. Distribute the deadlines logically from the current time up to the Quest's target date ("${targetDate || ''}"). If no target date is set, distribute them across the next 14 days.
+        - "priority" (string): "high", "medium", or "low".
+        - "estimatedHours" (number): Realistic estimated duration in hours (e.g. 1.5, 3, 8).
+        - "riskScore" (number): Risk score from 10 to 95 reflecting complexity or tight timelines.
+
+        You MUST return a JSON response exactly in this format, with no markdown, backticks, or text before/after:
         {
-          "steps": ["step 1", "step 2", "step 3", ...]
+          "tasks": [
+            {
+              "title": "Task 1 Title",
+              "description": "Short explanation",
+              "deadline": "YYYY-MM-DDTHH:mm:ss.sssZ",
+              "priority": "medium",
+              "estimatedHours": 2,
+              "riskScore": 30
+            }
+          ]
         }
-        Keep the steps concise and actionable.
       `;
       
       const response = await ai.models.generateContent({
         model: selectedModel,
-        contents: prompt
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
       });
       
       let text = response.text || "{}";
       text = text.replace(/```json/g, "").replace(/```/g, "").trim();
       const result = JSON.parse(text);
+      
+      // Fallback: If AI returned "steps" instead of "tasks", convert steps to tasks gracefully
+      if (result.steps && !result.tasks) {
+        const generatedDate = new Date();
+        result.tasks = result.steps.map((step: string, index: number) => {
+          const deadlineDate = new Date(generatedDate);
+          deadlineDate.setDate(deadlineDate.getDate() + (index + 1) * 2);
+          return {
+            title: step,
+            description: "",
+            deadline: targetDate ? new Date(targetDate).toISOString() : deadlineDate.toISOString(),
+            priority: "medium",
+            estimatedHours: 2,
+            riskScore: 30
+          };
+        });
+      }
+      
       res.json(result);
     } catch (err: any) {
       console.error(err);
@@ -604,6 +642,77 @@ async function startServer() {
         errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
       }
       res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.post("/api/generate-subtasks", verifyToken, async (req: any, res: any) => {
+    const { title, description, model } = req.body;
+    try {
+      const selectedModel = getValidModel(model);
+      const prompt = `
+        You are an intelligent productivity assistant.
+        Analyze the following task and generate a list of 3 to 6 logical, actionable, granular subtasks needed to complete it.
+        Task Title: ${title}
+        Task Description: ${description || 'N/A'}
+
+        Return a JSON response with the following format, with no markdown, backticks, or text before/after:
+        {
+          "subtasks": ["subtask 1", "subtask 2", "subtask 3", ...]
+        }
+        Keep each subtask description short, active, and highly clear (e.g., "Draft the database schema" or "Write unit tests for authentication").
+      `;
+      
+      const response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      
+      let text = response.text || "{}";
+      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const result = JSON.parse(text);
+      if (result && Array.isArray(result.subtasks)) {
+        return res.json(result);
+      }
+      throw new Error("Invalid response format from Gemini");
+    } catch (err: any) {
+      console.error("Gemini Generate Subtasks Error, using fallback:", err);
+      
+      // Fallback: Programmatic subtask generation to prevent app-blocking errors
+      const lowerTitle = title.toLowerCase();
+      let fallbackSubtasks = [
+        `Plan and outline the requirements for "${title}"`,
+        `Execute core implementation and setup`,
+        `Verify, test, and complete "${title}"`
+      ];
+
+      if (lowerTitle.includes("website") || lowerTitle.includes("app") || lowerTitle.includes("page")) {
+        fallbackSubtasks = [
+          `Sketch UI layouts and design mockups`,
+          `Build responsive frontend components`,
+          `Connect state or backend API endpoints`,
+          `Perform end-to-end user experience testing`
+        ];
+      } else if (lowerTitle.includes("db") || lowerTitle.includes("database") || lowerTitle.includes("sql") || lowerTitle.includes("schema")) {
+        fallbackSubtasks = [
+          `Define data relationships and schemas`,
+          `Write migration scripts and initialize database`,
+          `Test database queries and optimize indexes`
+        ];
+      } else if (lowerTitle.includes("write") || lowerTitle.includes("blog") || lowerTitle.includes("content") || lowerTitle.includes("essay")) {
+        fallbackSubtasks = [
+          `Gather references and create a rough outline`,
+          `Draft the main sections and introduction`,
+          `Proofread, format, and publish final draft`
+        ];
+      }
+
+      res.json({
+        subtasks: fallbackSubtasks,
+        isFallback: true
+      });
     }
   });
 
@@ -661,15 +770,19 @@ async function startServer() {
         You are TaskPilot AI, an intelligent productivity executive assistant.
         The user is asking you for help.
         
-        CRITICAL INSTRUCTION: Here is the CURRENT, up-to-date Context of their Tasks and Goals. 
-        Even if you said they had no tasks in the past conversation history, you MUST use this NEW context as the absolute truth for their current state:
-        
-        Current Context: 
+        CRITICAL INSTRUCTION: Here is the CURRENT, up-to-date context of their Tasks, Quests, and Habits.
+        Even if you said they had no tasks, quests, or habits in the past conversation history, you MUST use this NEW context as the absolute truth for their current state:
+
+        - "tasks" are individual to-do items on their Mission Board.
+        - "quests" are larger objectives with a target date, each broken down into a set of linked tasks (tracked via "progress").
+        - "habits" are recurring daily commitments tracked via a "streak" count (consecutive days logged).
+
+        Current Context:
         ${JSON.stringify(context, null, 2)}
         
         Conversation History: ${JSON.stringify(messages, null, 2)}
         
-        Respond conversationally, helpfully, and concisely. If they ask about their workload or what to do next, strictly analyze the CURRENT context provided above. Do not claim their task list is empty if the Current Context above contains items.
+        Respond conversationally, helpfully, and concisely. If they ask about their workload, quests, habits, or what to do next, strictly analyze the CURRENT context provided above. Do not claim their tasks, quests, or habits are empty if the Current Context above contains items.
       `;
       
       const response = await ai.models.generateContent({

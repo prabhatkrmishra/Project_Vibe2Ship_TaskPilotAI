@@ -1,108 +1,230 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'motion/react';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
-import { Goal } from '../types';
+import { Goal, Task } from '../types';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Target, Flame, CheckCircle2, Circle, Plus, Trash2, Edit2 } from 'lucide-react';
+import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
-
-function GoalStepItem({ step, goal, toggleStep, updateStepTitle }: { step: any, goal: Goal, toggleStep: any, updateStepTitle: any }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(step.title);
-
-  const handleSave = () => {
-    if (editTitle.trim() !== '' && editTitle !== step.title) {
-      updateStepTitle(goal, step.id, editTitle.trim());
-    }
-    setIsEditing(false);
-  };
-
-  return (
-    <div className="flex items-center gap-2 group/step">
-      <button 
-        onClick={() => toggleStep(goal, step.id)}
-        className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors ${step.completed ? 'text-emerald-400 hover:text-emerald-300' : 'text-red-400/80 hover:text-red-400'}`}
-      >
-        {step.completed ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-      </button>
-      
-      {isEditing ? (
-        <input 
-          autoFocus
-          value={editTitle}
-          onChange={(e) => setEditTitle(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSave();
-          }}
-          className="flex-1 bg-[#161b22] border border-[#30363d] rounded px-2 py-1 text-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none text-slate-200"
-        />
-      ) : (
-        <span className={`flex-1 text-sm ${step.completed ? 'text-slate-500 line-through' : 'text-slate-300'}`}>
-          {step.title}
-        </span>
-      )}
-
-      {!isEditing && (
-        <button 
-          onClick={() => setIsEditing(true)}
-          className="opacity-0 group-hover/step:opacity-100 transition-opacity text-slate-500 hover:text-cyan-400 p-1 rounded"
-        >
-          <Edit2 className="w-3 h-3" />
-        </button>
-      )}
-    </div>
-  );
-}
 
 export function Goals() {
   const { user } = useAuth();
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState<'habit' | 'milestone'>('habit');
+  const [type, setType] = useState<'habit' | 'quest'>('habit');
   const [targetDate, setTargetDate] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  
+
   const [activeTab, setActiveTab] = useState<'goals' | 'habits'>('goals');
+  const [dismissedReminders, setDismissedReminders] = useState<Record<string, boolean>>({});
+  const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
+
+  // Quest Manual Task & Editing State
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskText, setEditingTaskText] = useState('');
+  const [newManualTaskTitles, setNewManualTaskTitles] = useState<Record<string, string>>({});
+
+  const toggleGoalExpand = (goalId: string) => {
+    setExpandedGoals(prev => ({ ...prev, [goalId]: !prev[goalId] }));
+  };
+
+  const tasksByGoal = (goalId: string) =>
+    linkedTasks.filter(t => t.goalId === goalId).sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+
+  type Reminder = { id: string; goalId: string; tone: 'risk' | 'urgent' | 'nudge'; text: string };
+
+  const reminders: Reminder[] = goals.reduce<Reminder[]>((acc, goal) => {
+    if (goal.completed) return acc;
+
+    if (goal.type === 'habit') {
+      const streak = goal.streak || 0;
+      if (streak >= 3) {
+        acc.push({
+          id: `habit-streak-${goal.id}`,
+          goalId: goal.id,
+          tone: 'nudge',
+          text: `You're on a ${streak}-day streak for "${goal.title}". Log it today to keep it alive.`
+        });
+      } else if (streak === 0 && goal.progress > 0) {
+        acc.push({
+          id: `habit-reset-${goal.id}`,
+          goalId: goal.id,
+          tone: 'risk',
+          text: `Your streak for "${goal.title}" reset. A quick win today gets you back on track.`
+        });
+      }
+    }
+
+    if (goal.type === 'quest') {
+      const tasks = tasksByGoal(goal.id);
+      const incomplete = tasks.filter(t => t.status !== 'completed');
+      const overdue = incomplete.filter(t => new Date(t.deadline).getTime() < Date.now());
+
+      if (tasks.length === 0) {
+        // still generating or generation failed silently
+      } else if (overdue.length > 0) {
+        acc.push({
+          id: `quest-overdue-${goal.id}`,
+          goalId: goal.id,
+          tone: 'urgent',
+          text: `"${goal.title}" has ${overdue.length} overdue task(s). Check Mission Board to reschedule.`
+        });
+      } else {
+        const next = incomplete.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0];
+        if (next) {
+          const hoursLeft = (new Date(next.deadline).getTime() - Date.now()) / 36e5;
+          if (hoursLeft < 48) {
+            acc.push({
+              id: `quest-soon-${goal.id}`,
+              goalId: goal.id,
+              tone: 'urgent',
+              text: `Next task for "${goal.title}" — "${next.title}" — is due in ${Math.round(hoursLeft)}h.`
+            });
+          }
+        }
+      }
+    }
+
+    return acc;
+  }, []).filter(r => !dismissedReminders[r.id]);
+
+  const dismissReminder = (id: string) => {
+    setDismissedReminders(prev => ({ ...prev, [id]: true }));
+  };
+
+  const showBeautifulCompletion = (goalTitle: string, goalType: 'habit' | 'quest') => {
+    toast.custom((t) => (
+      <div className="relative flex flex-col gap-3 p-6 bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#0f172a] border-2 border-emerald-400/50 rounded-3xl shadow-[0_20px_50px_rgba(16,185,129,0.3)] max-w-sm w-full text-white pointer-events-auto overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -mr-16 -mt-16 pointer-events-none"></div>
+
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Sparkles className="w-6 h-6 text-white animate-bounce" />
+            </div>
+            <div>
+              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-widest rounded-full">
+                Goal Accomplished
+              </span>
+              <h4 className="font-black text-[#f0f6fc] text-sm uppercase tracking-wide mt-0.5">Mission Complete</h4>
+            </div>
+          </div>
+          <button onClick={() => toast.dismiss(t)} className="text-slate-400 hover:text-white text-xs font-bold transition-colors bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-xl">
+            Dismiss
+          </button>
+        </div>
+
+        <div className="mt-2 border-t border-slate-800 pt-3">
+          <p className="text-slate-200 text-sm leading-relaxed">
+            Outstanding progress! You have successfully completed: <span className="text-emerald-400 font-extrabold text-base tracking-tight block mt-1 drop-shadow-[0_2px_8px_rgba(52,211,153,0.2)]">{goalTitle}</span>
+          </p>
+          <span className="inline-block mt-3 px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold uppercase tracking-widest rounded-full">
+            {goalType === 'habit' ? '🔁 Habit Streak Completed' : '🏆 Quest Complete!'}
+          </span>
+        </div>
+      </div>
+    ), {
+      duration: 6000,
+    });
+  };
 
   useEffect(() => {
     if (!user) return;
     const db = getDb();
     const q = query(collection(db, 'goals'), where('userId', '==', user.uid));
-    
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const goalsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Goal[];
-      setGoals(goalsData.sort((a, b) => b.progress - a.progress));
+      const sortedData = goalsData.sort((a, b) => {
+        if (a.completed !== b.completed) {
+          return a.completed ? 1 : -1;
+        }
+        const dateA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+        const dateB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+        return dateB - dateA;
+      });
+      setGoals(sortedData);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const qLinkedTasks = query(collection(db, 'tasks'), where('userId', '==', user.uid));
+    const unsubscribeTasks = onSnapshot(qLinkedTasks, (snapshot) => {
+      const tasksData = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }) as Task)
+        .filter(t => !!t.goalId);
+      setLinkedTasks(tasksData);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeTasks();
+    };
   }, [user]);
+
+  const syncQuestProgress = async (goalId: string, taskList: Task[]) => {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const tasks = taskList.filter(t => t.goalId === goalId);
+    if (tasks.length === 0) return;
+
+    const completedCount = tasks.filter(t => t.status === 'completed').length;
+    const progress = Math.round((completedCount / tasks.length) * 100);
+    const isCompleted = progress === 100;
+
+    try {
+      const db = getDb();
+      await updateDoc(doc(db, 'goals', goalId), { progress, completed: isCompleted });
+      if (isCompleted && !goal.completed) {
+        showBeautifulCompletion(goal.title, 'quest');
+      }
+    } catch (error) {
+      console.error('Failed to sync quest progress', error);
+    }
+  };
+
+  useEffect(() => {
+    const questIds = Array.from(new Set(linkedTasks.map(t => t.goalId).filter(Boolean))) as string[];
+    questIds.forEach(id => syncQuestProgress(id, linkedTasks));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTasks]);
 
   const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !user) return;
-    
+
     setIsCreating(true);
     try {
       const db = getDb();
-      let steps: any[] = [];
-      
-      if (type === 'milestone') {
+
+      const goalRef = await addDoc(collection(db, 'goals'), {
+        userId: user.uid,
+        title,
+        description,
+        type,
+        targetDate: type === 'quest' ? targetDate : null,
+        progress: 0,
+        streak: type === 'habit' ? 0 : null,
+        completed: false,
+        createdAt: serverTimestamp()
+      });
+
+      if (type === 'quest') {
         const token = await user.getIdToken();
-        const res = await fetch('/api/generate-milestone-steps', {
+        const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+        const res = await fetch('/api/generate-quest-steps', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -112,38 +234,46 @@ export function Goals() {
             title,
             description,
             targetDate,
-            model: 'gemini-2.5-flash'
+            createdDate: new Date().toISOString(),
+            model: selectedModel
           })
         });
-        
+
         if (res.ok) {
           const data = await res.json();
-          if (data.steps && Array.isArray(data.steps)) {
-            steps = data.steps.map((stepTitle: string) => ({
-              id: crypto.randomUUID(),
-              title: stepTitle,
-              completed: false
-            }));
+          const generatedTasks = Array.isArray(data.tasks) ? data.tasks : [];
+
+          if (generatedTasks.length > 0) {
+            const batch = writeBatch(db);
+            generatedTasks.forEach((t: any) => {
+              const taskRef = doc(collection(db, 'tasks'));
+              batch.set(taskRef, {
+                userId: user.uid,
+                title: t.title || 'Untitled step',
+                description: t.description || '',
+                deadline: t.deadline || (targetDate ? new Date(targetDate).toISOString() : new Date().toISOString()),
+                priority: t.priority || 'medium',
+                status: 'pending',
+                category: 'quest',
+                estimatedHours: t.estimatedHours || 1,
+                riskScore: t.riskScore ?? 30,
+                subtasks: [],
+                goalId: goalRef.id,
+                createdAt: serverTimestamp()
+              });
+            });
+            await batch.commit();
+            toast.success(`Quest created with ${generatedTasks.length} scheduled task(s)!`);
+          } else {
+            toast.error("AI couldn't generate tasks. You can add them manually from Mission Board.");
           }
         } else {
-          toast.error("Failed to generate steps with AI. Creating empty milestone.");
+          toast.error("Failed to generate tasks with AI. You can add them manually from Mission Board.");
         }
+      } else {
+        toast.success("Habit created successfully!");
       }
 
-      await addDoc(collection(db, 'goals'), {
-        userId: user.uid,
-        title,
-        description,
-        type,
-        targetDate: type === 'milestone' ? targetDate : null,
-        progress: 0,
-        streak: type === 'habit' ? 0 : null,
-        steps: type === 'milestone' ? steps : null,
-        completed: false,
-        createdAt: serverTimestamp()
-      });
-      
-      toast.success("Goal created successfully!");
       setIsDialogOpen(false);
       setTitle('');
       setDescription('');
@@ -159,116 +289,161 @@ export function Goals() {
 
   const updateProgress = async (goalId: string, increment: boolean) => {
     const goal = goals.find(g => g.id === goalId);
-    if (!goal) return;
-    
+    if (!goal || goal.type !== 'habit') return;
+
     try {
       const db = getDb();
-      let newProgress = goal.progress;
       let newStreak = goal.streak || 0;
-      let completed = goal.completed;
-      
-      if (goal.type === 'habit') {
-        if (increment) {
-          newProgress += 1;
-          newStreak += 1;
-        } else {
-          newStreak = 0;
-        }
+      let newProgress = goal.progress;
+
+      if (increment) {
+        newProgress += 1;
+        newStreak += 1;
       } else {
-        if (increment) {
-          newProgress = Math.min(newProgress + 10, 100);
-          if (newProgress === 100) completed = true;
-        } else {
-          newProgress = Math.max(newProgress - 10, 0);
-          completed = false;
-        }
+        newStreak = 0;
       }
 
       await updateDoc(doc(db, 'goals', goalId), {
         progress: newProgress,
-        streak: newStreak,
-        completed
+        streak: newStreak
       });
-      
-      toast.success("Progress updated!");
+
+      toast.success(increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
     } catch (error) {
       toast.error("Failed to update progress");
     }
   };
 
-  const deleteGoal = async (goalId: string) => {
-    if (!window.confirm("Are you sure you want to delete this goal?")) return;
+  const deleteGoal = async (goal: Goal) => {
     try {
       const db = getDb();
-      await deleteDoc(doc(db, 'goals', goalId));
-      toast.success("Goal deleted");
-    } catch (error) {
-      toast.error("Failed to delete goal");
-    }
-  };
+      
+      // 1. Fetch all linked tasks first so we have their full backup for restoration
+      let deletedTasks: any[] = [];
+      if (goal.type === 'quest' && user) {
+        const qTasks = query(
+          collection(db, 'tasks'),
+          where('userId', '==', user.uid),
+          where('goalId', '==', goal.id)
+        );
+        const taskSnapshot = await getDocs(qTasks);
+        if (!taskSnapshot.empty) {
+          deletedTasks = taskSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+      }
 
-  const toggleStep = async (goal: Goal, stepId: string) => {
-    if (!goal.steps) return;
-    const newSteps = goal.steps.map(step => 
-      step.id === stepId ? { ...step, completed: !step.completed } : step
-    );
-    
-    const completedCount = newSteps.filter(s => s.completed).length;
-    const totalCount = newSteps.length;
-    const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-    
-    try {
-      const db = getDb();
-      await updateDoc(doc(db, 'goals', goal.id), {
-        steps: newSteps,
-        progress,
-        completed: progress === 100
+      // 2. Delete the main goal document
+      await deleteDoc(doc(db, 'goals', goal.id));
+
+      // 3. Delete all linked tasks
+      if (deletedTasks.length > 0) {
+        const batch = writeBatch(db);
+        deletedTasks.forEach(t => {
+          batch.delete(doc(db, 'tasks', t.id));
+        });
+        await batch.commit();
+      }
+
+      const labelType = goal.type === 'quest' ? 'Quest' : 'Habit';
+
+      toast.success(`${labelType} deleted`, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              const batch = writeBatch(db);
+              
+              // Restore the main goal
+              batch.set(doc(db, 'goals', goal.id), goal);
+              
+              // Restore all linked tasks
+              deletedTasks.forEach(t => {
+                batch.set(doc(db, 'tasks', t.id), t);
+              });
+              
+              await batch.commit();
+              toast.success(`${labelType} restored`);
+            } catch (e) {
+              toast.error(`Failed to restore ${labelType.toLowerCase()}`);
+            }
+          }
+        },
+        duration: 5000,
       });
     } catch (error) {
-      toast.error("Failed to update step");
+      toast.error(`Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
     }
   };
 
-  const updateStepTitle = async (goal: Goal, stepId: string, newTitle: string) => {
-    if (!goal.steps) return;
-    const newSteps = goal.steps.map(step => 
-      step.id === stepId ? { ...step, title: newTitle } : step
-    );
+  const toggleLinkedTask = async (taskId: string, currentStatus: string) => {
     try {
       const db = getDb();
-      await updateDoc(doc(db, 'goals', goal.id), { steps: newSteps });
-    } catch (error) {
-      toast.error("Failed to edit step");
-    }
-  };
-
-  const addStep = async (goal: Goal, title: string) => {
-    if (!title.trim()) return;
-    const newSteps = [...(goal.steps || []), { id: crypto.randomUUID(), title, completed: false }];
-    
-    const completedCount = newSteps.filter(s => s.completed).length;
-    const totalCount = newSteps.length;
-    const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-    try {
-      const db = getDb();
-      await updateDoc(doc(db, 'goals', goal.id), { 
-        steps: newSteps,
-        progress,
-        completed: progress === 100
+      await updateDoc(doc(db, 'tasks', taskId), {
+        status: currentStatus === 'completed' ? 'pending' : 'completed'
       });
     } catch (error) {
-      toast.error("Failed to add step");
+      toast.error("Failed to update task");
     }
   };
 
-  const filteredGoals = goals.filter(g => activeTab === 'goals' ? g.type === 'milestone' : g.type === 'habit');
+  const handleStartEditTask = (taskId: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTaskId(taskId);
+    setEditingTaskText(currentTitle);
+  };
+
+  const handleSaveTaskTitle = async (taskId: string) => {
+    if (!editingTaskText.trim()) {
+      setEditingTaskId(null);
+      return;
+    }
+    try {
+      const db = getDb();
+      await updateDoc(doc(db, 'tasks', taskId), {
+        title: editingTaskText.trim()
+      });
+      toast.success("Task updated!");
+    } catch (error) {
+      toast.error("Failed to update task");
+    } finally {
+      setEditingTaskId(null);
+    }
+  };
+
+  const handleAddManualTaskToQuest = async (goalId: string, targetDate: string | null) => {
+    const title = newManualTaskTitles[goalId]?.trim();
+    if (!title || !user) return;
+
+    try {
+      const db = getDb();
+      await addDoc(collection(db, 'tasks'), {
+        userId: user.uid,
+        title,
+        description: '',
+        deadline: targetDate ? new Date(targetDate).toISOString() : new Date().toISOString(),
+        priority: 'medium',
+        status: 'pending',
+        category: 'quest',
+        estimatedHours: 2,
+        riskScore: 30,
+        subtasks: [],
+        goalId: goalId,
+        createdAt: serverTimestamp()
+      });
+      toast.success("Task added to Quest!");
+      setNewManualTaskTitles(prev => ({ ...prev, [goalId]: '' }));
+    } catch (error) {
+      toast.error("Failed to add task");
+    }
+  };
+
+  const filteredGoals = goals.filter(g => activeTab === 'goals' ? g.type === 'quest' : g.type === 'habit');
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
       <header className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Objectives</h1>
+          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Quests <br/><span className="font-semibold italic text-cyan-400">& Habits</span></h1>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger render={
@@ -285,9 +460,9 @@ export function Goals() {
                 <Label className="text-slate-400">Objective Title</Label>
                 <div className="flex gap-2">
                   <Input className="flex-1 bg-slate-800/50 border-slate-700 text-white" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Meditate daily" required />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     className="bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white px-3"
                     onClick={() => {
                       if (!('webkitSpeechRecognition' in window)) {
@@ -311,40 +486,83 @@ export function Goals() {
                 <Label className="text-slate-400">Type</Label>
                 <Select value={type} onValueChange={(val: any) => setType(val)}>
                   <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value: string) => value === 'quest' ? 'Quest' : 'Daily Habit'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-800 text-white">
                     <SelectItem value="habit">Daily Habit</SelectItem>
-                    <SelectItem value="milestone">Project Milestone</SelectItem>
+                    <SelectItem value="quest">Quest</SelectItem>
                   </SelectContent>
                 </Select>
+                {type === 'quest' && (
+                  <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1.5">
+                    <ListTree className="w-3 h-3 mt-0.5 shrink-0" />
+                    AI will break this into individually-scheduled tasks on your Mission Board.
+                  </p>
+                )}
               </div>
-              {type === 'milestone' && (
+              {type === 'quest' && (
                 <div className="space-y-2">
                   <Label className="text-slate-400">Target Date & Time</Label>
-                  <Input type="datetime-local" className="bg-slate-800/50 border-slate-700 text-white" value={targetDate} onChange={e => setTargetDate(e.target.value)} required />
+                  <Input type="datetime-local" className="bg-slate-800/50 border-slate-700 text-white [color-scheme:dark] focus-visible:ring-cyan-500/50" value={targetDate} onChange={e => setTargetDate(e.target.value)} required />
                 </div>
               )}
               <Button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold tracking-widest uppercase text-xs rounded-xl" disabled={isCreating}>
-                {isCreating ? "Creating..." : "Save Objective"}
+                {isCreating ? (type === 'quest' ? "AI is planning your quest..." : "Creating...") : "Save Objective"}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </header>
 
+      {reminders.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-1">
+            <Bell className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#8b949e]">Smart Reminders</span>
+          </div>
+          <AnimatePresence>
+            {reminders.map(r => (
+              <motion.div
+                key={r.id}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border text-sm ${
+                  r.tone === 'urgent'
+                    ? 'bg-red-500/10 border-red-500/25 text-red-200'
+                    : r.tone === 'risk'
+                    ? 'bg-orange-500/10 border-orange-500/25 text-orange-200'
+                    : 'bg-indigo-500/10 border-indigo-500/25 text-indigo-200'
+                }`}
+              >
+                <span className="leading-snug">{r.text}</span>
+                <button
+                  onClick={() => dismissReminder(r.id)}
+                  className="shrink-0 text-current opacity-60 hover:opacity-100 transition-opacity p-1"
+                  aria-label="Dismiss reminder"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
       <div className="flex gap-3 mb-2 border-b border-[#21262d] pb-4">
-        <button 
-          onClick={() => setActiveTab('goals')} 
-          className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'goals' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
+        <button
+          onClick={() => setActiveTab('goals')}
+          className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'goals' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
         >
-          Project Milestones
+          <Sparkles className="w-3.5 h-3.5" /> Quests
         </button>
-        <button 
-          onClick={() => setActiveTab('habits')} 
-          className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'habits' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
+        <button
+          onClick={() => setActiveTab('habits')}
+          className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'habits' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
         >
-          Daily Habits
+          <Flame className="w-3.5 h-3.5" /> Daily Habits
         </button>
       </div>
 
@@ -352,91 +570,250 @@ export function Goals() {
         <div className="text-center text-[#8b949e] py-12">Loading...</div>
       ) : filteredGoals.length === 0 ? (
         <div className="text-center py-24 bg-[#0d1117] rounded-3xl border border-dashed border-[#21262d]">
-          <Target className="mx-auto h-12 w-12 text-emerald-400/50 mb-4" />
-          <h3 className="text-lg font-medium text-[#f0f6fc]">No {activeTab === 'goals' ? 'milestones' : 'habits'} yet</h3>
-          <p className="text-[#8b949e]">Set a {activeTab === 'goals' ? 'milestone' : 'habit'} to start tracking progress.</p>
+          {activeTab === 'goals' ? (
+            <Sparkles className="mx-auto h-12 w-12 text-cyan-400/50 mb-4" />
+          ) : (
+            <Flame className="mx-auto h-12 w-12 text-orange-400/50 mb-4" />
+          )}
+          <h3 className="text-lg font-medium text-[#f0f6fc]">No {activeTab === 'goals' ? 'quests' : 'habits'} yet</h3>
+          <p className="text-[#8b949e]">Set a {activeTab === 'goals' ? 'quest' : 'habit'} to start tracking progress.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredGoals.map(goal => (
-            <div key={goal.id} className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 relative overflow-hidden group">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="text-lg font-medium text-[#f0f6fc]">{goal.title}</h3>
-                  <p className="text-xs text-[#8b949e] mt-1">{goal.description}</p>
-                  {goal.type === 'milestone' && goal.targetDate && (
-                    <p className="text-xs text-orange-400 mt-2 flex items-center">
-                      <Target className="w-3 h-3 mr-1" />
-                      Due: {new Date(goal.targetDate).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  {goal.type === 'habit' ? (
-                    <span className="px-2 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 text-[10px] font-bold rounded uppercase tracking-wider flex items-center">
-                      <Flame className="w-3 h-3 mr-1" />
-                      {goal.streak} Streak
+        <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          <AnimatePresence>
+          {filteredGoals.map(goal => {
+            const tasks = goal.type === 'quest' ? tasksByGoal(goal.id) : [];
+            const isGeneratingTasks = goal.type === 'quest' && tasks.length === 0 && isCreating;
+            const isExpanded = expandedGoals[goal.id] !== false; // default expanded
+            const completedTasks = tasks.filter(t => t.status === 'completed').length;
+
+            let countdownText = '';
+            let countdownColor = 'text-[#8b949e]';
+            if (goal.type === 'quest' && goal.targetDate) {
+              const hoursLeft = (new Date(goal.targetDate).getTime() - Date.now()) / 36e5;
+              countdownText = goal.completed ? 'COMPLETE' : hoursLeft < 0 ? 'OVERDUE'
+                : hoursLeft < 24 ? `${Math.floor(hoursLeft)}h left`
+                : `${Math.floor(hoursLeft / 24)}d left`;
+              countdownColor = goal.completed ? 'text-emerald-400' : hoursLeft < 0 ? 'text-red-400'
+                : hoursLeft < 24 ? 'text-orange-400'
+                : 'text-[#8b949e]';
+            }
+
+            return (
+            <motion.div
+              key={goal.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 relative overflow-hidden group card-lift flex flex-col ${goal.completed ? 'opacity-50' : ''}`}
+            >
+              {goal.type === 'quest' && goal.targetDate && (
+                <div className={`absolute top-0 left-0 w-full h-1 ${
+                  !goal.completed && new Date(goal.targetDate).getTime() < Date.now()
+                    ? 'bg-red-500'
+                    : !goal.completed && (new Date(goal.targetDate).getTime() - Date.now()) / 36e5 < 48
+                    ? 'bg-orange-500'
+                    : 'bg-cyan-500'
+                } opacity-60`}></div>
+              )}
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1 min-w-0">
+                  {goal.type === 'quest' && goal.targetDate && !goal.completed && new Date(goal.targetDate).getTime() < Date.now() && (
+                    <span className="inline-block px-2 py-0.5 mb-2 bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold rounded uppercase tracking-wider">
+                      Deadline Passed
                     </span>
-                  ) : (
-                    <span className="px-2 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[10px] font-bold rounded uppercase tracking-wider">
-                      Milestone
-                    </span>
                   )}
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400" onClick={() => deleteGoal(goal.id)}>
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                  <h3 className={`text-lg font-medium text-[#f0f6fc] leading-tight ${goal.completed ? 'line-through text-[#8b949e]' : ''}`}>{goal.title}</h3>
+                  {goal.type === 'quest' && goal.targetDate && (
+                    <p className={`text-[10px] font-mono font-bold ${countdownColor} mt-1 mb-2 uppercase tracking-wider`}>{countdownText}</p>
+                  )}
+                  <p className="text-xs text-[#8b949e] line-clamp-2">{goal.description}</p>
                 </div>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={() => deleteGoal(goal)}>
+                  <Trash2 className="w-3 h-3" />
+                </Button>
               </div>
 
-              <div className="mt-6 flex items-center gap-3">
+              <div className="flex gap-2 mb-4 flex-wrap">
                 {goal.type === 'habit' ? (
-                  <>
-                    <Button variant="outline" size="sm" className="bg-[#161b22] border-[#21262d] text-emerald-400 hover:text-white hover:bg-emerald-600" onClick={() => updateProgress(goal.id, true)}>
-                      <CheckCircle2 className="w-4 h-4 mr-2" /> Log Habit
-                    </Button>
-                    <Button variant="outline" size="sm" className="bg-[#161b22] border-[#21262d] text-red-400 hover:text-white hover:bg-red-600" onClick={() => updateProgress(goal.id, false)}>
-                       Missed
-                    </Button>
-                  </>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${(goal.streak || 0) >= 7 ? 'bg-red-500/15 text-red-400 border-red-500/25' : (goal.streak || 0) >= 3 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'}`}>
+                    <Flame className="w-3 h-3 mr-1" />
+                    {goal.streak || 0} Day Streak
+                  </span>
                 ) : (
-                  <div className="w-full space-y-4">
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center">
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    Quest
+                  </span>
+                )}
+                {goal.type === 'quest' && tasks.length > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center">
+                    <ListTree className="w-3 h-3 mr-1" />
+                    {completedTasks}/{tasks.length} Done
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-auto pt-2">
+                {goal.type === 'habit' ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[#161b22] border border-[#21262d] shrink-0">
+                        <span className={`text-xl font-black ${(goal.streak || 0) >= 7 ? 'text-red-400' : (goal.streak || 0) >= 3 ? 'text-orange-400' : 'text-[#f0f6fc]'}`}>{goal.streak || 0}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] uppercase tracking-widest font-bold text-[#8b949e] mb-1.5">Progress to next badge</p>
+                        <div className="h-1.5 bg-[#161b22] rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500" style={{ width: `${((goal.streak || 0) % 7) / 7 * 100}%` }}></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="flex-1 bg-[#161b22] border-[#21262d] text-emerald-400 hover:text-white hover:bg-emerald-600 hover:border-emerald-600 transition-colors" onClick={() => updateProgress(goal.id, true)}>
+                        <CheckCircle2 className="w-4 h-4 mr-2" /> Log Habit
+                      </Button>
+                      <Button variant="outline" size="sm" className="bg-[#161b22] border-[#21262d] text-[#8b949e] hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors" onClick={() => updateProgress(goal.id, false)}>
+                        <X className="w-4 h-4 mr-2" /> Missed
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full space-y-3">
                     <div className="flex items-center gap-4">
                       <div className="flex-1 h-2 bg-[#161b22] rounded-full overflow-hidden">
-                        <div className="h-full bg-cyan-500 transition-all duration-500" style={{ width: `${goal.progress}%` }}></div>
+                        <div className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-500" style={{ width: `${goal.progress}%` }}></div>
                       </div>
-                      <span className="text-xs font-mono text-cyan-400">{goal.progress}%</span>
+                      <span className="text-xs font-mono text-cyan-400 shrink-0">{goal.progress}%</span>
                     </div>
-                    {goal.steps && goal.steps.length > 0 && (
-                      <div className="space-y-2 mt-4">
-                        {goal.steps.map(step => (
-                          <GoalStepItem 
-                            key={step.id} 
-                            step={step} 
-                            goal={goal} 
-                            toggleStep={toggleStep} 
-                            updateStepTitle={updateStepTitle} 
-                          />
-                        ))}
+
+                    {tasks.length > 0 ? (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleGoalExpand(goal.id)}
+                          className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <ListTree className="w-3 h-3" /> Scheduled Tasks <span className="text-cyan-400 font-mono">({completedTasks}/{tasks.length})</span>
+                          </span>
+                          <span className="text-[9px] transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            ▼
+                          </span>
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeInOut" }}
+                              className="overflow-hidden space-y-2"
+                            >
+                              {tasks.map(t => {
+                                const hoursLeft = (new Date(t.deadline).getTime() - Date.now()) / 36e5;
+                                const overdue = hoursLeft < 0 && t.status !== 'completed';
+                                return (
+                                  <div
+                                    key={t.id}
+                                    onClick={() => {
+                                      if (editingTaskId !== t.id) {
+                                        toggleLinkedTask(t.id, t.status);
+                                      }
+                                    }}
+                                    className="flex items-center justify-between gap-2 group/task cursor-pointer p-2 bg-[#161b22]/50 rounded-xl border border-transparent hover:border-[#21262d] hover:bg-[#161b22] transition-colors"
+                                  >
+                                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                                      {t.status === 'completed' ? (
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                      ) : (
+                                        <Circle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${overdue ? 'text-red-400' : 'text-[#8b949e] group-hover/task:text-cyan-400'}`} />
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        {editingTaskId === t.id ? (
+                                          <input
+                                            autoFocus
+                                            type="text"
+                                            value={editingTaskText}
+                                            onChange={(e) => setEditingTaskText(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                handleSaveTaskTitle(t.id);
+                                              } else if (e.key === 'Escape') {
+                                                setEditingTaskId(null);
+                                              }
+                                            }}
+                                            onBlur={() => handleSaveTaskTitle(t.id)}
+                                            className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-[#f0f6fc]"
+                                          />
+                                        ) : (
+                                          <span className={`text-sm block truncate ${t.status === 'completed' ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                                            {t.title}
+                                          </span>
+                                        )}
+                                        <span className={`text-[10px] font-mono flex items-center gap-1 mt-0.5 ${overdue ? 'text-red-400' : 'text-slate-500'}`}>
+                                          <Clock className="w-2.5 h-2.5" />
+                                          {overdue ? 'Overdue' : new Date(t.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {editingTaskId !== t.id && t.status !== 'completed' && (
+                                      <button
+                                        onClick={(e) => handleStartEditTask(t.id, t.title, e)}
+                                        className="opacity-0 group-hover/task:opacity-100 transition-opacity text-[#8b949e] hover:text-cyan-400 p-1 rounded shrink-0"
+                                        title="Edit Task Title"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
+                    ) : (
+                      <p className="text-xs text-[#8b949e] italic flex items-center gap-1.5 mb-2">
+                        {isGeneratingTasks && <Sparkles className="w-3 h-3 text-cyan-400 animate-pulse shrink-0" />}
+                        {isGeneratingTasks ? 'AI is planning your quest...' : 'No tasks generated yet.'}
+                      </p>
                     )}
-                    <div className="flex items-center gap-2 mt-2">
-                      <Input
-                        placeholder="Add new step... (Press Enter)"
-                        className="bg-[#161b22] border-[#21262d] text-xs h-8"
-                        onKeyDown={(e: any) => {
-                          if (e.key === 'Enter' && e.target.value.trim() !== '') {
-                            addStep(goal, e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                      />
+
+                    <div className="mt-3 pt-3 border-t border-[#21262d]/50">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Add manual task to quest..."
+                          value={newManualTaskTitles[goal.id] || ''}
+                          onChange={(e) => setNewManualTaskTitles(prev => ({ ...prev, [goal.id]: e.target.value }))}
+                          onKeyDown={async (e: any) => {
+                            if (e.key === 'Enter' && e.target.value.trim() !== '') {
+                              await handleAddManualTaskToQuest(goal.id, goal.targetDate);
+                            }
+                          }}
+                          className="bg-[#161b22] border border-[#21262d] rounded-xl text-xs h-8 px-3 text-[#f0f6fc] placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 min-w-0"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleAddManualTaskToQuest(goal.id, goal.targetDate)}
+                          className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/50 text-[11px] font-bold px-3 rounded-xl shrink-0"
+                        >
+                          Add Task
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
+            </motion.div>
+            );
+          })}
+          </AnimatePresence>
+        </motion.div>
       )}
     </div>
   );
