@@ -56,7 +56,7 @@ export function Tasks() {
     if (!user) return;
     try {
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
       const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
@@ -111,7 +111,7 @@ export function Tasks() {
 
       // 1. Ask Gemini to analyze the task
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
       const res = await fetch('/api/analyze-task', {
         method: 'POST',
         headers: { 

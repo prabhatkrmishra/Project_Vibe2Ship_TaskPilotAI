@@ -34,7 +34,7 @@ export function Chat() {
   
   const [models, setModelsList] = useState<{ name: string; displayName: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+    return localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -56,7 +56,7 @@ export function Chat() {
           // If the currently saved model is not in the list, but list has items, set to default or first
           const exists = data.some((m: any) => m.name === selectedModel);
           if (!exists && data.length > 0) {
-            const defaultModel = data.find((m: any) => m.name.includes('gemini-2.0-flash'))?.name || data[0].name;
+            const defaultModel = data.find((m: any) => m.name.includes('gemini-3.5-flash'))?.name || data[0].name;
             setSelectedModel(defaultModel);
             localStorage.setItem('selected_gemini_model', defaultModel);
           }

@@ -33,7 +33,29 @@ if (fs.existsSync(configPath)) {
   console.warn('No firebase-applet-config.json found!');
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
+
+function getValidModel(modelName: string | undefined): string {
+  let model = modelName || "gemini-3.5-flash";
+  // Strip "models/" if present
+  model = model.replace(/^models\//, "");
+  // If it's a deprecated/prohibited model, map it to gemini-3.5-flash
+  if (
+    model.includes("gemini-2.0-flash") ||
+    model.includes("gemini-1.5") ||
+    model === "gemini-pro"
+  ) {
+    return "gemini-3.5-flash";
+  }
+  return model;
+}
 
 async function startServer() {
   const app = express();
@@ -95,13 +117,19 @@ async function startServer() {
           name: m.name || m.model || "",
           displayName: m.displayName || m.name?.split('/').pop() || m.name || ""
         }))
-        .filter((m: any) => m.name && m.name.toLowerCase().includes("gemini") && !m.name.toLowerCase().includes("embed"));
+        .filter((m: any) => {
+          const name = (m.name || "").toLowerCase();
+          return name.includes("gemini") && 
+                 !name.includes("embed") &&
+                 !name.includes("gemini-2.0-flash") &&
+                 !name.includes("gemini-1.5") &&
+                 !name.includes("gemini-pro");
+        });
 
       // If list is empty or doesn't have the key models, merge or use curated fallback
       if (formattedList.length === 0) {
         formattedList = [
-          { name: "models/gemini-2.0-flash", displayName: "Gemini 2.0 Flash (Default)" },
-          { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Fast)" },
+          { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Default)" },
           { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
           { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
         ];
@@ -111,8 +139,7 @@ async function startServer() {
     } catch (err: any) {
       console.error("Error listing models:", err);
       res.json([
-        { name: "models/gemini-2.0-flash", displayName: "Gemini 2.0 Flash (Default)" },
-        { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Fast)" },
+        { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Default)" },
         { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
         { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
       ]);
@@ -274,7 +301,7 @@ async function startServer() {
   app.post("/api/analyze-task", verifyToken, async (req: any, res: any) => {
     try {
       const { title, description, deadline, model } = req.body;
-      const selectedModel = model || "gemini-2.0-flash";
+      const selectedModel = getValidModel(model);
       const prompt = `
         You are an intelligent productivity assistant. Analyze the following task.
         Task: ${title}
@@ -317,7 +344,7 @@ async function startServer() {
   app.post("/api/generate-plan", verifyToken, async (req: any, res: any) => {
     try {
       const { tasks, date, model } = req.body;
-      const selectedModel = model || "gemini-2.0-flash";
+      const selectedModel = getValidModel(model);
       const prompt = `
         You are an autonomous AI planning assistant. 
         Generate an optimized daily schedule for this date: ${date}.
@@ -363,7 +390,7 @@ async function startServer() {
   app.post("/api/chat", verifyToken, async (req: any, res: any) => {
     try {
       const { messages, context, model } = req.body;
-      const selectedModel = model || "gemini-2.0-flash";
+      const selectedModel = getValidModel(model);
       const prompt = `
         You are TaskPilot AI, an intelligent productivity executive assistant.
         The user is asking you for help.
@@ -395,7 +422,7 @@ async function startServer() {
   app.post("/api/autonomous-pipeline", verifyToken, async (req: any, res: any) => {
     try {
       const { eventName, eventDetail, tasks, model } = req.body;
-      const selectedModel = model || "gemini-2.0-flash";
+      const selectedModel = getValidModel(model);
       const userId = req.uid;
       if (!firestoreDb) {
         console.warn("Firestore not initialized on server. Fallback to client-side database saves.");

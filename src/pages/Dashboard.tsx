@@ -99,7 +99,7 @@ export function Dashboard() {
     setIsGenerating(true);
     try {
       const token = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
       const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
@@ -328,7 +328,7 @@ export function Dashboard() {
                   const events = await fetchCalendarEvents(token, startOfDay, endOfDay);
                   
                   const idToken = await user?.getIdToken();
-                  const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-2.0-flash';
+                  const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
                   const res = await fetch('/api/autonomous-pipeline', {
                     method: 'POST',
                     headers: { 
