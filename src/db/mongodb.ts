@@ -29,6 +29,7 @@ const UserSchema = new mongoose.Schema({
   // re-prompting the user every hour. In a real production deployment this
   // should be encrypted at rest (e.g. via KMS) rather than stored as plain text.
   googleRefreshToken: { type: String },
+  address: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 

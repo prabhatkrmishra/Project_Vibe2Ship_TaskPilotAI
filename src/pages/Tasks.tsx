@@ -51,22 +51,47 @@ export function Tasks() {
       const token = await user.getIdToken();
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      // Fetch tasks
-      const resTasks = await fetch('/api/tasks', { headers });
-      if (resTasks.ok) {
-        const tasksData = await resTasks.json() as Task[];
-        setTasks(tasksData.sort((a, b) => {
-          if (!a.deadline) return 1;
-          if (!b.deadline) return -1;
-          return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-        }));
+      // Fetch both simultaneously for optimal performance
+      const [resTasks, resGoals] = await Promise.all([
+        fetch('/api/tasks', { headers }),
+        fetch('/api/goals', { headers })
+      ]);
+
+      let goalsData: Goal[] = [];
+      if (resGoals.ok) {
+        goalsData = await resGoals.json() as Goal[];
+        setGoals(goalsData);
       }
 
-      // Fetch goals
-      const resGoals = await fetch('/api/goals', { headers });
-      if (resGoals.ok) {
-        const goalsData = await resGoals.json() as Goal[];
-        setGoals(goalsData);
+      if (resTasks.ok) {
+        const tasksData = await resTasks.json() as Task[];
+        
+        // Sort tasks globally based on parent quest's creation date (oldest quest first)
+        const sorted = tasksData.sort((a, b) => {
+          const questA = a.goalId ? goalsData.find(g => g.id === a.goalId && g.type === 'quest') : null;
+          const questB = b.goalId ? goalsData.find(g => g.id === b.goalId && g.type === 'quest') : null;
+
+          // If task belongs to a quest, get quest's creation date. Otherwise, push to the end (Infinity)
+          const timeA = questA?.createdAt ? new Date(questA.createdAt).getTime() : Infinity;
+          const timeB = questB?.createdAt ? new Date(questB.createdAt).getTime() : Infinity;
+
+          if (timeA !== timeB) {
+            return timeA - timeB; // ascending: oldest quest first
+          }
+
+          // Fallback to task's own deadline or creation date
+          const deadlineA = a.deadline ? new Date(a.deadline).getTime() : 0;
+          const deadlineB = b.deadline ? new Date(b.deadline).getTime() : 0;
+          if (deadlineA !== deadlineB) {
+            return deadlineA - deadlineB;
+          }
+
+          const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return createdAtA - createdAtB;
+        });
+
+        setTasks(sorted);
       }
     } catch (err) {
       console.error("Failed to load tasks and goals:", err);

@@ -80,9 +80,9 @@ async function startServer() {
 
   // --- MongoDB Authentication Endpoints ---
 
-  app.post("/api/auth/register", async (req, res) => {
+  app.post(["/register/user", "/api/register/user", "/api/auth/register"], async (req, res) => {
     try {
-      const { email, password, name } = req.body;
+      const { email, password, name, address } = req.body;
       if (!email || !password || !name) {
         return res.status(400).json({ error: "Please provide email, password, and name" });
       }
@@ -96,6 +96,7 @@ async function startServer() {
         email: email.toLowerCase(),
         password: hashedPassword,
         name,
+        address: address || "",
         picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
       });
       const token = jwt.sign({ uid: newUser._id.toString(), email: newUser.email }, JWT_SECRET, { expiresIn: '30d' });
@@ -105,7 +106,8 @@ async function startServer() {
           uid: newUser._id.toString(),
           email: newUser.email,
           name: newUser.name,
-          picture: newUser.picture
+          picture: newUser.picture,
+          address: newUser.address
         }
       });
     } catch (error: any) {
@@ -139,7 +141,8 @@ async function startServer() {
           uid: user._id.toString(),
           email: user.email,
           name: user.name,
-          picture: user.picture
+          picture: user.picture,
+          address: user.address || ""
         }
       });
     } catch (error: any) {
@@ -158,7 +161,8 @@ async function startServer() {
           email: "guest@taskpilot.ai",
           password: hashedPassword,
           name: "Guest Pilot",
-          picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest"
+          picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
+          address: "123 Pilot Way, AI Station"
         });
       }
       const token = jwt.sign({ uid: guest._id.toString(), email: guest.email }, JWT_SECRET, { expiresIn: '30d' });
@@ -168,7 +172,8 @@ async function startServer() {
           uid: guest._id.toString(),
           email: guest.email,
           name: guest.name,
-          picture: guest.picture
+          picture: guest.picture,
+          address: guest.address || ""
         }
       });
     } catch (error: any) {
@@ -186,9 +191,66 @@ async function startServer() {
         uid: user._id.toString(),
         email: user.email,
         name: user.name,
-        picture: user.picture
+        picture: user.picture,
+        address: user.address || ""
       });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/auth/profile", verifyToken, async (req: any, res: any) => {
+    try {
+      const { name, address } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      
+      user.name = name;
+      user.address = address || "";
+      await user.save();
+      
+      res.json({
+        uid: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        address: user.address
+      });
+    } catch (error: any) {
+      console.error("Update profile error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/change-password", verifyToken, async (req: any, res: any) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Please provide current password and new password" });
+      }
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      
+      if (user.authProvider === 'google') {
+        return res.status(400).json({ error: "Google accounts do not have a local password to change." });
+      }
+      
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ error: "Incorrect current password" });
+      }
+      
+      user.password = await bcrypt.hash(newPassword, 10);
+      await user.save();
+      
+      res.json({ message: "Password updated successfully" });
+    } catch (error: any) {
+      console.error("Change password error:", error);
       res.status(500).json({ error: error.message });
     }
   });

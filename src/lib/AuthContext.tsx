@@ -7,6 +7,7 @@ export interface CustomUser {
   name: string;
   displayName?: string;
   picture?: string;
+  address?: string;
   getIdToken: () => Promise<string>;
 }
 
@@ -20,12 +21,18 @@ interface AuthContextType {
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
   requestWorkspaceAccess: () => Promise<string | null>;
+  updateUser: (updatedUser: { name: string; address: string }) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 // Cache the workspace access token in memory and local storage.
-let cachedAccessToken: string | null = localStorage.getItem('workspace_access_token');
+let cachedAccessToken: string | null = null;
+try {
+  cachedAccessToken = localStorage.getItem('workspace_access_token');
+} catch (e) {
+  console.warn('localStorage is not accessible');
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<CustomUser | null>(null);
@@ -39,6 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       name: userData.name,
       displayName: userData.name,
       picture: userData.picture,
+      address: userData.address,
       getIdToken: async () => token
     };
   };
@@ -192,8 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(makeUserObject(data.user, data.token));
       toast.success("Successfully logged in!");
     } catch (error: any) {
-      toast.error(error.message || "Failed to log in.");
-      console.error("Login failed:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -202,7 +209,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const register = async (email: string, password: string, name: string) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('/register/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name })
@@ -217,8 +224,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(makeUserObject(data.user, data.token));
       toast.success("Account created successfully!");
     } catch (error: any) {
-      toast.error(error.message || "Failed to create account.");
-      console.error("Registration failed:", error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -242,7 +248,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       toast.success("Welcome! Logged in as Guest.");
     } catch (error: any) {
       toast.error(error.message || "Failed to sign in as guest.");
-      console.error("Guest login failed:", error);
     } finally {
       setLoading(false);
     }
@@ -271,8 +276,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const getAccessToken = () => cachedAccessToken;
 
+  const updateUser = (updatedUser: { name: string; address: string }) => {
+    if (user) {
+      setUser({ ...user, name: updatedUser.name, displayName: updatedUser.name, address: updatedUser.address });
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

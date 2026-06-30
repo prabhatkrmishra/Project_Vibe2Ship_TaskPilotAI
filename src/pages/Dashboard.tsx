@@ -31,35 +31,60 @@ export function Dashboard() {
       const token = await user.getIdToken();
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      // Fetch Tasks
-      const resTasks = await fetch('/api/tasks', { headers });
-      if (resTasks.ok) {
-        const allTasksData = await resTasks.json() as Task[];
-        setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress'));
-        setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
+      // Fetch all dashboard data simultaneously for optimal performance
+      const [resTasks, resGoals, resDecisions, resPlan] = await Promise.all([
+        fetch('/api/tasks', { headers }),
+        fetch('/api/goals', { headers }),
+        fetch('/api/ai-decisions', { headers }),
+        fetch(`/api/plans/${today}`, { headers })
+      ]);
+
+      let goalsData: Goal[] = [];
+      if (resGoals.ok) {
+        goalsData = await resGoals.json() as Goal[];
+        setGoals(goalsData);
       }
 
-      // Fetch Decisions
-      const resDecisions = await fetch('/api/ai-decisions', { headers });
       if (resDecisions.ok) {
         const decisionsData = await resDecisions.json();
         setDecisions(decisionsData.slice(0, 3));
       }
 
-      // Fetch Goals
-      const resGoals = await fetch('/api/goals', { headers });
-      if (resGoals.ok) {
-        const goalsData = await resGoals.json() as Goal[];
-        setGoals(goalsData);
-      }
-
-      // Fetch Today's Daily Plan
-      const resPlan = await fetch(`/api/plans/${today}`, { headers });
       if (resPlan.ok) {
         const planData = await resPlan.json();
         setPlan(planData);
       } else {
         setPlan(null);
+      }
+
+      if (resTasks.ok) {
+        const allTasksData = await resTasks.json() as Task[];
+        
+        // Sort tasks globally based on parent quest's creation date (oldest quest first)
+        const sorted = allTasksData.sort((a, b) => {
+          const questA = a.goalId ? goalsData.find(g => g.id === a.goalId && g.type === 'quest') : null;
+          const questB = b.goalId ? goalsData.find(g => g.id === b.goalId && g.type === 'quest') : null;
+
+          const timeA = questA?.createdAt ? new Date(questA.createdAt).getTime() : Infinity;
+          const timeB = questB?.createdAt ? new Date(questB.createdAt).getTime() : Infinity;
+
+          if (timeA !== timeB) {
+            return timeA - timeB; // ascending: oldest quest first
+          }
+
+          const deadlineA = a.deadline ? new Date(a.deadline).getTime() : 0;
+          const deadlineB = b.deadline ? new Date(b.deadline).getTime() : 0;
+          if (deadlineA !== deadlineB) {
+            return deadlineA - deadlineB;
+          }
+
+          const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return createdAtA - createdAtB;
+        });
+
+        setTasks(sorted.filter(t => t.status === 'pending' || t.status === 'in_progress'));
+        setCompletedTasks(sorted.filter(t => t.status === 'completed'));
       }
     } catch (err) {
       console.error("Error loading dashboard data:", err);

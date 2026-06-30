@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil } from 'lucide-react';
+import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function Goals() {
@@ -491,6 +491,92 @@ export function Goals() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
+      <AnimatePresence>
+        {isCreating && type === 'quest' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950/75 backdrop-blur-md px-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", damping: 20 }}
+              className="relative flex flex-col items-center text-center p-8 rounded-3xl bg-[#0d1117]/90 border border-cyan-500/30 shadow-[0_0_50px_rgba(34,211,238,0.2)] max-w-sm w-full"
+            >
+              {/* Pulsing & Rotating futuristic radar core with elegant flying plane */}
+              <div className="relative w-32 h-32 mb-6">
+                {/* Glowing outer orbit */}
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 6, ease: "linear" }}
+                  className="absolute inset-0 rounded-full border-2 border-dashed border-cyan-400/20 flex items-center justify-center"
+                >
+                  {/* The running plane gliding along the orbit */}
+                  <div className="absolute top-0 -mt-2.5">
+                    <motion.div
+                      animate={{ 
+                        y: [-2, 2, -2],
+                        rotate: [0, 5, -5, 0]
+                      }}
+                      transition={{ 
+                        repeat: Infinity, 
+                        duration: 1.5, 
+                        ease: "easeInOut" 
+                      }}
+                    >
+                      <Plane className="w-5 h-5 text-cyan-400 transform rotate-45 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                    </motion.div>
+                  </div>
+                </motion.div>
+
+                {/* Inner counter-rotating ring */}
+                <motion.div
+                  animate={{ rotate: -360 }}
+                  transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                  className="absolute inset-4 rounded-full border border-indigo-500/30 border-t-indigo-400/80 border-b-cyan-400/80"
+                />
+
+                {/* Center glowing core */}
+                <div className="absolute inset-8 rounded-full bg-gradient-to-tr from-cyan-950/80 to-indigo-950/80 flex items-center justify-center border border-cyan-500/30 shadow-[inset_0_0_15px_rgba(34,211,238,0.2)]">
+                  <motion.div
+                    animate={{ 
+                      scale: [1, 1.15, 1],
+                      filter: ["drop-shadow(0 0 4px rgba(34,211,238,0.3))", "drop-shadow(0 0 12px rgba(34,211,238,0.6))", "drop-shadow(0 0 4px rgba(34,211,238,0.3))"]
+                    }}
+                    transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+                  >
+                    <Sparkles className="w-8 h-8 text-cyan-400" />
+                  </motion.div>
+                </div>
+              </div>
+
+              {/* Text */}
+              <h3 className="text-xl font-bold text-white tracking-wide uppercase mb-2">
+                Quest Planner <span className="text-cyan-400 italic font-light">Active</span>
+              </h3>
+              <p className="text-sm text-slate-300 mb-5 px-2 leading-relaxed">
+                TaskPilot AI is designing your quest trajectory, distributing deadlines, and evaluating risk structures...
+              </p>
+
+              {/* Pulsing state badge */}
+              <div className="flex items-center gap-1 bg-cyan-500/10 border border-cyan-500/20 px-3.5 py-1.5 rounded-full">
+                <span className="text-[11px] font-mono font-bold text-cyan-400 uppercase tracking-widest">
+                  Formulating Steps
+                </span>
+                <span className="flex gap-0.5 ml-1">
+                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <header className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Quests <br/><span className="font-semibold italic text-cyan-400">& Habits</span></h1>

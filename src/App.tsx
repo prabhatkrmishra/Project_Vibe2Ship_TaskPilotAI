@@ -12,6 +12,7 @@ import { Goals } from './pages/Goals';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
 import { Home } from './pages/Home';
+import { Profile } from './pages/Profile';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './components/ui/sonner';
 
@@ -54,21 +55,38 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
         </Link>
       </nav>
       <div className="p-4 border-t border-[#21262d]">
-        <div className="flex items-center justify-between mb-4 px-2">
-          <div className="flex items-center gap-3">
-            {user?.picture || user?.photoURL ? (
-              <img src={user?.picture || user?.photoURL} alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-cyan-500/30 object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-medium ring-2 ring-cyan-500/30">
-                {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
-              </div>
-            )}
-            <div className="flex-1 overflow-hidden text-sm truncate text-slate-400">
-              {user?.name || user?.email}
+        <Link 
+          to="/profile" 
+          onClick={onClose}
+          className={`flex items-center gap-4 w-full p-4 mb-4 rounded-2xl transition-all border duration-200 ${
+            location.pathname === '/profile'
+              ? 'bg-indigo-500/15 border-indigo-500/40 shadow-lg shadow-indigo-500/10 text-slate-200'
+              : 'bg-[#161b22] border-[#21262d] hover:bg-[#21262d] hover:border-slate-600 text-slate-300'
+          }`}
+        >
+          {user?.picture ? (
+            <img 
+              src={user?.picture} 
+              alt="Profile" 
+              className="w-12 h-12 rounded-xl ring-2 ring-indigo-500/30 object-cover shrink-0 shadow-md" 
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-slate-200 font-bold ring-2 ring-indigo-500/30 shrink-0 text-base shadow-md">
+              {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
             </div>
+          )}
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold text-[#f0f6fc] truncate leading-none">
+              {user?.name || 'User'}
+            </p>
+            <p className="text-xs text-slate-400 truncate mt-1.5 font-mono">
+              {user?.email}
+            </p>
           </div>
-          <div className="w-2 h-2 rounded-full bg-cyan-400"></div>
-        </div>
+          <div className="text-[10px] shrink-0 font-extrabold uppercase tracking-wider text-indigo-400 bg-indigo-500/15 px-2.5 py-1 rounded-lg border border-indigo-500/30">
+            View
+          </div>
+        </Link>
         <div className="flex justify-center gap-3 text-[11px] text-slate-500 mb-4">
           <Link to="/privacy" onClick={onClose} className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
           <span>•</span>
@@ -99,14 +117,32 @@ function Layout({ children }: { children: React.ReactNode }) {
             TaskPilot <span className="text-indigo-400">AI</span>
           </span>
         </div>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setIsSidebarOpen(true)} 
-          className="text-slate-400 hover:text-white cursor-pointer focus:outline-none"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        <div className="flex items-center gap-3">
+          <Link 
+            to="/profile" 
+            className="flex items-center justify-center p-1 rounded-xl bg-[#161b22] border border-[#21262d] hover:border-slate-700 transition-all shrink-0"
+          >
+            {user?.picture ? (
+              <img 
+                src={user?.picture} 
+                alt="Profile" 
+                className="w-8 h-8 rounded-lg ring-2 ring-indigo-500/10 object-cover shrink-0" 
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-200 font-semibold ring-2 ring-indigo-500/10 shrink-0 text-xs">
+                {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+              </div>
+            )}
+          </Link>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setIsSidebarOpen(true)} 
+            className="text-slate-400 hover:text-white cursor-pointer focus:outline-none"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
 
       {/* Desktop Sidebar (hidden on mobile, visible on lg+) */}
@@ -149,29 +185,184 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function Login() {
-  const { loginWithGoogle, user, loading } = useAuth();
+  const { loginWithGoogle, login, register, user, loading } = useAuth();
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [retypePassword, setRetypePassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (user) return <Navigate to="/dashboard" replace />;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!email || !password || (isRegister && (!name || !retypePassword))) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (isRegister && password !== retypePassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      if (isRegister) {
+        await register(email, password, name);
+      } else {
+        await login(email, password);
+      }
+    } catch (err: any) {
+      const errorMsg = err.message || "An error occurred.";
+      setError(errorMsg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   
   return (
-    <div className="login-bg flex h-screen items-center justify-center text-slate-200">
-      <div className="w-full max-w-md p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl shadow-2xl text-center space-y-6">
-        <div className="mx-auto w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(99,102,241,0.4)] animate-in zoom-in duration-500">
-          <LayoutDashboard className="h-8 w-8 text-white" />
-        </div>
-        <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">TaskPilot <br/><span className="font-semibold italic text-indigo-400">AI</span></h1>
-        <p className="text-[#8b949e]">Your autonomous productivity companion.</p>
-        
-        <div className="flex flex-wrap gap-2 justify-center py-4">
-          <span className="px-3 py-1 rounded-full bg-[#161b22] border border-[#21262d] text-xs text-indigo-300 font-medium tracking-wide">⚡ AI Task Analysis</span>
-          <span className="px-3 py-1 rounded-full bg-[#161b22] border border-[#21262d] text-xs text-cyan-300 font-medium tracking-wide">📅 Auto-Scheduling</span>
-          <span className="px-3 py-1 rounded-full bg-[#161b22] border border-[#21262d] text-xs text-emerald-300 font-medium tracking-wide">🎯 Risk Scoring</span>
+    <div className="login-bg flex min-h-screen items-center justify-center text-slate-200 py-10 px-4">
+      <div className="w-full max-w-md p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl shadow-2xl space-y-6">
+        <div className="text-center space-y-2">
+          <div className="mx-auto w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.3)] animate-in zoom-in duration-500">
+            <LayoutDashboard className="h-7 w-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-semibold text-[#f0f6fc] tracking-tight leading-snug">
+            {isRegister ? "Create your account" : "Welcome back to TaskPilot"}
+          </h1>
+          <p className="text-slate-400 text-xs">
+            {isRegister ? "Join the autonomous productivity space" : "Sign in to resume control of your dashboard"}
+          </p>
         </div>
 
-        <Button onClick={loginWithGoogle} className="w-full h-12 text-sm uppercase tracking-widest font-bold bg-white text-indigo-900 rounded-2xl hover:bg-indigo-50 transition-colors shadow-xl card-lift">
-          Continue with Google
-        </Button>
+        {/* Feature Tags (compact, only on login mode to save vertical space) */}
+        {!isRegister && (
+          <div className="flex flex-wrap gap-1.5 justify-center py-1">
+            <span className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#21262d] text-[10px] text-indigo-300 font-medium font-mono">⚡ AI Tasks</span>
+            <span className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#21262d] text-[10px] text-cyan-300 font-medium font-mono">📅 Workspace Sync</span>
+            <span className="px-2 py-0.5 rounded-full bg-[#161b22] border border-[#21262d] text-[10px] text-emerald-300 font-medium font-mono">🎯 Risk Scoring</span>
+          </div>
+        )}
+
+        {/* Form Container */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isRegister && (
+            <div className="space-y-1 text-left">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Full Name</label>
+              <input 
+                type="text" 
+                value={name}
+                onChange={(e) => { setName(e.target.value); setError(null); }}
+                placeholder="John Doe"
+                required
+                className="w-full px-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+              />
+            </div>
+          )}
+
+          <div className="space-y-1 text-left">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Email Address</label>
+            <input 
+              type="email" 
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(null); }}
+              placeholder="pilot@workspace.com"
+              required
+              className="w-full px-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+            />
+          </div>
+
+          <div className="space-y-1 text-left">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(null); }}
+              placeholder="••••••••"
+              required
+              className="w-full px-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+            />
+          </div>
+
+          {isRegister && (
+            <div className="space-y-1 text-left">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Confirm Password</label>
+              <input 
+                type="password" 
+                value={retypePassword}
+                onChange={(e) => { setRetypePassword(e.target.value); setError(null); }}
+                placeholder="••••••••"
+                required
+                className="w-full px-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+              />
+            </div>
+          )}
+
+          <Button 
+            type="submit" 
+            disabled={submitting}
+            className="w-full h-11 text-xs uppercase tracking-widest font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20"
+          >
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+            ) : (
+              isRegister ? "Create Account" : "Sign In with Email"
+            )}
+          </Button>
+
+          {/* Light Red Error Message Container */}
+          {error && (
+            <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-4 py-2.5 rounded-xl text-center font-medium animate-in fade-in slide-in-from-top-1 duration-200">
+              {error}
+            </div>
+          )}
+        </form>
+
+        {/* Divider & Google Login option (only on login mode) */}
+        {!isRegister && (
+          <div className="space-y-4">
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-[#21262d]"></div>
+              <span className="flex-shrink mx-3 text-[10px] text-slate-500 font-mono uppercase tracking-widest">or</span>
+              <div className="flex-grow border-t border-[#21262d]"></div>
+            </div>
+
+            <Button 
+              type="button"
+              onClick={loginWithGoogle} 
+              className="w-full h-11 text-xs uppercase tracking-widest font-bold bg-white text-indigo-900 rounded-xl hover:bg-indigo-50 transition-colors shadow-xl card-lift flex items-center justify-center gap-2"
+            >
+              Continue with Google
+            </Button>
+          </div>
+        )}
+
+        {/* Dynamic Mode Switcher */}
+        <div className="text-center pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsRegister(!isRegister);
+              // Clear state & errors
+              setEmail('');
+              setPassword('');
+              setName('');
+              setRetypePassword('');
+              setError(null);
+            }}
+            className="text-[13px] md:text-sm text-indigo-400 hover:text-indigo-300 transition-colors hover:underline cursor-pointer font-medium focus:outline-none"
+          >
+            {isRegister 
+              ? "Already have an account? Sign In" 
+              : "Don't have an account? Register as new user"}
+          </button>
+        </div>
 
         <div className="flex justify-center gap-4 text-xs text-slate-500 pt-4 border-t border-[#21262d]">
           <Link to="/privacy" className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
@@ -197,6 +388,13 @@ export default function App() {
               <ProtectedRoute>
                 <Layout>
                   <Dashboard />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Profile />
                 </Layout>
               </ProtectedRoute>
             } />
