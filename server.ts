@@ -26,12 +26,27 @@ if (fs.existsSync(configPath)) {
     } else {
       firestoreDb = getFirestore();
     }
-    console.log("Firebase Admin initialized");
+    console.log("Firebase Admin initialized from file");
   } catch (err) {
-    console.error("Error initializing Firebase Admin", err);
+    console.error("Error initializing Firebase Admin from file", err);
+  }
+} else if (process.env.FIREBASE_PROJECT_ID) {
+  try {
+    admin.initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    });
+    const dbId = process.env.FIREBASE_DATABASE_ID;
+    if (dbId && dbId !== '(default)') {
+      firestoreDb = getFirestore(dbId);
+    } else {
+      firestoreDb = getFirestore();
+    }
+    console.log("Firebase Admin initialized from env vars");
+  } catch (err) {
+    console.error("Error initializing Firebase Admin from env vars", err);
   }
 } else {
-  console.warn('No firebase-applet-config.json found!');
+  console.warn('No firebase-applet-config.json found and FIREBASE_PROJECT_ID is missing!');
 }
 
 const ai = new GoogleGenAI({
@@ -94,6 +109,16 @@ async function startServer() {
         appId: config.appId,
         measurementId: config.measurementId,
         databaseId: config.firestoreDatabaseId || '(default)'
+      });
+    } else if (process.env.FIREBASE_API_KEY) {
+      res.json({
+        apiKey: process.env.FIREBASE_API_KEY,
+        authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+        appId: process.env.FIREBASE_APP_ID,
+        databaseId: process.env.FIREBASE_DATABASE_ID || '(default)'
       });
     } else {
       res.status(404).json({ error: "Config not found" });
