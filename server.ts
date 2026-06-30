@@ -4,50 +4,22 @@ dotenv.config();
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import * as admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import * as fs from 'fs';
+import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
 import { google } from "googleapis";
+import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc } from "./src/db/mongodb";
 
-// Initialize Firebase Admin
-const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-let firestoreDb: any = null;
-if (fs.existsSync(configPath)) {
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    admin.initializeApp({
-      projectId: config.projectId,
-    });
-    const dbId = config.firestoreDatabaseId;
-    if (dbId && dbId !== '(default)') {
-      firestoreDb = getFirestore(dbId);
-    } else {
-      firestoreDb = getFirestore();
-    }
-    console.log("Firebase Admin initialized from file");
-  } catch (err) {
-    console.error("Error initializing Firebase Admin from file", err);
-  }
-} else if (process.env.FIREBASE_PROJECT_ID) {
-  try {
-    admin.initializeApp({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-    });
-    const dbId = process.env.FIREBASE_DATABASE_ID;
-    if (dbId && dbId !== '(default)') {
-      firestoreDb = getFirestore(dbId);
-    } else {
-      firestoreDb = getFirestore();
-    }
-    console.log("Firebase Admin initialized from env vars");
-  } catch (err) {
-    console.error("Error initializing Firebase Admin from env vars", err);
-  }
-} else {
-  console.warn('No firebase-applet-config.json found and FIREBASE_PROJECT_ID is missing!');
-}
+const User = UserSrc as any;
+const Goal = GoalSrc as any;
+const Task = TaskSrc as any;
+const ChatMessage = ChatMessageSrc as any;
+const AIDecision = AIDecisionSrc as any;
+const DailyPlanModel = DailyPlanModelSrc as any;
+
+const JWT_SECRET = process.env.JWT_SECRET || "super-secret-taskpilot-key-2026";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -75,17 +47,26 @@ function getValidModel(modelName: string | undefined): string {
 
 async function startServer() {
   const app = express();
+  // Cloud Run terminates TLS at its load balancer and forwards plain HTTP
+  // internally, setting X-Forwarded-Proto. Without this, req.protocol would
+  // always report "http", breaking the origin allowlist check below.
+  app.set('trust proxy', true);
   const PORT = 3000;
 
   app.use(express.json());
 
   // --- API Routes ---
   
+  // Connect to MongoDB on server start (non-blocking to prevent server startup timeouts)
+  connectDB().catch(err => {
+    console.error("Failed to connect to MongoDB on startup:", err);
+  });
+
   const verifyToken = async (req: any, res: any, next: any) => {
     const token = req.headers.authorization?.split('Bearer ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
-      const decoded = await getAuth().verifyIdToken(token);
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
       req.uid = decoded.uid;
       next();
     } catch {
@@ -97,31 +78,358 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  app.get("/api/firebase-config", (req, res) => {
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      res.json({
-        apiKey: config.apiKey,
-        authDomain: config.authDomain,
-        projectId: config.projectId,
-        storageBucket: config.storageBucket,
-        messagingSenderId: config.messagingSenderId,
-        appId: config.appId,
-        measurementId: config.measurementId,
-        databaseId: config.firestoreDatabaseId || '(default)'
+  // --- MongoDB Authentication Endpoints ---
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, name } = req.body;
+      if (!email || !password || !name) {
+        return res.status(400).json({ error: "Please provide email, password, and name" });
+      }
+      await connectDB();
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists with this email" });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = await User.create({
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        name,
+        picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
       });
-    } else if (process.env.FIREBASE_API_KEY) {
+      const token = jwt.sign({ uid: newUser._id.toString(), email: newUser.email }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
-        apiKey: process.env.FIREBASE_API_KEY,
-        authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-        messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-        appId: process.env.FIREBASE_APP_ID,
-        databaseId: process.env.FIREBASE_DATABASE_ID || '(default)'
+        token,
+        user: {
+          uid: newUser._id.toString(),
+          email: newUser.email,
+          name: newUser.name,
+          picture: newUser.picture
+        }
       });
-    } else {
-      res.status(404).json({ error: "Config not found" });
+    } catch (error: any) {
+      console.error("Register error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Please provide email and password" });
+      }
+      await connectDB();
+      const user = await User.findOne({ email: email.toLowerCase() });
+      if (!user || !user.password) {
+        // Same generic error whether the account doesn't exist or is a
+        // Google-only account with no password set, so we don't leak
+        // which case it is.
+        return res.status(400).json({ error: "Invalid email or password" });
+      }
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ error: "Invalid email or password" });
+      }
+      const token = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({
+        token,
+        user: {
+          uid: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          picture: user.picture
+        }
+      });
+    } catch (error: any) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/guest", async (req, res) => {
+    try {
+      await connectDB();
+      let guest = await User.findOne({ email: "guest@taskpilot.ai" });
+      if (!guest) {
+        const hashedPassword = await bcrypt.hash("guest_password_123", 10);
+        guest = await User.create({
+          email: "guest@taskpilot.ai",
+          password: hashedPassword,
+          name: "Guest Pilot",
+          picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest"
+        });
+      }
+      const token = jwt.sign({ uid: guest._id.toString(), email: guest.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({
+        token,
+        user: {
+          uid: guest._id.toString(),
+          email: guest.email,
+          name: guest.name,
+          picture: guest.picture
+        }
+      });
+    } catch (error: any) {
+      console.error("Guest error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/auth/me", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json({
+        uid: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        picture: user.picture
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- MongoDB Data Endpoints ---
+
+  app.get("/api/plans/:date", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const plan = await DailyPlanModel.findOne({ userId: req.uid, date: req.params.date });
+      if (!plan) return res.status(404).json({ error: "No plan found for this date" });
+      const obj = plan.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/plans/:date", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { sessions } = req.body;
+      const plan = await DailyPlanModel.findOneAndUpdate(
+        { userId: req.uid, date: req.params.date },
+        { $set: { sessions, updatedAt: new Date() } },
+        { upsert: true, new: true }
+      );
+      const obj = plan.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/tasks", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const tasks = await Task.find({ userId: req.uid }).sort({ createdAt: -1 });
+      const formattedTasks = tasks.map(t => {
+        const obj = t.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json(formattedTasks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/tasks", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const taskData = { ...req.body, userId: req.uid };
+      delete taskData.id;
+      delete taskData._id;
+      const newTask = await Task.create(taskData);
+      const obj = newTask.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/tasks/:id", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const updatedTask = await Task.findOneAndUpdate(
+        { _id: req.params.id, userId: req.uid },
+        { $set: req.body },
+        { new: true }
+      );
+      if (!updatedTask) return res.status(404).json({ error: "Task not found" });
+      const obj = updatedTask.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/tasks/:id", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const deleted = await Task.findOneAndDelete({ _id: req.params.id, userId: req.uid });
+      if (!deleted) return res.status(404).json({ error: "Task not found" });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/goals", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const goals = await Goal.find({ userId: req.uid }).sort({ createdAt: -1 });
+      const formattedGoals = goals.map(g => {
+        const obj = g.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json(formattedGoals);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/goals", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const goalData = { ...req.body, userId: req.uid };
+      delete goalData.id;
+      delete goalData._id;
+      const newGoal = await Goal.create(goalData);
+      const obj = newGoal.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/goals/:id", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const updatedGoal = await Goal.findOneAndUpdate(
+        { _id: req.params.id, userId: req.uid },
+        { $set: req.body },
+        { new: true }
+      );
+      if (!updatedGoal) return res.status(404).json({ error: "Goal not found" });
+      const obj = updatedGoal.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/goals/:id", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const deleted = await Goal.findOneAndDelete({ _id: req.params.id, userId: req.uid });
+      if (!deleted) return res.status(404).json({ error: "Goal not found" });
+      // Delete all linked tasks as well
+      await Task.deleteMany({ goalId: req.params.id, userId: req.uid });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/chats", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const chats = await ChatMessage.find({ userId: req.uid }).sort({ timestamp: 1 });
+      const formatted = chats.map(c => {
+        const obj = c.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json(formatted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/chats", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { role, content } = req.body;
+      const newChat = await ChatMessage.create({
+        userId: req.uid,
+        role,
+        content,
+        timestamp: new Date()
+      });
+      const obj = newChat.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/ai-decisions", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const decisions = await AIDecision.find({ userId: req.uid }).sort({ timestamp: -1 });
+      const formatted = decisions.map(d => {
+        const obj = d.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json(formatted);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai-decisions", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { title, reason } = req.body;
+      const newDecision = await AIDecision.create({
+        userId: req.uid,
+        title,
+        reason,
+        timestamp: new Date()
+      });
+      const obj = newDecision.toObject();
+      obj.id = obj._id.toString();
+      delete obj._id;
+      delete obj.__v;
+      res.json(obj);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -375,47 +683,175 @@ async function startServer() {
     }
   });
 
-  // --- Custom Google OAuth Routes (Using user-provided credentials) ---
+  // --- Custom Google OAuth Routes (Using google-auth-library) ---
 
-  app.get("/api/auth/google/url", (req, res) => {
+  // Endpoint to expose Google Client ID to frontend for GIS SDK
+  app.get("/api/config", (req, res) => {
+    res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || "" });
+  });
+
+  // Handle GIS popup code exchange
+  app.post("/api/auth/google/callback", async (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).send("Code is missing");
+
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      return res.status(500).json({ error: "GOOGLE_CLIENT_ID not configured in .env" });
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.status(500).send("Google OAuth credentials are not fully configured in .env");
     }
-    
-    let appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    if (appUrl.endsWith('/')) {
-      appUrl = appUrl.slice(0, -1);
+
+    const oauth2Client = new OAuth2Client({
+      clientId,
+      clientSecret,
+      redirectUri: "postmessage",
+    });
+
+    try {
+      const { tokens } = await oauth2Client.getToken(code);
+      const accessToken = tokens.access_token;
+      oauth2Client.setCredentials(tokens);
+
+      const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!userRes.ok) return res.status(500).send("Failed to fetch user profile from Google");
+
+      const userInfo = await userRes.json();
+      const { sub: googleUid, email, name, picture } = userInfo;
+      if (!email) return res.status(400).send("Google account has no email address to sign in with.");
+
+      await connectDB();
+      let user = await User.findOne({ email: email.toLowerCase() });
+      if (!user) {
+        user = await User.create({
+          email: email.toLowerCase(),
+          name: name || email,
+          picture,
+          authProvider: "google",
+          googleId: googleUid,
+          googleRefreshToken: tokens.refresh_token || undefined,
+        });
+      } else {
+        user.authProvider = "google";
+        user.googleId = googleUid;
+        if (picture && !user.picture) user.picture = picture;
+        if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+        await user.save();
+      }
+
+      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+
+      res.json({
+        accessToken,
+        taskpilotToken,
+        user: { email: user.email, name: user.name, picture: user.picture, uid: user._id.toString() }
+      });
+    } catch (err: any) {
+      console.error("Google OAuth error:", err);
+      res.status(500).send(`Authentication error: ${err.message}`);
     }
-    const redirectUri = `${appUrl}/api/auth/google/callback`;
+  });
+
+  // This server is reachable on more than one domain (e.g. a test URL and a
+  // prod URL) at the same time, so we can't hardcode a single APP_URL for
+  // building the OAuth redirect_uri. Instead we derive the origin from the
+  // incoming request and check it against an explicit allowlist — never
+  // trust the Host header blindly, since redirect_uri ends up in a Google
+  // API call and an unvalidated host would be an open-redirect risk.
+  const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.APP_URL || "")
+    .split(",")
+    .map(o => o.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+  const getRequestOrigin = (req: any) => {
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const finalProto = host.includes('.run.app') ? 'https' : proto;
+    return `${finalProto}://${host}`;
+  };
+
+  const resolveAllowedOrigin = (req: any): string | null => {
+    const origin = getRequestOrigin(req);
+    return ALLOWED_ORIGINS.includes(origin) ? origin : null;
+  };
+
+  const getRedirectUri = (origin: string) => `${origin}/oauth2callback`;
+
+  app.get("/auth/google", (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not configured in .env" });
+    }
+
+    const origin = resolveAllowedOrigin(req);
+    if (!origin) {
+      return res.status(400).json({
+        error: `This domain (${getRequestOrigin(req)}) is not in ALLOWED_ORIGINS. Add it to your .env and to Google Cloud Console's Authorized JavaScript origins / redirect URIs.`
+      });
+    }
+
+    const oauth2Client = new OAuth2Client({
+      clientId,
+      clientSecret,
+      redirectUri: getRedirectUri(origin),
+    });
 
     const scopes = [
-      "openid",
-      "email",
-      "profile",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
       "https://www.googleapis.com/auth/calendar",
       "https://www.googleapis.com/auth/drive",
       "https://www.googleapis.com/auth/documents",
       "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/presentations"
+      "https://www.googleapis.com/auth/presentations",
+      "https://www.googleapis.com/auth/tasks.readonly"
     ];
 
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: scopes.join(" "),
+    // Stateless CSRF protection: sign a short-lived, single-use-window token
+    // instead of relying on server-side session storage (the server may be
+    // running multiple Cloud Run instances with no shared session store).
+    // The origin is embedded *inside* the signed token (not read again from
+    // the callback request) so the redirect_uri used to exchange the code is
+    // guaranteed to be the exact same one used to generate this auth URL,
+    // and can't be swapped by a malicious callback request.
+    const state = jwt.sign({ purpose: "oauth_state", origin }, JWT_SECRET, { expiresIn: "10m" });
+
+    const authUrl = oauth2Client.generateAuthUrl({
       access_type: "offline",
-      prompt: "consent"
+      scope: scopes,
+      include_granted_scopes: true,
+      prompt: "consent",
+      state,
     });
 
-    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
+    res.json({ url: authUrl });
   });
 
-  app.get(["/api/auth/google/callback", "/api/auth/google/callback/"], async (req, res) => {
-    const { code } = req.query;
+  app.get(["/oauth2callback", "/oauth2callback/"], async (req, res) => {
+    const { code, state, error: oauthError } = req.query;
+
+    if (oauthError) {
+      // User denied consent or Google returned an error (e.g. access_denied)
+      return res.status(400).send(`Google sign-in was cancelled or failed: ${oauthError}`);
+    }
     if (!code) {
       return res.status(400).send("Authorization code is missing");
+    }
+
+    // Verify the CSRF state token minted by /auth/google, and pull the
+    // origin out of it (signed, so it can't be tampered with) rather than
+    // trusting the request's Host header again here.
+    let origin: string;
+    try {
+      const decoded = jwt.verify(state as string, JWT_SECRET) as any;
+      if (decoded.purpose !== "oauth_state" || !decoded.origin) throw new Error("bad state payload");
+      origin = decoded.origin;
+      if (!ALLOWED_ORIGINS.includes(origin)) throw new Error("origin no longer allowed");
+    } catch {
+      return res.status(401).send("Invalid or expired authentication request. Please try signing in again.");
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -424,35 +860,19 @@ async function startServer() {
       return res.status(500).send("Google OAuth credentials are not fully configured in .env");
     }
 
-    let appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    if (appUrl.endsWith('/')) {
-      appUrl = appUrl.slice(0, -1);
-    }
-    const redirectUri = `${appUrl}/api/auth/google/callback`;
+    const oauth2Client = new OAuth2Client({
+      clientId,
+      clientSecret,
+      redirectUri: getRedirectUri(origin),
+    });
 
     try {
       // 1. Exchange code for tokens
-      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          code: code as string,
-          client_id: clientId,
-          client_secret: clientSecret,
-          redirect_uri: redirectUri,
-          grant_type: "authorization_code",
-        }),
-      });
-
-      if (!tokenRes.ok) {
-        const errorText = await tokenRes.text();
-        console.error("Token exchange failed:", errorText);
-        return res.status(tokenRes.status).send(`Failed to exchange token: ${errorText}`);
-      }
-
-      const tokens = await tokenRes.json();
+      const { tokens } = await oauth2Client.getToken(code as string);
       const accessToken = tokens.access_token;
-      
+
+      oauth2Client.setCredentials(tokens);
+
       // 2. Fetch User Profile
       const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -464,8 +884,41 @@ async function startServer() {
 
       const userInfo = await userRes.json();
       const { sub: googleUid, email, name, picture } = userInfo;
+      if (!email) {
+        return res.status(400).send("Google account has no email address to sign in with.");
+      }
 
-      // 4. Return HTML to notify parent window
+      await connectDB();
+      let user = await User.findOne({ email: email.toLowerCase() });
+      if (!user) {
+        // New user: created via Google, so no local password — login via
+        // the regular email/password form is intentionally disabled for them.
+        user = await User.create({
+          email: email.toLowerCase(),
+          name: name || email,
+          picture,
+          authProvider: "google",
+          googleId: googleUid,
+          googleRefreshToken: tokens.refresh_token || undefined,
+        });
+      } else {
+        // Existing user (possibly originally a local account) signing in
+        // with Google: link the Google identity, don't touch their password.
+        user.authProvider = "google";
+        user.googleId = googleUid;
+        if (picture && !user.picture) user.picture = picture;
+        // Google only issues a refresh_token on the first consent, so only
+        // overwrite ours if we actually got a new one.
+        if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+        await user.save();
+      }
+
+      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+
+      // 4. Return HTML to notify parent window. We post to a specific
+      // target origin (not '*') so the access token can't be read by an
+      // unrelated page if the opener has since navigated elsewhere.
+      const targetOrigin = origin;
       res.send(`
         <!DOCTYPE html>
         <html>
@@ -506,11 +959,12 @@ async function startServer() {
               const authData = {
                 type: 'GOOGLE_AUTH_SUCCESS',
                 accessToken: ${JSON.stringify(accessToken)},
-                user: ${JSON.stringify({ email, name, picture, uid: googleUid })}
+                taskpilotToken: ${JSON.stringify(taskpilotToken)},
+                user: ${JSON.stringify({ email: user.email, name: user.name, picture: user.picture, uid: user._id.toString() })}
               };
-              
+
               if (window.opener) {
-                window.opener.postMessage(authData, '*');
+                window.opener.postMessage(authData, ${JSON.stringify(targetOrigin)});
                 window.close();
               } else {
                 window.location.href = '/';
@@ -806,9 +1260,6 @@ async function startServer() {
       const { eventName, eventDetail, tasks, model } = req.body;
       const selectedModel = getValidModel(model);
       const userId = req.uid;
-      if (!firestoreDb) {
-        console.warn("Firestore not initialized on server. Fallback to client-side database saves.");
-      }
 
       const prompt = `
         You are an autonomous AI Productivity Agent.
@@ -848,36 +1299,46 @@ async function startServer() {
       text = text.replace(/```json/g, "").replace(/```/g, "").trim();
       const result = JSON.parse(text);
       
-      // Save decision to Firestore
-      if (result.decision && firestoreDb) {
+      // Save decision to MongoDB
+      if (result.decision) {
         try {
-          await firestoreDb.collection('users').doc(userId).collection('ai_decisions').add({
-            ...result.decision,
-            timestamp: new Date().toISOString()
+          await connectDB();
+          await AIDecision.create({
+            userId,
+            title: result.decision.text || result.decision.title || "Schedule Adjustment",
+            reason: result.decision.reason,
+            timestamp: new Date()
           });
         } catch (dbErr) {
-          console.warn("Could not save decision server-side, falling back to client-side save:", dbErr);
+          console.warn("Could not save decision to MongoDB:", dbErr);
         }
       }
       
-      // Save plan to Firestore
+      // Save plan to MongoDB
       const todayDateStr = new Date().toISOString().split('T')[0];
-      if (firestoreDb) {
-        try {
-          if (result.plan && result.plan.sessions && result.plan.sessions.length > 0) {
-            await firestoreDb.collection('users').doc(userId).collection('daily_plan').doc(todayDateStr).set({
-              ...result.plan,
-              updatedAt: new Date().toISOString()
-            });
-          } else if (tasks.length === 0) {
-            await firestoreDb.collection('users').doc(userId).collection('daily_plan').doc(todayDateStr).set({
-              sessions: [],
-              updatedAt: new Date().toISOString()
-            });
-          }
-        } catch (dbErr) {
-          console.warn("Could not save plan server-side, falling back to client-side save:", dbErr);
+      try {
+        await connectDB();
+        if (result.plan && result.plan.sessions && result.plan.sessions.length > 0) {
+          const formattedSessions = result.plan.sessions.map((s: any) => ({
+            taskId: s.taskId || "temp-task-id",
+            taskTitle: s.taskTitle,
+            startTime: s.startTime,
+            endTime: s.endTime
+          }));
+          await DailyPlanModel.findOneAndUpdate(
+            { userId, date: todayDateStr },
+            { $set: { sessions: formattedSessions, updatedAt: new Date() } },
+            { upsert: true, new: true }
+          );
+        } else if (tasks.length === 0) {
+          await DailyPlanModel.findOneAndUpdate(
+            { userId, date: todayDateStr },
+            { $set: { sessions: [], updatedAt: new Date() } },
+            { upsert: true, new: true }
+          );
         }
+      } catch (dbErr) {
+        console.warn("Could not save plan to MongoDB:", dbErr);
       }
 
       res.json(result);

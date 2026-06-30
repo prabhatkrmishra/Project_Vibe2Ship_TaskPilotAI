@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { collection, query, where, getDocs, onSnapshot, doc, addDoc, setDoc } from 'firebase/firestore';
-import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
@@ -27,68 +25,53 @@ export function Dashboard() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  useEffect(() => {
+  const fetchDashboardData = async () => {
     if (!user) return;
-    const db = getDb();
-    
-    // Fetch all user tasks to avoid composite index requirements
-    const qAllTasks = query(
-      collection(db, 'tasks'), 
-      where('userId', '==', user.uid)
-    );
-    
-    // Fetch AI decisions
-    const qDecisions = query(
-      collection(db, 'users', user.uid, 'ai_decisions')
-    );
-    
-    const unsubscribeTasks = onSnapshot(qAllTasks, (snapshot) => {
-      const allTasksData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Task[];
-      
-      setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress'));
-      setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
-      setLoadingTasks(false);
-    });
+    try {
+      const token = await user.getIdToken();
+      const headers = { 'Authorization': `Bearer ${token}` };
 
-    const unsubscribeDecisions = onSnapshot(qDecisions, (snapshot) => {
-      const decisionsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as any[];
-      setDecisions(decisionsData.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 3));
-    });
+      // Fetch Tasks
+      const resTasks = await fetch('/api/tasks', { headers });
+      if (resTasks.ok) {
+        const allTasksData = await resTasks.json() as Task[];
+        setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress'));
+        setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
+      }
 
-    const qGoals = query(
-      collection(db, 'goals'),
-      where('userId', '==', user.uid)
-    );
+      // Fetch Decisions
+      const resDecisions = await fetch('/api/ai-decisions', { headers });
+      if (resDecisions.ok) {
+        const decisionsData = await resDecisions.json();
+        setDecisions(decisionsData.slice(0, 3));
+      }
 
-    const unsubscribeGoals = onSnapshot(qGoals, (snapshot) => {
-      const goalsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Goal[];
-      setGoals(goalsData);
-    });
+      // Fetch Goals
+      const resGoals = await fetch('/api/goals', { headers });
+      if (resGoals.ok) {
+        const goalsData = await resGoals.json() as Goal[];
+        setGoals(goalsData);
+      }
 
-    const planRef = doc(db, 'users', user.uid, 'daily_plan', today);
-    const unsubscribePlan = onSnapshot(planRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setPlan({ id: 'today', userId: user.uid, date: today, sessions: docSnap.data().sessions || [] });
+      // Fetch Today's Daily Plan
+      const resPlan = await fetch(`/api/plans/${today}`, { headers });
+      if (resPlan.ok) {
+        const planData = await resPlan.json();
+        setPlan(planData);
       } else {
         setPlan(null);
       }
-    });
+    } catch (err) {
+      console.error("Error loading dashboard data:", err);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
 
-    return () => {
-      unsubscribeTasks();
-      unsubscribeDecisions();
-      unsubscribeGoals();
-      unsubscribePlan();
-    };
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
   }, [user]);
 
   const tasksAtRisk = tasks.filter(t => (t.riskScore || 0) > 60).length;
@@ -128,25 +111,11 @@ export function Dashboard() {
         throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
       }
 
-      const result = await res.json();
-      const db = getDb();
-      if (result.decision && user) {
-        await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
-          ...result.decision,
-          timestamp: new Date().toISOString()
-        });
-      }
-      if (result.plan && user) {
-        await setDoc(doc(db, 'users', user.uid, 'daily_plan', today), {
-          ...result.plan,
-          updatedAt: new Date().toISOString()
-        });
-      }
-
       toast.success("AI is recalculating your optimal schedule...");
-    } catch (error) {
+      await fetchDashboardData();
+    } catch (error: any) {
        console.error(error);
-       toast.error("Failed to generate plan");
+       toast.error(error.message || "Failed to generate plan");
     } finally {
       setIsGenerating(false);
     }
@@ -163,7 +132,7 @@ export function Dashboard() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
       <header className="flex items-center justify-between mb-2 px-2">
         <div>
-          <h1 className="text-3xl font-light text-white leading-tight">{greeting}, <br/><span className="font-semibold italic text-indigo-300">{user?.displayName?.split(' ')[0] || 'User'}</span></h1>
+          <h1 className="text-3xl font-light text-white leading-tight">{greeting}, <br/><span className="font-semibold italic text-indigo-300">{user?.name?.split(' ')[0] || 'User'}</span></h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-2">
@@ -437,20 +406,7 @@ export function Dashboard() {
                     throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
                   }
 
-                  const result = await res.json();
-                  const db = getDb();
-                  if (result.decision && user) {
-                    await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
-                      ...result.decision,
-                      timestamp: new Date().toISOString()
-                    });
-                  }
-                  if (result.plan && user) {
-                    await setDoc(doc(db, 'users', user.uid, 'daily_plan', today), {
-                      ...result.plan,
-                      updatedAt: new Date().toISOString()
-                    });
-                  }
+                  await fetchDashboardData();
 
                   toast.dismiss();
                   toast.success("Calendar synced and schedule re-optimized!");

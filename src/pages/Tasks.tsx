@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, limit, setDoc, deleteDoc } from 'firebase/firestore';
-import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Task, Subtask, TaskStatus, Goal } from '../types';
 import { Button } from '../components/ui/button';
@@ -47,33 +45,40 @@ export function Tasks() {
     setExpandedTasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
-  useEffect(() => {
+  const fetchTasksAndGoals = async () => {
     if (!user) return;
-    const db = getDb();
-    const q = query(collection(db, 'tasks'), where('userId', '==', user.uid), limit(20));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const tasksData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Task[];
-      setTasks(tasksData.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime()));
+    try {
+      const token = await user.getIdToken();
+      const headers = { 'Authorization': `Bearer ${token}` };
+
+      // Fetch tasks
+      const resTasks = await fetch('/api/tasks', { headers });
+      if (resTasks.ok) {
+        const tasksData = await resTasks.json() as Task[];
+        setTasks(tasksData.sort((a, b) => {
+          if (!a.deadline) return 1;
+          if (!b.deadline) return -1;
+          return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        }));
+      }
+
+      // Fetch goals
+      const resGoals = await fetch('/api/goals', { headers });
+      if (resGoals.ok) {
+        const goalsData = await resGoals.json() as Goal[];
+        setGoals(goalsData);
+      }
+    } catch (err) {
+      console.error("Failed to load tasks and goals:", err);
+    } finally {
       setLoading(false);
-    });
+    }
+  };
 
-    const qGoals = query(collection(db, 'goals'), where('userId', '==', user.uid));
-    const unsubscribeGoals = onSnapshot(qGoals, (snapshot) => {
-      const goalsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Goal[];
-      setGoals(goalsData);
-    });
-
-    return () => {
-      unsubscribe();
-      unsubscribeGoals();
-    };
+  useEffect(() => {
+    if (user) {
+      fetchTasksAndGoals();
+    }
   }, [user]);
 
   const triggerAutonomousPipeline = async (eventName: string, eventDetail: string, currentTasks: Task[]) => {
@@ -81,7 +86,7 @@ export function Tasks() {
     try {
       const token = await user.getIdToken();
       const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
-      const res = await fetch('/api/autonomous-pipeline', {
+      await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -94,28 +99,7 @@ export function Tasks() {
           model: selectedModel
         })
       });
-      if (res.ok) {
-        const result = await res.json();
-        const db = getDb();
-        if (result.decision) {
-          await addDoc(collection(db, 'users', user.uid, 'ai_decisions'), {
-            ...result.decision,
-            timestamp: new Date().toISOString()
-          });
-        }
-        const todayDateStr = new Date().toISOString().split('T')[0];
-        if (result.plan && result.plan.sessions) {
-          await setDoc(doc(db, 'users', user.uid, 'daily_plan', todayDateStr), {
-            ...result.plan,
-            updatedAt: new Date().toISOString()
-          });
-        } else if (currentTasks.length === 0) {
-          await setDoc(doc(db, 'users', user.uid, 'daily_plan', todayDateStr), {
-            sessions: [],
-            updatedAt: new Date().toISOString()
-          });
-        }
-      }
+      fetchTasksAndGoals();
     } catch (error) {
       console.error("Pipeline failed", error);
     }
@@ -130,10 +114,7 @@ export function Tasks() {
     
     setIsAnalyzing(true);
     try {
-      // Combine date and time
       const deadlineString = new Date(`${format(date, 'yyyy-MM-dd')}T${time}`).toISOString();
-
-      // 1. Ask Gemini to analyze the task
       const token = await user.getIdToken();
       const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
       const res = await fetch('/api/analyze-task', {
@@ -159,7 +140,6 @@ export function Tasks() {
       }));
 
       const newTask = {
-        userId: user.uid,
         title,
         description,
         deadline: deadlineString,
@@ -170,12 +150,19 @@ export function Tasks() {
         riskScore: analysis.riskScore || 0,
         subtasks,
         goalId: selectedGoalId !== 'none' ? selectedGoalId : null,
-        createdAt: serverTimestamp()
+        createdAt: new Date().toISOString()
       };
 
-      // 2. Save to Firestore
-      const db = getDb();
-      await addDoc(collection(db, 'tasks'), newTask);
+      const resPost = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newTask)
+      });
+
+      if (!resPost.ok) throw new Error("Failed to save task");
       
       toast.success("Task analyzed and created successfully!");
       setIsDialogOpen(false);
@@ -185,8 +172,8 @@ export function Tasks() {
       setTime('');
       setSelectedGoalId('none');
 
-      // 3. Trigger AI Pipeline
-      triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, { ...newTask, id: 'temp' } as any]);
+      const savedTask = await resPost.json();
+      triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, savedTask]);
     } catch (error) {
       console.error(error);
       toast.error("Failed to create task");
@@ -231,15 +218,28 @@ export function Tasks() {
 
   const deleteTask = async (task: Task) => {
     try {
-      const db = getDb();
-      await deleteDoc(doc(db, 'tasks', task.id));
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error();
+
       toast.success("Task deleted", {
         action: {
           label: "Undo",
           onClick: async () => {
             try {
-              await setDoc(doc(db, 'tasks', task.id), task);
+              await fetch('/api/tasks', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(task)
+              });
               toast.success("Task restored");
+              fetchTasksAndGoals();
             } catch (error) {
               toast.error("Failed to restore task");
             }
@@ -247,6 +247,7 @@ export function Tasks() {
         },
         duration: 5000,
       });
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to delete task");
     }
@@ -283,10 +284,16 @@ export function Tasks() {
           completed: false
         }));
 
-        const db = getDb();
-        await updateDoc(doc(db, 'tasks', task.id), {
-          subtasks: newSubtasks,
-          status: 'pending'
+        await fetch(`/api/tasks/${task.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            subtasks: newSubtasks,
+            status: 'pending'
+          })
         });
 
         if (data.isFallback) {
@@ -295,6 +302,7 @@ export function Tasks() {
           toast.success(`Generated ${newSubtasks.length} subtasks with AI!`);
         }
         setExpandedTasks(prev => ({ ...prev, [task.id]: true }));
+        fetchTasksAndGoals();
       } else {
         toast.error("Could not generate subtasks. Please try again.");
       }
@@ -316,12 +324,20 @@ export function Tasks() {
     };
     const updatedSubtasks = [...(task.subtasks || []), newSubtask];
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        subtasks: updatedSubtasks,
-        status: 'in_progress'
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subtasks: updatedSubtasks,
+          status: 'in_progress'
+        })
       });
       toast.success("Subtask added!");
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to add subtask");
     }
@@ -347,11 +363,17 @@ export function Tasks() {
     );
 
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        subtasks: updatedSubtasks
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ subtasks: updatedSubtasks })
       });
       toast.success("Subtask updated!");
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to update subtask");
     } finally {
@@ -367,11 +389,17 @@ export function Tasks() {
     const updatedSubtasks = (task.subtasks || []).filter(s => s.id !== subtaskId);
 
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        subtasks: updatedSubtasks
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ subtasks: updatedSubtasks })
       });
       toast.success("Subtask deleted!");
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to delete subtask");
     }
@@ -389,11 +417,17 @@ export function Tasks() {
       return;
     }
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        title: editingTaskText.trim()
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: editingTaskText.trim() })
       });
       toast.success("Task updated!");
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to update task");
     } finally {
@@ -412,10 +446,17 @@ export function Tasks() {
     const isAllCompleted = updatedSubtasks.every(s => s.completed);
     
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        subtasks: updatedSubtasks,
-        status: isAllCompleted ? 'completed' : 'in_progress'
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subtasks: updatedSubtasks,
+          status: isAllCompleted ? 'completed' : 'in_progress'
+        })
       });
 
       if (isAllCompleted) {
@@ -426,21 +467,26 @@ export function Tasks() {
         triggerAutonomousPipeline("Subtask Updated", `Updated subtask in ${task.title}: ${subtaskTitle}`, tasksList);
       }
 
-      // Note: if this task is linked to a Quest goal, its progress bar updates
-      // automatically — Goals.tsx live-subscribes to all linked tasks and recomputes
-      // the quest's overall progress from their statuses.
       const goalId = task.goalId;
       if (goalId) {
         const matchingGoal = goals.find(g => g.id === goalId);
         if (matchingGoal && matchingGoal.type === 'habit' && isAllCompleted) {
           const currentStreak = matchingGoal.streak || 0;
-          await updateDoc(doc(db, 'goals', goalId), {
-            streak: currentStreak + 1,
-            progress: (matchingGoal.progress || 0) + 1
+          await fetch(`/api/goals/${goalId}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              streak: currentStreak + 1,
+              progress: (matchingGoal.progress || 0) + 1
+            })
           });
           toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${currentStreak + 1}!`);
         }
       }
+      fetchTasksAndGoals();
     } catch (error) {
        toast.error("Failed to update subtask");
     }
@@ -451,10 +497,17 @@ export function Tasks() {
     const updatedSubtasks = (task.subtasks || []).map(s => ({ ...s, completed: isNowCompleted }));
     
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', task.id), {
-        status: isNowCompleted ? 'completed' : 'pending',
-        subtasks: updatedSubtasks
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: isNowCompleted ? 'completed' : 'pending',
+          subtasks: updatedSubtasks
+        })
       });
 
       if (isNowCompleted) {
@@ -465,21 +518,26 @@ export function Tasks() {
         triggerAutonomousPipeline("Task Reactivated", `Reactivated task: ${task.title}`, [...tasks, { ...task, status: 'pending' }]);
       }
 
-      // Note: if this task is linked to a Quest goal, its progress bar updates
-      // automatically — Goals.tsx live-subscribes to all linked tasks and recomputes
-      // the quest's overall progress from their statuses.
       const goalId = task.goalId;
       if (goalId) {
         const matchingGoal = goals.find(g => g.id === goalId);
         if (matchingGoal && matchingGoal.type === 'habit' && isNowCompleted) {
           const currentStreak = matchingGoal.streak || 0;
-          await updateDoc(doc(db, 'goals', goalId), {
-            streak: currentStreak + 1,
-            progress: (matchingGoal.progress || 0) + 1
+          await fetch(`/api/goals/${goalId}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              streak: currentStreak + 1,
+              progress: (matchingGoal.progress || 0) + 1
+            })
           });
           toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${currentStreak + 1}!`);
         }
       }
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to update task status");
     }
@@ -487,14 +545,20 @@ export function Tasks() {
 
   const rescueDeadline = async (taskId: string, currentDeadline: string) => {
     try {
-      const db = getDb();
+      const token = await user?.getIdToken();
       const newDeadline = new Date(currentDeadline);
       newDeadline.setDate(newDeadline.getDate() + 1); // push by 1 day
       
-      await updateDoc(doc(db, 'tasks', taskId), {
-        deadline: newDeadline.toISOString()
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ deadline: newDeadline.toISOString() })
       });
       toast.success("Deadline automatically rescued (+1 Day)!");
+      fetchTasksAndGoals();
     } catch (error) {
       toast.error("Failed to rescue deadline");
     }

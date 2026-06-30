@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
-import { getDb } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { Goal, Task } from '../types';
 import { Button } from '../components/ui/button';
@@ -138,40 +136,44 @@ export function Goals() {
     });
   };
 
-  useEffect(() => {
+  const fetchGoalsAndTasks = async () => {
     if (!user) return;
-    const db = getDb();
-    const q = query(collection(db, 'goals'), where('userId', '==', user.uid));
+    try {
+      const token = await user.getIdToken();
+      const headers = { 'Authorization': `Bearer ${token}` };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const goalsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Goal[];
-      const sortedData = goalsData.sort((a, b) => {
-        if (a.completed !== b.completed) {
-          return a.completed ? 1 : -1;
-        }
-        const dateA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-        const dateB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
-        return dateB - dateA;
-      });
-      setGoals(sortedData);
+      // Fetch goals
+      const resGoals = await fetch('/api/goals', { headers });
+      if (resGoals.ok) {
+        const goalsData = await resGoals.json() as Goal[];
+        const sortedData = goalsData.sort((a, b) => {
+          if (a.completed !== b.completed) {
+            return a.completed ? 1 : -1;
+          }
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateB - dateA;
+        });
+        setGoals(sortedData);
+      }
+
+      // Fetch tasks
+      const resTasks = await fetch('/api/tasks', { headers });
+      if (resTasks.ok) {
+        const tasksData = await resTasks.json() as Task[];
+        setLinkedTasks(tasksData.filter(t => !!t.goalId));
+      }
+    } catch (err) {
+      console.error("Failed to load goals and tasks:", err);
+    } finally {
       setLoading(false);
-    });
+    }
+  };
 
-    const qLinkedTasks = query(collection(db, 'tasks'), where('userId', '==', user.uid));
-    const unsubscribeTasks = onSnapshot(qLinkedTasks, (snapshot) => {
-      const tasksData = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }) as Task)
-        .filter(t => !!t.goalId);
-      setLinkedTasks(tasksData);
-    });
-
-    return () => {
-      unsubscribe();
-      unsubscribeTasks();
-    };
+  useEffect(() => {
+    if (user) {
+      fetchGoalsAndTasks();
+    }
   }, [user]);
 
   const syncQuestProgress = async (goalId: string, taskList: Task[]) => {
@@ -184,12 +186,22 @@ export function Goals() {
     const progress = Math.round((completedCount / tasks.length) * 100);
     const isCompleted = progress === 100;
 
+    if (goal.progress === progress && goal.completed === isCompleted) return;
+
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'goals', goalId), { progress, completed: isCompleted });
+      const token = await user?.getIdToken();
+      await fetch(`/api/goals/${goalId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ progress, completed: isCompleted })
+      });
       if (isCompleted && !goal.completed) {
         showBeautifulCompletion(goal.title, 'quest');
       }
+      fetchGoalsAndTasks();
     } catch (error) {
       console.error('Failed to sync quest progress', error);
     }
@@ -207,22 +219,29 @@ export function Goals() {
 
     setIsCreating(true);
     try {
-      const db = getDb();
-
-      const goalRef = await addDoc(collection(db, 'goals'), {
-        userId: user.uid,
-        title,
-        description,
-        type,
-        targetDate: type === 'quest' ? targetDate : null,
-        progress: 0,
-        streak: type === 'habit' ? 0 : null,
-        completed: false,
-        createdAt: serverTimestamp()
+      const token = await user.getIdToken();
+      const resGoal = await fetch('/api/goals', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          type,
+          targetDate: type === 'quest' ? targetDate : null,
+          progress: 0,
+          streak: type === 'habit' ? 0 : null,
+          completed: false,
+          createdAt: new Date().toISOString()
+        })
       });
 
+      if (!resGoal.ok) throw new Error("Failed to create goal");
+      const goalRef = await resGoal.json();
+
       if (type === 'quest') {
-        const token = await user.getIdToken();
         const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
         const res = await fetch('/api/generate-quest-steps', {
           method: 'POST',
@@ -244,25 +263,28 @@ export function Goals() {
           const generatedTasks = Array.isArray(data.tasks) ? data.tasks : [];
 
           if (generatedTasks.length > 0) {
-            const batch = writeBatch(db);
-            generatedTasks.forEach((t: any) => {
-              const taskRef = doc(collection(db, 'tasks'));
-              batch.set(taskRef, {
-                userId: user.uid,
-                title: t.title || 'Untitled step',
-                description: t.description || '',
-                deadline: t.deadline || (targetDate ? new Date(targetDate).toISOString() : new Date().toISOString()),
-                priority: t.priority || 'medium',
-                status: 'pending',
-                category: 'quest',
-                estimatedHours: t.estimatedHours || 1,
-                riskScore: t.riskScore ?? 30,
-                subtasks: [],
-                goalId: goalRef.id,
-                createdAt: serverTimestamp()
+            for (const t of generatedTasks) {
+              await fetch('/api/tasks', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  title: t.title || 'Untitled step',
+                  description: t.description || '',
+                  deadline: t.deadline || (targetDate ? new Date(targetDate).toISOString() : new Date().toISOString()),
+                  priority: t.priority || 'medium',
+                  status: 'pending',
+                  category: 'quest',
+                  estimatedHours: t.estimatedHours || 1,
+                  riskScore: t.riskScore ?? 30,
+                  subtasks: [],
+                  goalId: goalRef.id,
+                  createdAt: new Date().toISOString()
+                })
               });
-            });
-            await batch.commit();
+            }
             toast.success(`Quest created with ${generatedTasks.length} scheduled task(s)!`);
           } else {
             toast.error("AI couldn't generate tasks. You can add them manually from Mission Board.");
@@ -279,6 +301,7 @@ export function Goals() {
       setDescription('');
       setTargetDate('');
       setType('habit');
+      fetchGoalsAndTasks();
     } catch (error) {
       console.error(error);
       toast.error("Failed to create goal");
@@ -292,7 +315,7 @@ export function Goals() {
     if (!goal || goal.type !== 'habit') return;
 
     try {
-      const db = getDb();
+      const token = await user?.getIdToken();
       let newStreak = goal.streak || 0;
       let newProgress = goal.progress;
 
@@ -303,12 +326,20 @@ export function Goals() {
         newStreak = 0;
       }
 
-      await updateDoc(doc(db, 'goals', goalId), {
-        progress: newProgress,
-        streak: newStreak
+      await fetch(`/api/goals/${goalId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          progress: newProgress,
+          streak: newStreak
+        })
       });
 
       toast.success(increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
+      fetchGoalsAndTasks();
     } catch (error) {
       toast.error("Failed to update progress");
     }
@@ -316,33 +347,15 @@ export function Goals() {
 
   const deleteGoal = async (goal: Goal) => {
     try {
-      const db = getDb();
-      
-      // 1. Fetch all linked tasks first so we have their full backup for restoration
-      let deletedTasks: any[] = [];
-      if (goal.type === 'quest' && user) {
-        const qTasks = query(
-          collection(db, 'tasks'),
-          where('userId', '==', user.uid),
-          where('goalId', '==', goal.id)
-        );
-        const taskSnapshot = await getDocs(qTasks);
-        if (!taskSnapshot.empty) {
-          deletedTasks = taskSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        }
-      }
+      const token = await user?.getIdToken();
+      const deletedTasks = linkedTasks.filter(t => t.goalId === goal.id);
 
-      // 2. Delete the main goal document
-      await deleteDoc(doc(db, 'goals', goal.id));
+      const res = await fetch(`/api/goals/${goal.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-      // 3. Delete all linked tasks
-      if (deletedTasks.length > 0) {
-        const batch = writeBatch(db);
-        deletedTasks.forEach(t => {
-          batch.delete(doc(db, 'tasks', t.id));
-        });
-        await batch.commit();
-      }
+      if (!res.ok) throw new Error();
 
       const labelType = goal.type === 'quest' ? 'Quest' : 'Habit';
 
@@ -351,18 +364,30 @@ export function Goals() {
           label: "Undo",
           onClick: async () => {
             try {
-              const batch = writeBatch(db);
-              
-              // Restore the main goal
-              batch.set(doc(db, 'goals', goal.id), goal);
-              
-              // Restore all linked tasks
-              deletedTasks.forEach(t => {
-                batch.set(doc(db, 'tasks', t.id), t);
+              const resGoal = await fetch('/api/goals', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(goal)
               });
               
-              await batch.commit();
+              if (resGoal.ok && deletedTasks.length > 0) {
+                for (const t of deletedTasks) {
+                  await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(t)
+                  });
+                }
+              }
+
               toast.success(`${labelType} restored`);
+              fetchGoalsAndTasks();
             } catch (e) {
               toast.error(`Failed to restore ${labelType.toLowerCase()}`);
             }
@@ -370,6 +395,8 @@ export function Goals() {
         },
         duration: 5000,
       });
+
+      fetchGoalsAndTasks();
     } catch (error) {
       toast.error(`Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
     }
@@ -377,10 +404,18 @@ export function Goals() {
 
   const toggleLinkedTask = async (taskId: string, currentStatus: string) => {
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        status: currentStatus === 'completed' ? 'pending' : 'completed'
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: currentStatus === 'completed' ? 'pending' : 'completed'
+        })
       });
+      fetchGoalsAndTasks();
     } catch (error) {
       toast.error("Failed to update task");
     }
@@ -398,11 +433,19 @@ export function Goals() {
       return;
     }
     try {
-      const db = getDb();
-      await updateDoc(doc(db, 'tasks', taskId), {
-        title: editingTaskText.trim()
+      const token = await user?.getIdToken();
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: editingTaskText.trim()
+        })
       });
       toast.success("Task updated!");
+      fetchGoalsAndTasks();
     } catch (error) {
       toast.error("Failed to update task");
     } finally {
@@ -415,23 +458,30 @@ export function Goals() {
     if (!title || !user) return;
 
     try {
-      const db = getDb();
-      await addDoc(collection(db, 'tasks'), {
-        userId: user.uid,
-        title,
-        description: '',
-        deadline: targetDate ? new Date(targetDate).toISOString() : new Date().toISOString(),
-        priority: 'medium',
-        status: 'pending',
-        category: 'quest',
-        estimatedHours: 2,
-        riskScore: 30,
-        subtasks: [],
-        goalId: goalId,
-        createdAt: serverTimestamp()
+      const token = await user.getIdToken();
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title,
+          description: '',
+          deadline: targetDate ? new Date(targetDate).toISOString() : new Date().toISOString(),
+          priority: 'medium',
+          status: 'pending',
+          category: 'quest',
+          estimatedHours: 2,
+          riskScore: 30,
+          subtasks: [],
+          goalId: goalId,
+          createdAt: new Date().toISOString()
+        })
       });
       toast.success("Task added to Quest!");
       setNewManualTaskTitles(prev => ({ ...prev, [goalId]: '' }));
+      fetchGoalsAndTasks();
     } catch (error) {
       toast.error("Failed to add task");
     }

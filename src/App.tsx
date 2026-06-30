@@ -56,15 +56,15 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
       <div className="p-4 border-t border-[#21262d]">
         <div className="flex items-center justify-between mb-4 px-2">
           <div className="flex items-center gap-3">
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-cyan-500/30 object-cover" />
+            {user?.picture || user?.photoURL ? (
+              <img src={user?.picture || user?.photoURL} alt="Profile" className="w-8 h-8 rounded-full ring-2 ring-cyan-500/30 object-cover" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-medium ring-2 ring-cyan-500/30">
-                {user?.displayName?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                {user?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
               </div>
             )}
             <div className="flex-1 overflow-hidden text-sm truncate text-slate-400">
-              {user?.displayName || user?.email}
+              {user?.name || user?.email}
             </div>
           </div>
           <div className="w-2 h-2 rounded-full bg-cyan-400"></div>

@@ -1,11 +1,21 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, GoogleAuthProvider, signInWithCredential, signInWithPopup, signOut } from 'firebase/auth';
-import { initFirebase, getFirebaseAuth } from './firebase';
 import { toast } from 'sonner';
 
+export interface CustomUser {
+  uid: string;
+  email: string;
+  name: string;
+  displayName?: string;
+  picture?: string;
+  getIdToken: () => Promise<string>;
+}
+
 interface AuthContextType {
-  user: User | null;
+  user: CustomUser | null;
   loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name: string) => Promise<void>;
+  loginAsGuest: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
@@ -14,47 +24,78 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
-// Cache the access token in memory and local storage.
+// Cache the workspace access token in memory and local storage.
 let cachedAccessToken: string | null = localStorage.getItem('workspace_access_token');
-let isSigningIn = false;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<CustomUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Helper to construct the compatible user object
+  const makeUserObject = (userData: any, token: string): CustomUser => {
+    return {
+      uid: userData.uid,
+      email: userData.email,
+      name: userData.name,
+      displayName: userData.name,
+      picture: userData.picture,
+      getIdToken: async () => token
+    };
+  };
+
   useEffect(() => {
-    let unsubscribe = () => {};
-    initFirebase().then(({ auth }) => {
-      unsubscribe = onAuthStateChanged(auth, (u) => {
-        if (u) {
-          setUser(u);
-        } else {
-          setUser(null);
-          cachedAccessToken = null;
-          localStorage.removeItem('workspace_access_token');
-        }
+    const fetchMe = async () => {
+      const token = localStorage.getItem('taskpilot_jwt');
+      if (!token) {
         setLoading(false);
-      });
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-    
-    return () => unsubscribe();
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const userData = await res.json();
+          setUser(makeUserObject(userData, token));
+        } else {
+          // Token expired or invalid
+          localStorage.removeItem('taskpilot_jwt');
+          setUser(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch current user:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMe();
   }, []);
 
   useEffect(() => {
     const handleAuthMessage = async (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      // Only accept the message if it came from our own window's origin —
+      // the popup always posts back to window.opener's own origin, so this
+      // is safe and tighter than allow-listing every *.run.app domain.
+      if (event.origin !== window.location.origin) {
         return;
       }
 
       if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-        const { accessToken } = event.data;
+        const { accessToken, taskpilotToken, user: googleUser } = event.data;
         cachedAccessToken = accessToken;
         localStorage.setItem('workspace_access_token', accessToken);
-        toast.success("Workspace access authorized.");
+        
+        if (taskpilotToken && googleUser) {
+          localStorage.setItem('taskpilot_jwt', taskpilotToken);
+          setUser(makeUserObject(googleUser, taskpilotToken));
+          toast.success("Successfully logged in with Google!");
+        } else {
+          toast.success("Workspace access authorized.");
+        }
       }
     };
 
@@ -62,75 +103,167 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('message', handleAuthMessage);
   }, []);
 
-  const startWorkspaceOAuth = async () => {
+  const startWorkspaceOAuth = async (): Promise<string | null> => {
     try {
-      const res = await fetch("/api/auth/google/url");
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      const { url } = await res.json();
+      const res = await fetch("/api/config");
+      const { googleClientId } = await res.json();
 
-      const popup = window.open(url, "google_oauth_popup", "width=600,height=700");
-      if (!popup) {
-        toast.error("Sign-in popup was blocked by your browser. Please allow popups for this site.");
-        return;
+      if (!googleClientId) {
+        toast.error("Google Client ID is not configured on the server.");
+        return null;
       }
+
+      await new Promise<void>((resolve) => {
+        if ((window as any).google?.accounts?.oauth2) return resolve();
+        const script = document.createElement("script");
+        script.src = "https://accounts.google.com/gsi/client";
+        script.onload = () => resolve();
+        document.head.appendChild(script);
+      });
+
+      return new Promise<string | null>((resolve) => {
+        const client = (window as any).google.accounts.oauth2.initCodeClient({
+          client_id: googleClientId,
+          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/presentations https://www.googleapis.com/auth/tasks.readonly",
+          ux_mode: "popup",
+          callback: async (response: any) => {
+            if (response.error) {
+              toast.error("Google Sign-In failed or was cancelled.");
+              resolve(null);
+              return;
+            }
+            if (response.code) {
+              try {
+                const res = await fetch("/api/auth/google/callback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ code: response.code }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                
+                const authData = await res.json();
+                
+                const { accessToken, taskpilotToken, user: googleUser } = authData;
+                cachedAccessToken = accessToken;
+                localStorage.setItem("workspace_access_token", accessToken);
+                
+                if (taskpilotToken && googleUser) {
+                  localStorage.setItem("taskpilot_jwt", taskpilotToken);
+                  setUser(makeUserObject(googleUser, taskpilotToken));
+                  toast.success("Successfully logged in with Google!");
+                } else {
+                  toast.success("Workspace access authorized.");
+                }
+                resolve(accessToken);
+              } catch (err: any) {
+                toast.error("Failed to exchange code: " + err.message);
+                resolve(null);
+              }
+            } else {
+              resolve(null);
+            }
+          },
+        });
+
+        client.requestCode();
+      });
     } catch (error: any) {
       toast.error("Failed to start Google Sign-In.");
       console.warn("Login start failed:", error);
+      return null;
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      localStorage.setItem('taskpilot_jwt', data.token);
+      setUser(makeUserObject(data.user, data.token));
+      toast.success("Successfully logged in!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to log in.");
+      console.error("Login failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (email: string, password: string, name: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+
+      localStorage.setItem('taskpilot_jwt', data.token);
+      setUser(makeUserObject(data.user, data.token));
+      toast.success("Account created successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create account.");
+      console.error("Registration failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginAsGuest = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Guest login failed");
+      }
+
+      localStorage.setItem('taskpilot_jwt', data.token);
+      setUser(makeUserObject(data.user, data.token));
+      toast.success("Welcome! Logged in as Guest.");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to sign in as guest.");
+      console.error("Guest login failed:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const loginWithGoogle = async () => {
-    try {
-      isSigningIn = true;
-      const auth = getFirebaseAuth();
-      const provider = new GoogleAuthProvider();
-      // Only request basic profile scopes for Firebase auth
-      provider.addScope('profile');
-      provider.addScope('email');
-      
-      await signInWithPopup(auth, provider);
-      toast.success("Successfully logged in with Google!");
-    } catch (error: any) {
-      toast.error("Failed to sign in with Google.");
-      console.error("Login failed:", error);
-    } finally {
-      isSigningIn = false;
-    }
+    await startWorkspaceOAuth();
   };
 
   const requestWorkspaceAccess = async (): Promise<string | null> => {
     if (cachedAccessToken) return cachedAccessToken;
-    
-    return new Promise(async (resolve) => {
-      const handleMsg = (event: MessageEvent) => {
-        if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-          window.removeEventListener('message', handleMsg);
-          const { accessToken } = event.data;
-          cachedAccessToken = accessToken;
-          localStorage.setItem('workspace_access_token', accessToken);
-          resolve(accessToken);
-        }
-      };
-      window.addEventListener('message', handleMsg);
-      
-      await startWorkspaceOAuth();
-      
-      // Auto-cleanup after 2 minutes in case user closes popup
-      setTimeout(() => {
-        window.removeEventListener('message', handleMsg);
-        resolve(null);
-      }, 120000);
-    });
+    return await startWorkspaceOAuth();
   };
 
   const logout = async () => {
     try {
-      const auth = getFirebaseAuth();
-      await signOut(auth);
-      cachedAccessToken = null;
+      localStorage.removeItem('taskpilot_jwt');
       localStorage.removeItem('workspace_access_token');
+      cachedAccessToken = null;
+      setUser(null);
+      toast.success("Logged out successfully");
     } catch (error) {
       console.warn("Logout failed:", error);
     }
@@ -139,7 +272,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const getAccessToken = () => cachedAccessToken;
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess }}>
       {children}
     </AuthContext.Provider>
   );
