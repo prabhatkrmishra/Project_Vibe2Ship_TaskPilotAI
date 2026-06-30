@@ -3,12 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/button';
-import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Dashboard } from './pages/Dashboard';
 import { Tasks } from './pages/Tasks';
 import { Chat } from './pages/Chat';
 import { Goals } from './pages/Goals';
+import { Workspace } from './pages/Workspace';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
 import { Home } from './pages/Home';
@@ -49,6 +50,9 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
         </Link>
         <Link to="/goals" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/goals' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <Target className="h-4 w-4 text-cyan-400" /> Quest & Habit
+        </Link>
+        <Link to="/workspace" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/workspace' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
+          <Cloud className="h-4 w-4 text-amber-400" /> Workspace Actions
         </Link>
         <Link to="/chat" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/chat' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <MessageSquare className="h-4 w-4 text-violet-400" /> Mission Control
@@ -409,6 +413,13 @@ export default function App() {
               <ProtectedRoute>
                 <Layout>
                   <Goals />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/workspace" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Workspace />
                 </Layout>
               </ProtectedRoute>
             } />

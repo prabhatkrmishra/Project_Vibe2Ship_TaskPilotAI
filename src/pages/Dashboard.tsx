@@ -4,10 +4,7 @@ import { useAuth } from '../lib/AuthContext';
 import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Table, Target, Flame } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Label } from '../components/ui/label';
+import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function Dashboard() {
@@ -19,9 +16,6 @@ export function Dashboard() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
-  
-  const [isSlidesDialogOpen, setIsSlidesDialogOpen] = useState(false);
-  const [slidesType, setSlidesType] = useState('project-dashboard');
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -368,7 +362,7 @@ export function Dashboard() {
           </div>
           
           {/* AI Decision Feed */}
-          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5">
+          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 md:col-span-2">
             <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Sparkles className="w-3 h-3" />
               AI Decisions
@@ -391,207 +385,8 @@ export function Dashboard() {
               ))}
             </div>
           </div>
-          
-          {/* Workspace Actions */}
-          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5">
-            <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              Workspace Actions
-            </h3>
-            <div className="space-y-2">
-              <Button onClick={async () => {
-                let token = getAccessToken();
-                if (!token) {
-                  token = await requestWorkspaceAccess();
-                }
-                if (!token) return;
-                try {
-                  toast.loading("Syncing Calendar...");
-                  const { fetchCalendarEvents } = await import('../lib/workspace');
-                  
-                  // Fetch events for a wider range to avoid duplicates
-                  const now = new Date();
-                  const rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-                  const rangeEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-                  const events = await fetchCalendarEvents(token, rangeStart, rangeEnd);
-                  
-                  // Push tasks to calendar
-                  const { createCalendarEvent } = await import('../lib/workspace');
-                  let pushedCount = 0;
-                  for (const task of tasks) {
-                     if (task.status === 'pending' || task.status === 'in_progress') {
-                         // Check if this task exists on Google Calendar (simple title match)
-                         const exists = events.items?.find((e: any) => e.summary === task.title);
-                         if (!exists) {
-                            const taskDate = task.deadline ? new Date(task.deadline) : new Date();
-                            const taskStart = taskDate.toISOString();
-                            const taskEnd = new Date(taskDate.getTime() + 60*60*1000).toISOString();
-                            try {
-                              await createCalendarEvent(token, {
-                                 summary: task.title,
-                                 start: taskStart,
-                                 end: taskEnd
-                              });
-                              pushedCount++;
-                            } catch (err) {
-                              console.warn("Could not sync task to calendar", task.title);
-                            }
-                         }
-                     }
-                  }
-                  
-                  const idToken = await user?.getIdToken();
-                  const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
-                  const res = await fetch('/api/autonomous-pipeline', {
-                    method: 'POST',
-                    headers: { 
-                      'Authorization': `Bearer ${idToken}`,
-                      'Content-Type': 'application/json' 
-                    },
-                    body: JSON.stringify({ 
-                      eventName: 'Calendar Synced',
-                      eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today. Pushed ${pushedCount} tasks to calendar.`,
-                      tasks: tasks,
-                      calendarEvents: events.items || [],
-                      model: selectedModel
-                    })
-                  });
-
-                  if (!res.ok) {
-                    const errData = await res.json().catch(() => ({}));
-                    throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
-                  }
-
-                  await fetchDashboardData();
-
-                  toast.dismiss();
-                  toast.success(`Calendar synced! ${pushedCount > 0 ? '(' + pushedCount + ' tasks pushed)' : ''}`);
-                } catch (e: any) {
-                  toast.dismiss();
-                  toast.error(e.message || "Failed to sync calendar.");
-                }
-              }} className="w-full bg-[#161b22] hover:bg-indigo-900/40 text-[#f0f6fc] text-xs justify-start h-10 border border-[#21262d] shadow-sm mb-4 transition-colors">
-                <CalendarIcon className="w-4 h-4 mr-2 text-indigo-400" />
-                Sync Google Calendar
-              </Button>
-              <div className="h-[1px] bg-[#21262d] w-full mb-4"></div>
-              <Button onClick={async () => {
-                let token = getAccessToken();
-                if (!token) {
-                  token = await requestWorkspaceAccess();
-                }
-                if (!token) return;
-                
-                try {
-                  toast.loading("Generating report...");
-                  const { generateGoogleDocReport } = await import('../lib/workspace');
-                  const reportData = {
-                    title: `Daily Report - ${new Date().toLocaleDateString()}`,
-                    tasks,
-                    completedTasks,
-                    goals
-                  };
-                  await generateGoogleDocReport(token, reportData);
-                  toast.dismiss();
-                  toast.success("Saved to Google Drive!");
-                } catch (e) {
-                  toast.dismiss();
-                  toast.error("Failed to generate report.");
-                }
-              }} className="w-full bg-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#f0f6fc] text-xs justify-start h-8 px-2 transition-colors">
-                <FileText className="w-3 h-3 mr-2" />
-                Export Daily Report (Docs)
-              </Button>
-              <Button onClick={() => setIsSlidesDialogOpen(true)} className="w-full bg-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#f0f6fc] text-xs justify-start h-8 px-2 transition-colors">
-                <Presentation className="w-3 h-3 mr-2" />
-                Generate Presentation (Slides)
-              </Button>
-              <Button onClick={async () => {
-                let token = getAccessToken();
-                if (!token) {
-                  token = await requestWorkspaceAccess();
-                }
-                if (!token) return;
-                
-                try {
-                  toast.loading("Exporting to Sheets...");
-                  const { createGoogleSheet } = await import('../lib/workspace');
-                  const data = [
-                    ["Task Title", "Priority", "Status", "Estimated Hours", "Risk Score"],
-                    ...tasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0]),
-                    ...completedTasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0])
-                  ];
-                  await createGoogleSheet(token, `TaskPilot AI Analytics - ${new Date().toLocaleDateString()}`, data);
-                  toast.dismiss();
-                  toast.success("Spreadsheet created in Google Drive!");
-                } catch (e) {
-                  toast.dismiss();
-                  toast.error("Failed to create spreadsheet.");
-                }
-              }} className="w-full bg-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#f0f6fc] text-xs justify-start h-8 px-2 transition-colors">
-                <Table className="w-3 h-3 mr-2" />
-                Export Analytics (Sheets)
-              </Button>
-            </div>
-          </div>
         </motion.div>
       </div>
-      <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d]">
-          <DialogHeader>
-            <DialogTitle className="text-[#f0f6fc]">Generate Presentation</DialogTitle>
-            <DialogDescription className="text-[#8b949e]">
-              Select the type of presentation you want to generate.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="slides-type" className="text-[#c9d1d9]">Presentation Type</Label>
-              <Select value={slidesType} onValueChange={setSlidesType}>
-                <SelectTrigger id="slides-type" className="bg-[#161b22] border-[#30363d] text-[#c9d1d9]">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#161b22] border-[#30363d] text-[#c9d1d9]">
-                  <SelectItem value="project-dashboard" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Project Status Dashboard</SelectItem>
-                  <SelectItem value="standup" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Daily Standup Agenda</SelectItem>
-                  <SelectItem value="sprint-planning" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Sprint Planning</SelectItem>
-                  <SelectItem value="progress-report" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Progress Report</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 mt-2">
-            <Button variant="ghost" onClick={() => setIsSlidesDialogOpen(false)} className="text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22]">
-              Cancel
-            </Button>
-            <Button onClick={async () => {
-                let token = getAccessToken();
-                if (!token) {
-                  token = await requestWorkspaceAccess();
-                }
-                if (!token) return;
-                setIsSlidesDialogOpen(false);
-                try {
-                  toast.loading("Generating slides...");
-                  const { generatePresentation } = await import('../lib/workspace');
-                  const reportData = {
-                    type: slidesType,
-                    tasks,
-                    completedTasks,
-                    goals
-                  };
-                  await generatePresentation(token, reportData);
-                  toast.dismiss();
-                  toast.success("Slides created in Google Drive!");
-                } catch (e: any) {
-                  toast.dismiss();
-                  toast.error(e.message || "Failed to create presentation.");
-                }
-            }} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-              Generate
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

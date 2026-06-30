@@ -7,7 +7,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane } from 'lucide-react';
+import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane, Target } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function Goals() {
@@ -591,61 +591,85 @@ export function Goals() {
             <DialogHeader>
               <DialogTitle className="text-white">Create New Objective</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleCreateGoal} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label className="text-slate-400">Objective Title</Label>
-                <div className="flex gap-2">
-                  <Input className="flex-1 bg-slate-800/50 border-slate-700 text-white" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Meditate daily" required />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white px-3"
-                    onClick={() => {
-                      if (!('webkitSpeechRecognition' in window)) {
-                        toast.error("Speech recognition is not supported in this browser.");
-                        return;
-                      }
-                      const recognition = new (window as any).webkitSpeechRecognition();
-                      recognition.onresult = (e: any) => setTitle(e.results[0][0].transcript);
-                      recognition.start();
-                    }}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/><line x1="8" x2="16" y1="22" y2="22"/></svg>
-                  </Button>
+            <form onSubmit={handleCreateGoal} className="space-y-6 mt-4">
+              
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  type="button"
+                  onClick={() => setType('habit')}
+                  className={`p-4 rounded-2xl border text-left transition-all ${type === 'habit' ? 'bg-indigo-500/10 border-indigo-500' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`p-2 rounded-xl ${type === 'habit' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-400'}`}>
+                      <Flame className="w-5 h-5" />
+                    </div>
+                    <h4 className={`font-semibold ${type === 'habit' ? 'text-indigo-400' : 'text-slate-300'}`}>Daily Habit</h4>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">Track daily streaks and build consistent long-term routines.</p>
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => setType('quest')}
+                  className={`p-4 rounded-2xl border text-left transition-all ${type === 'quest' ? 'bg-cyan-500/10 border-cyan-500' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`p-2 rounded-xl ${type === 'quest' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-400'}`}>
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <h4 className={`font-semibold ${type === 'quest' ? 'text-cyan-400' : 'text-slate-300'}`}>Quest</h4>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">A major goal. AI automatically breaks it down into actionable tasks.</p>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-slate-400">Objective Title</Label>
+                  <div className="flex gap-2">
+                    <Input className="flex-1 bg-slate-900 border-slate-800 text-white rounded-xl h-11" value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'habit' ? "e.g. Meditate for 10 minutes" : "e.g. Launch new mobile app"} required />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="bg-slate-900 border-slate-800 text-slate-400 hover:text-white px-4 rounded-xl h-11"
+                      onClick={() => {
+                        if (!('webkitSpeechRecognition' in window)) {
+                          toast.error("Speech recognition is not supported in this browser.");
+                          return;
+                        }
+                        const recognition = new (window as any).webkitSpeechRecognition();
+                        recognition.onresult = (e: any) => setTitle(e.results[0][0].transcript);
+                        recognition.start();
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/><line x1="8" x2="16" y1="22" y2="22"/></svg>
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-slate-400">Description</Label>
-                <Input className="bg-slate-800/50 border-slate-700 text-white" value={description} onChange={e => setDescription(e.target.value)} placeholder="Why is this important?" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-slate-400">Type</Label>
-                <Select value={type} onValueChange={(val: any) => setType(val)}>
-                  <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
-                    <SelectValue>
-                      {(value: string) => value === 'quest' ? 'Quest' : 'Daily Habit'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                    <SelectItem value="habit">Daily Habit</SelectItem>
-                    <SelectItem value="quest">Quest</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label className="text-slate-400">Description <span className="text-slate-600 text-xs">(Optional)</span></Label>
+                  <Input className="bg-slate-900 border-slate-800 text-white rounded-xl h-11" value={description} onChange={e => setDescription(e.target.value)} placeholder="Why is this important?" />
+                </div>
                 {type === 'quest' && (
-                  <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1.5">
-                    <ListTree className="w-3 h-3 mt-0.5 shrink-0" />
-                    AI will break this into individually-scheduled tasks on your Mission Board.
-                  </p>
+                  <div className="space-y-2">
+                    <Label className="text-slate-400">Target Deadline</Label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Clock className="h-4 w-4 text-slate-500 group-hover:text-cyan-500 transition-colors" />
+                      </div>
+                      <Input 
+                        type="datetime-local" 
+                        className="bg-slate-900 border-slate-800 text-slate-200 rounded-xl h-11 pl-10 pr-4 [color-scheme:dark] focus-visible:ring-cyan-500/50 hover:bg-slate-800/80 hover:border-cyan-500/30 transition-all w-full [&::-webkit-calendar-picker-indicator]:opacity-50 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer" 
+                        value={targetDate} 
+                        onChange={e => setTargetDate(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
-              {type === 'quest' && (
-                <div className="space-y-2">
-                  <Label className="text-slate-400">Target Date & Time</Label>
-                  <Input type="datetime-local" className="bg-slate-800/50 border-slate-700 text-white [color-scheme:dark] focus-visible:ring-cyan-500/50" value={targetDate} onChange={e => setTargetDate(e.target.value)} required />
-                </div>
-              )}
-              <Button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold tracking-widest uppercase text-xs rounded-xl" disabled={isCreating}>
-                {isCreating ? (type === 'quest' ? "AI is planning your quest..." : "Creating...") : "Save Objective"}
+              <Button type="submit" className={`w-full text-white font-bold tracking-widest uppercase text-xs rounded-xl h-12 transition-all shadow-lg ${type === 'habit' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20'}`} disabled={isCreating}>
+                {isCreating ? (type === 'quest' ? "AI is planning your quest..." : "Creating...") : (type === 'habit' ? "Save Habit" : "Schedule new quest with AI")}
               </Button>
             </form>
           </DialogContent>
