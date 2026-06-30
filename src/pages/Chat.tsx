@@ -24,6 +24,145 @@ export function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const drawVisualizer = () => {
+    if (!canvasRef.current || !analyserRef.current) return;
+    const canvas = canvasRef.current;
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      animationFrameRef.current = requestAnimationFrame(draw);
+      analyser.getByteTimeDomainData(dataArray);
+
+      canvasCtx.fillStyle = 'rgba(13, 17, 23, 0.2)';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+      canvasCtx.lineWidth = 3;
+      canvasCtx.strokeStyle = '#f87171'; // red-400
+      canvasCtx.beginPath();
+
+      const sliceWidth = (canvas.width * 1.0) / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+
+        if (i === 0) {
+          canvasCtx.moveTo(x, y);
+        } else {
+          canvasCtx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    };
+
+    draw();
+  };
+  
+  const toggleRecording = async () => {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast.error("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+      
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsRecording(true);
+        setTimeout(drawVisualizer, 100);
+      };
+
+      let finalTranscript = input ? input + ' ' : '';
+
+      recognition.onresult = (e: any) => {
+        let interimTranscript = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            finalTranscript += e.results[i][0].transcript + ' ';
+          } else {
+            interimTranscript += e.results[i][0].transcript;
+          }
+        }
+        setInput(finalTranscript + interimTranscript);
+      };
+
+      recognition.onerror = (e: any) => {
+        console.error('Speech recognition error', e.error);
+        stopRecording();
+        if (e.error === 'not-allowed') {
+          toast.error("Microphone access denied.");
+        }
+      };
+
+      recognition.onend = () => {
+        stopRecording();
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      toast.error("Could not access microphone for visualization.");
+    }
+  };
+
+  const stopRecording = () => {
+    setIsRecording(false);
+    recognitionRef.current?.stop();
+    
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -237,7 +376,38 @@ export function Chat() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto h-full flex flex-col w-full animate-fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto h-full flex flex-col w-full animate-fade-in relative">
+      {isRecording && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d1117]/80 backdrop-blur-md">
+          <div className="bg-[#161b22] border border-red-500/30 p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.15)] flex flex-col items-center gap-6 w-[90%] max-w-md animate-fade-in relative overflow-hidden">
+            <div className="absolute inset-0 bg-red-500/5 pointer-events-none animate-pulse" />
+            
+            <div className="w-24 h-24 bg-red-500/20 rounded-full flex items-center justify-center animate-[pulse_2s_ease-in-out_infinite] shadow-[0_0_60px_rgba(239,68,68,0.4)]">
+              <Mic className="w-12 h-12 text-red-400" />
+            </div>
+            
+            <div className="text-center space-y-2 w-full z-10">
+              <h2 className="text-xl font-medium text-[#f0f6fc]">Listening...</h2>
+              <div className="w-full h-24 bg-[#0d1117] rounded-2xl overflow-hidden border border-[#21262d] relative shadow-inner">
+                <canvas ref={canvasRef} width="400" height="100" className="w-full h-full object-cover opacity-80" />
+              </div>
+              <p className="text-sm text-[#8b949e] line-clamp-3 overflow-hidden text-ellipsis px-2 min-h-[40px] mt-4">
+                {input || "Speak now..."}
+              </p>
+            </div>
+            
+            <Button 
+              type="button"
+              onClick={stopRecording}
+              className="mt-6 rounded-full px-12 h-14 bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 hover:text-red-300 font-bold tracking-wide transition-all shadow-[0_0_20px_rgba(239,68,68,0.2)] hover:shadow-[0_0_30px_rgba(239,68,68,0.4)] flex items-center gap-3 z-10"
+            >
+              <div className="w-3 h-3 rounded-sm bg-red-400 animate-pulse" />
+              Stop Recording
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 px-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Pilot <br/><span className="font-semibold italic text-indigo-400">Intelligence</span></h1>
@@ -329,22 +499,15 @@ export function Chat() {
                 </button>
               ))}
             </div>
-            <form onSubmit={handleSend} className="flex gap-2">
+            <form onSubmit={handleSend} className="flex gap-2 relative">
               <Button 
                 type="button" 
                 variant="outline" 
-                className="bg-[#161b22] border-[#21262d] text-[#8b949e] hover:text-[#f0f6fc]"
-                onClick={() => {
-                  if (!('webkitSpeechRecognition' in window)) {
-                    toast.error("Speech recognition is not supported in this browser.");
-                    return;
-                  }
-                  const recognition = new (window as any).webkitSpeechRecognition();
-                  recognition.onresult = (e: any) => setInput(e.results[0][0].transcript);
-                  recognition.start();
-                }}
+                className={`transition-all rounded-xl ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)] scale-105' : 'bg-[#161b22] border-[#21262d] text-[#8b949e] hover:text-[#f0f6fc]'}`}
+                onClick={toggleRecording}
+                title={isRecording ? "Stop recording" : "Start recording"}
               >
-                <Mic className="w-4 h-4" />
+                <Mic className={`w-4 h-4 ${isRecording ? 'animate-[pulse_1s_ease-in-out_infinite]' : ''}`} />
               </Button>
               <Input 
                 value={input} 
