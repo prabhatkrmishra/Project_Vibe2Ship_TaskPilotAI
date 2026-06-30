@@ -134,20 +134,6 @@
 /* Smooth scrollbar */
 * { scrollbar-width: thin; scrollbar-color: #21262d transparent; }
 
-/* Pulse ring for AI status indicator */
-@keyframes pulse-ring {
-  0% { transform: scale(0.8); opacity: 1; }
-  100% { transform: scale(2.5); opacity: 0; }
-}
-.ai-pulse::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: #22d3ee;
-  animation: pulse-ring 2s ease-out infinite;
-}
-
 /* Login page dot-grid */
 .login-bg {
   background-color: #030712;

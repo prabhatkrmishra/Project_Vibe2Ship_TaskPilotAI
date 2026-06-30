@@ -63,7 +63,7 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
               {user?.displayName || user?.email}
             </div>
           </div>
-          <div className="w-2 h-2 rounded-full bg-cyan-400 relative ai-pulse"></div>
+          <div className="w-2 h-2 rounded-full bg-cyan-400"></div>
         </div>
         <div className="flex justify-center gap-3 text-[11px] text-slate-500 mb-4">
           <Link to="/privacy" onClick={onClose} className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
