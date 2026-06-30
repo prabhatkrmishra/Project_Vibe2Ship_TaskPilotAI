@@ -527,6 +527,43 @@ async function startServer() {
 
   // --- AI Planning Routes ---
   
+  app.post("/api/generate-milestone-steps", verifyToken, async (req: any, res: any) => {
+    try {
+      const { title, description, targetDate, model } = req.body;
+      const selectedModel = getValidModel(model);
+      const prompt = `
+        You are an intelligent productivity assistant. Analyze the following project milestone goal.
+        Goal: ${title}
+        Description: ${description || 'N/A'}
+        Target Date: ${targetDate || 'N/A'}
+        
+        Generate a list of actionable steps needed to complete this milestone.
+        Return a JSON response exactly in this format, with no markdown formatting:
+        {
+          "steps": ["step 1", "step 2", "step 3", ...]
+        }
+        Keep the steps concise and actionable.
+      `;
+      
+      const response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: prompt
+      });
+      
+      let text = response.text || "{}";
+      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const result = JSON.parse(text);
+      res.json(result);
+    } catch (err: any) {
+      console.error(err);
+      let errorMessage = err.message || "An unexpected error occurred.";
+      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
+        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
+      }
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   app.post("/api/analyze-task", verifyToken, async (req: any, res: any) => {
     try {
       const { title, description, deadline, model } = req.body;

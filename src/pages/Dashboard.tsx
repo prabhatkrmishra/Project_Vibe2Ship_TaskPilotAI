@@ -9,6 +9,7 @@ import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Ta
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
+import { toast } from 'sonner';
 
 export function Dashboard() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
