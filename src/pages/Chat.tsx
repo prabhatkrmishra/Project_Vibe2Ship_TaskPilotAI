@@ -12,6 +12,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: any;
+  isError?: boolean;
 }
 
 export function Chat() {
@@ -130,9 +131,28 @@ export function Chat() {
       recognition.onerror = (e: any) => {
         console.error('Speech recognition error', e.error);
         stopRecording();
+        
+        let errorDesc = "An error occurred with Speech Recognition.";
         if (e.error === 'not-allowed') {
-          toast.error("Microphone access denied.");
+          errorDesc = "Microphone access was denied. Please check your browser permissions.";
+        } else if (e.error === 'network') {
+          errorDesc = "Speech recognition network error. The browser speech-to-text service is temporarily unavailable or cannot be reached from this sandboxed preview iframe. Please open the app in a new tab for full microphone features.";
+        } else if (e.error === 'aborted') {
+          return; // Suppress spam if aborted normally
+        } else if (e.error === 'no-speech') {
+          errorDesc = "No speech was detected. Please make sure your microphone is working and speak clearly.";
+        } else {
+          errorDesc = `Speech recognition error: ${e.error || 'unknown'}`;
         }
+        
+        // Add speech recognition error as an assistant message with error flag
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `⚠️ **Speech Recognition Error**: ${errorDesc}`,
+          isError: true,
+          timestamp: new Date().toISOString()
+        }]);
+        toast.error(errorDesc);
       };
 
       recognition.onend = () => {
@@ -326,16 +346,34 @@ export function Chat() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        const friendlyError = errData.error || 'The neural network is currently offline. Please try switching models.';
+        let friendlyError = 'The neural network is currently offline. Please try switching models.';
+        
+        if (errData && errData.error) {
+          const rawErr = errData.error;
+          if (typeof rawErr === 'string') {
+            try {
+              if (rawErr.trim().startsWith('{')) {
+                const parsed = JSON.parse(rawErr);
+                friendlyError = parsed.error?.message || parsed.message || rawErr;
+              } else {
+                friendlyError = rawErr;
+              }
+            } catch (e) {
+              friendlyError = rawErr;
+            }
+          } else if (typeof rawErr === 'object') {
+            friendlyError = rawErr.message || rawErr.error?.message || JSON.stringify(rawErr);
+          }
+        }
         
         // Add assistant error message to DB
         const errorMsgRes = await fetch('/api/chats', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ role: 'assistant', content: friendlyError })
+          body: JSON.stringify({ role: 'assistant', content: `⚠️ **Service Error**: ${friendlyError}` })
         });
-        const savedErrorMsg = errorMsgRes.ok ? await errorMsgRes.json() : { role: 'assistant' as const, content: friendlyError };
-        setMessages(prev => [...prev, savedErrorMsg]);
+        const savedErrorMsg = errorMsgRes.ok ? await errorMsgRes.json() : { role: 'assistant' as const, content: `⚠️ **Service Error**: ${friendlyError}` };
+        setMessages(prev => [...prev, { ...savedErrorMsg, isError: true }]);
         toast.error(friendlyError);
         return;
       }
@@ -365,7 +403,7 @@ export function Chat() {
           body: JSON.stringify({ role: 'assistant', content: `⚠️ **Connection Error**: ${fallbackError}` })
         });
         const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : { role: 'assistant' as const, content: `⚠️ **Connection Error**: ${fallbackError}` };
-        setMessages(prev => [...prev, savedAssistantMsg]);
+        setMessages(prev => [...prev, { ...savedAssistantMsg, isError: true }]);
       } catch (err) {
         console.error("Double failure during error logging:", err);
       }
@@ -450,25 +488,40 @@ export function Chat() {
         <div className="flex-1 flex flex-col p-0 min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-indigo-500/20 scrollbar-track-transparent" ref={scrollRef}>
             <div className="space-y-6">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-indigo-500/20 text-indigo-400 font-bold text-[10px] uppercase border border-indigo-500/30' : 'bg-[#161b22] border border-[#21262d]'}`}>
-                    {msg.role === 'user' ? 'YOU' : <Bot className="w-4 h-4 text-cyan-400" />}
+              {messages.map((msg, i) => {
+                const isMsgError = msg.isError || msg.content.startsWith('⚠️') || msg.content.includes('Speech Recognition Error') || msg.content.includes('experiencing high demand') || msg.content.includes('UNAVAILABLE') || msg.content.includes('quota exceeded');
+                return (
+                  <div key={i} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      msg.role === 'user' 
+                        ? 'bg-indigo-500/20 text-indigo-400 font-bold text-[10px] uppercase border border-indigo-500/30' 
+                        : isMsgError
+                          ? 'bg-red-500/10 border border-red-500/20 text-red-400'
+                          : 'bg-[#161b22] border border-[#21262d]'
+                    }`}>
+                      {msg.role === 'user' ? 'YOU' : <Bot className={`w-4 h-4 ${isMsgError ? 'text-red-400' : 'text-cyan-400'}`} />}
+                    </div>
+                    <div className={`max-w-[80%] px-5 py-3 ${
+                      msg.role === 'user' 
+                        ? 'bg-indigo-600/20 text-indigo-50 border border-indigo-500/30 rounded-2xl rounded-tr-none' 
+                        : isMsgError
+                          ? 'bg-red-950/40 border-l-2 border-red-500 text-red-100 border border-red-500/20 rounded-2xl rounded-tl-none shadow-md shadow-red-500/5'
+                          : 'bg-slate-800/60 border-l-2 border-cyan-500/30 rounded-2xl rounded-tl-none'
+                    }`}>
+                      {msg.role === 'user' ? (
+                         <p className="text-sm">{msg.content}</p>
+                      ) : (
+                        <div className={`prose prose-sm prose-invert max-w-none text-sm markdown-body ${isMsgError ? 'text-red-200' : 'text-[#f0f6fc]'}`}>
+                           <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      )}
+                      <span className="text-[10px] text-slate-500 font-data mt-2 block text-right opacity-70">
+                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
-                  <div className={`max-w-[80%] px-5 py-3 ${msg.role === 'user' ? 'bg-indigo-600/20 text-indigo-50 border border-indigo-500/30 rounded-2xl rounded-tr-none' : 'bg-slate-800/60 border-l-2 border-cyan-500/30 rounded-2xl rounded-tl-none'}`}>
-                    {msg.role === 'user' ? (
-                       <p className="text-sm">{msg.content}</p>
-                    ) : (
-                      <div className="prose prose-sm prose-invert max-w-none text-sm text-[#f0f6fc] markdown-body">
-                         <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </div>
-                    )}
-                    <span className="text-[10px] text-slate-500 font-data mt-2 block text-right opacity-70">
-                      {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {isSending && (
                  <div className="flex gap-4">
                   <div className="w-8 h-8 rounded-full bg-[#161b22] border border-[#21262d] flex items-center justify-center shrink-0">

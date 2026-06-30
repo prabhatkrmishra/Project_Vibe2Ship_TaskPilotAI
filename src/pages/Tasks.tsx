@@ -649,6 +649,14 @@ export function Tasks() {
                       }
                       const recognition = new (window as any).webkitSpeechRecognition();
                       recognition.onresult = (e: any) => setTitle(e.results[0][0].transcript);
+                      recognition.onerror = (err: any) => {
+                        console.error('Speech recognition error:', err.error);
+                        if (err.error === 'network') {
+                          toast.error("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
+                        } else {
+                          toast.error(`Speech recognition error: ${err.error}`);
+                        }
+                      };
                       recognition.start();
                     }}
                   >

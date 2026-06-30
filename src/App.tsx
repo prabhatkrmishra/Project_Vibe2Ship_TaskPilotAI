@@ -80,10 +80,10 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
             </div>
           )}
           <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-semibold text-[#f0f6fc] truncate leading-none">
+            <p className="text-sm font-semibold text-[#f0f6fc] truncate xl:whitespace-normal xl:overflow-visible xl:break-words leading-tight">
               {user?.name || 'User'}
             </p>
-            <p className="text-xs text-slate-400 truncate mt-1.5 font-mono">
+            <p className="text-xs text-slate-400 truncate xl:whitespace-normal xl:overflow-visible xl:break-all mt-1.5 font-mono">
               {user?.email}
             </p>
           </div>
@@ -150,7 +150,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Desktop Sidebar (hidden on mobile, visible on lg+) */}
-      <aside className="w-64 border-r border-[#21262d] bg-[#0d1117] flex-col shrink-0 hidden lg:flex h-full">
+      <aside className="w-64 xl:w-72 2xl:w-80 border-r border-[#21262d] bg-[#0d1117] flex-col shrink-0 hidden lg:flex h-full transition-all duration-300">
         <SidebarContent user={user} location={location} logout={logout} />
       </aside>
 

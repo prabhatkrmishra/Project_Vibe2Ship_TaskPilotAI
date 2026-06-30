@@ -128,7 +128,7 @@ export function Profile() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto space-y-8">
         
         {/* Breadcrumb Header */}
         <div className="flex items-center justify-between">
@@ -151,7 +151,7 @@ export function Profile() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
           
           {/* User Meta Summary Card */}
-          <div className="md:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 flex flex-col items-center text-center h-fit">
+          <div className="md:col-span-4 lg:col-span-4 xl:col-span-3 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 flex flex-col items-center text-center h-fit">
             <div className="relative mb-4">
               {user?.picture ? (
                 <img src={user.picture} alt="Profile" className="w-24 h-24 rounded-full ring-4 ring-indigo-500/30 object-cover" />
@@ -233,7 +233,7 @@ export function Profile() {
           </div>
 
           {/* Profile Forms & Achievements */}
-          <div className="md:col-span-8 space-y-6">
+          <div className="md:col-span-8 lg:col-span-8 xl:col-span-9 space-y-6">
             
             {/* Tabs */}
             <div className="flex gap-2 p-1 bg-[#0d1117] border border-[#21262d] rounded-2xl">
