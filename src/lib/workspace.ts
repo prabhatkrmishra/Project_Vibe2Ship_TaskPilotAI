@@ -36,6 +36,19 @@ export const createGoogleDoc = async (accessToken: string, title: string, conten
   return res.json();
 };
 
+export const generateGoogleDocReport = async (accessToken: string, reportData: any) => {
+  const res = await fetch('/api/docs/generate-report', {
+    method: 'POST',
+    headers: { 
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(reportData)
+  });
+  if (!res.ok) throw new Error("Failed to generate Google Doc report");
+  return res.json();
+};
+
 export const generatePresentation = async (accessToken: string, reportData: any) => {
   const res = await fetch('/api/presentations/generate', {
     method: 'POST',

@@ -568,12 +568,74 @@ async function startServer() {
     }
   });
 
+  app.post("/api/docs/generate-report", async (req: any, res: any) => {
+    try {
+      const accessToken = req.headers.authorization?.split(" ")[1];
+      if (!accessToken) return res.status(401).send("No access token");
+      
+      const { title, tasks, completedTasks, goals } = req.body;
+      
+      let generatedContent = "";
+      try {
+        const prompt = `You are a professional assistant generating a comprehensive daily progress report for a user.
+        Data:
+        - Pending Tasks: ${JSON.stringify((tasks || []).map((t:any) => t.title))}
+        - Completed Tasks: ${JSON.stringify((completedTasks || []).map((t:any) => t.title))}
+        - Goals and Habits: ${JSON.stringify((goals || []).map((g:any) => ({ title: g.title, type: g.type })))}
+        
+        Write a detailed but concise report summarizing:
+        1. Overall productivity and status of tasks.
+        2. Progress on habits and goals.
+        3. Recommendations for tomorrow.
+        Use plain text formatting. Avoid markdown like ** or ##.`;
+        
+        const aiRes = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt
+        });
+        generatedContent = aiRes.text || "Report generated successfully.";
+      } catch (err) {
+        console.error("AI generation failed for docs:", err);
+        generatedContent = `Daily Progress Report\nTasks Completed: ${completedTasks?.length || 0}\nRemaining Tasks: ${tasks?.length || 0}`;
+      }
+
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
+      const docs = google.docs({ version: 'v1', auth: oauth2Client });
+      
+      const doc = await docs.documents.create({
+        requestBody: { title },
+      });
+      
+      if (doc.data.documentId) {
+        await docs.documents.batchUpdate({
+          documentId: doc.data.documentId,
+          requestBody: {
+            requests: [
+              {
+                insertText: {
+                  location: { index: 1 },
+                  text: generatedContent
+                }
+              }
+            ]
+          }
+        });
+      }
+      
+      res.json(doc.data);
+    } catch (error: any) {
+      console.error('Error creating Google Doc report:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/presentations/generate", async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
       
-      const { type, tasks, completedTasks } = req.body;
+      const { type, tasks, completedTasks, goals } = req.body;
       
       const oauth2Client = new google.auth.OAuth2();
       oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
@@ -618,14 +680,22 @@ async function startServer() {
       });
       
       let textContent = "";
-      if (type === 'project-dashboard') {
-        textContent = `Project Dashboard\n\nTotal Pending Tasks: ${tasks?.length || 0}\nTotal Completed Tasks: ${completedTasks?.length || 0}`;
-      } else if (type === 'standup') {
-        textContent = `Daily Standup Agenda\n\n- Yesterday's Updates\n- Today's Plan\n- Blockers`;
-      } else if (type === 'sprint-planning') {
-        textContent = `Sprint Planning\n\nSprint Goals:\n\nTasks to complete: ${tasks?.length || 0}`;
-      } else if (type === 'progress-report') {
-        textContent = `Progress Report\n\nTasks Completed: ${completedTasks?.length || 0}\nProductivity Score: ${Math.round(((completedTasks?.length || 0) / ((tasks?.length || 0) + (completedTasks?.length || 0))) * 100) || 0}%`;
+      try {
+        const prompt = `You are a professional assistant generating a 3-5 bullet point slide summary for a "${title}" presentation.
+        Use this data:
+        - Pending Tasks: ${JSON.stringify((tasks || []).map((t:any) => t.title))}
+        - Completed Tasks: ${JSON.stringify((completedTasks || []).map((t:any) => t.title))}
+        - Goals/Habits: ${JSON.stringify((goals || []).map((g:any) => g.title))}
+        Keep it concise, plain text only, no markdown formatting like ** or ##, just use standard bullet points (-). Make it professional.`;
+        
+        const aiRes = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt
+        });
+        textContent = aiRes.text || "Summary generated successfully.";
+      } catch (err) {
+        console.error("AI generation failed for slides:", err);
+        textContent = `${title}\n\nTasks Pending: ${tasks?.length || 0}\nCompleted: ${completedTasks?.length || 0}`;
       }
       
       requests.push({

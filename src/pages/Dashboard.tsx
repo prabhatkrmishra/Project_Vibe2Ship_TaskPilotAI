@@ -166,7 +166,7 @@ export function Dashboard() {
             )}
             {decisions.length > 0 && (
               <span className="block mt-2 text-xs text-slate-400 border-t border-slate-700/50 pt-2 italic">
-                Latest insight: {decisions[0].reasoning}
+                Latest insight: {decisions[0].reason || decisions[0].title}
               </span>
             )}
           </p>
@@ -354,9 +354,14 @@ export function Dashboard() {
               )}
               {decisions.map(d => (
                 <div key={d.id} className="relative pl-4 border-l-2 border-[#21262d]">
-                  <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-indigo-500"></div>
-                  <p className="text-[10px] text-slate-500 font-data mb-1">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}</p>
-                  <p className="text-xs text-slate-300">{d.text}</p>
+                  <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-indigo-500"></div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-indigo-300">{d.title}</span>
+                      <span className="text-[10px] text-slate-500 font-mono shrink-0">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}</span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">{d.reason}</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -378,11 +383,36 @@ export function Dashboard() {
                   toast.loading("Syncing Calendar...");
                   const { fetchCalendarEvents } = await import('../lib/workspace');
                   
-                  // Fetch today's events
+                  // Fetch events for a wider range to avoid duplicates
                   const now = new Date();
-                  const startOfDay = new Date(now.setHours(0,0,0,0)).toISOString();
-                  const endOfDay = new Date(now.setHours(23,59,59,999)).toISOString();
-                  const events = await fetchCalendarEvents(token, startOfDay, endOfDay);
+                  const rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                  const rangeEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                  const events = await fetchCalendarEvents(token, rangeStart, rangeEnd);
+                  
+                  // Push tasks to calendar
+                  const { createCalendarEvent } = await import('../lib/workspace');
+                  let pushedCount = 0;
+                  for (const task of tasks) {
+                     if (task.status === 'pending' || task.status === 'in_progress') {
+                         // Check if this task exists on Google Calendar (simple title match)
+                         const exists = events.items?.find((e: any) => e.summary === task.title);
+                         if (!exists) {
+                            const taskDate = task.deadline ? new Date(task.deadline) : new Date();
+                            const taskStart = taskDate.toISOString();
+                            const taskEnd = new Date(taskDate.getTime() + 60*60*1000).toISOString();
+                            try {
+                              await createCalendarEvent(token, {
+                                 summary: task.title,
+                                 start: taskStart,
+                                 end: taskEnd
+                              });
+                              pushedCount++;
+                            } catch (err) {
+                              console.warn("Could not sync task to calendar", task.title);
+                            }
+                         }
+                     }
+                  }
                   
                   const idToken = await user?.getIdToken();
                   const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
@@ -394,7 +424,7 @@ export function Dashboard() {
                     },
                     body: JSON.stringify({ 
                       eventName: 'Calendar Synced',
-                      eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today.`,
+                      eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today. Pushed ${pushedCount} tasks to calendar.`,
                       tasks: tasks,
                       calendarEvents: events.items || [],
                       model: selectedModel
@@ -409,7 +439,7 @@ export function Dashboard() {
                   await fetchDashboardData();
 
                   toast.dismiss();
-                  toast.success("Calendar synced and schedule re-optimized!");
+                  toast.success(`Calendar synced! ${pushedCount > 0 ? '(' + pushedCount + ' tasks pushed)' : ''}`);
                 } catch (e: any) {
                   toast.dismiss();
                   toast.error(e.message || "Failed to sync calendar.");
@@ -428,9 +458,14 @@ export function Dashboard() {
                 
                 try {
                   toast.loading("Generating report...");
-                  const { createGoogleDoc } = await import('../lib/workspace');
-                  const reportContent = `Daily Progress Report\nTasks Completed: ${completedTasks.length}\nProductivity Score: ${productivityScore}\nRemaining Tasks: ${tasks.length}`;
-                  await createGoogleDoc(token, `Daily Report - ${new Date().toLocaleDateString()}`, reportContent);
+                  const { generateGoogleDocReport } = await import('../lib/workspace');
+                  const reportData = {
+                    title: `Daily Report - ${new Date().toLocaleDateString()}`,
+                    tasks,
+                    completedTasks,
+                    goals
+                  };
+                  await generateGoogleDocReport(token, reportData);
                   toast.dismiss();
                   toast.success("Saved to Google Drive!");
                 } catch (e) {
@@ -516,7 +551,8 @@ export function Dashboard() {
                   const reportData = {
                     type: slidesType,
                     tasks,
-                    completedTasks
+                    completedTasks,
+                    goals
                   };
                   await generatePresentation(token, reportData);
                   toast.dismiss();
