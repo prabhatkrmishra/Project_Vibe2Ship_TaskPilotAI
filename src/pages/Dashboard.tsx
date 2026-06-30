@@ -6,7 +6,9 @@ import { Task, DailyPlan } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Loader2, Calendar as CalendarIcon, Sparkles, FileText, Presentation, Table } from 'lucide-react';
-import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Label } from '../components/ui/label';
 
 export function Dashboard() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -16,6 +18,9 @@ export function Dashboard() {
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(true);
+  
+  const [isSlidesDialogOpen, setIsSlidesDialogOpen] = useState(false);
+  const [slidesType, setSlidesType] = useState('project-dashboard');
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -397,24 +402,7 @@ export function Dashboard() {
                 <FileText className="w-3 h-3 mr-2" />
                 Export Daily Report (Docs)
               </Button>
-              <Button onClick={async () => {
-                let token = getAccessToken();
-                if (!token) {
-                  token = await requestWorkspaceAccess();
-                }
-                if (!token) return;
-                if (!window.confirm("Generate a project status presentation in Google Slides?")) return;
-                try {
-                  toast.loading("Generating slides...");
-                  const { createGoogleSlide } = await import('../lib/workspace');
-                  await createGoogleSlide(token, `Project Status - ${new Date().toLocaleDateString()}`, "Project Update");
-                  toast.dismiss();
-                  toast.success("Slides created in Google Drive!");
-                } catch (e) {
-                  toast.dismiss();
-                  toast.error("Failed to create presentation.");
-                }
-              }} className="w-full bg-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#f0f6fc] text-xs justify-start h-8 px-2 transition-colors">
+              <Button onClick={() => setIsSlidesDialogOpen(true)} className="w-full bg-transparent hover:bg-[#161b22] text-[#8b949e] hover:text-[#f0f6fc] text-xs justify-start h-8 px-2 transition-colors">
                 <Presentation className="w-3 h-3 mr-2" />
                 Generate Presentation (Slides)
               </Button>
@@ -448,6 +436,62 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+      <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
+        <DialogContent className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d]">
+          <DialogHeader>
+            <DialogTitle className="text-[#f0f6fc]">Generate Presentation</DialogTitle>
+            <DialogDescription className="text-[#8b949e]">
+              Select the type of presentation you want to generate.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="slides-type" className="text-[#c9d1d9]">Presentation Type</Label>
+              <Select value={slidesType} onValueChange={setSlidesType}>
+                <SelectTrigger id="slides-type" className="bg-[#161b22] border-[#30363d] text-[#c9d1d9]">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#161b22] border-[#30363d] text-[#c9d1d9]">
+                  <SelectItem value="project-dashboard" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Project Status Dashboard</SelectItem>
+                  <SelectItem value="standup" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Daily Standup Agenda</SelectItem>
+                  <SelectItem value="sprint-planning" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Sprint Planning</SelectItem>
+                  <SelectItem value="progress-report" className="focus:bg-[#1f242c] focus:text-[#f0f6fc]">Progress Report</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 mt-2">
+            <Button variant="ghost" onClick={() => setIsSlidesDialogOpen(false)} className="text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22]">
+              Cancel
+            </Button>
+            <Button onClick={async () => {
+                let token = getAccessToken();
+                if (!token) {
+                  token = await requestWorkspaceAccess();
+                }
+                if (!token) return;
+                setIsSlidesDialogOpen(false);
+                try {
+                  toast.loading("Generating slides...");
+                  const { generatePresentation } = await import('../lib/workspace');
+                  const reportData = {
+                    type: slidesType,
+                    tasks,
+                    completedTasks
+                  };
+                  await generatePresentation(token, reportData);
+                  toast.dismiss();
+                  toast.success("Slides created in Google Drive!");
+                } catch (e: any) {
+                  toast.dismiss();
+                  toast.error(e.message || "Failed to create presentation.");
+                }
+            }} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+              Generate
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

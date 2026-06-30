@@ -235,20 +235,80 @@ async function startServer() {
     }
   });
 
-  app.post("/api/presentations", async (req: any, res: any) => {
+  app.post("/api/presentations/generate", async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
       
-      const { title } = req.body;
+      const { type, tasks, completedTasks } = req.body;
       
       const oauth2Client = new google.auth.OAuth2();
       oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
       const slides = google.slides({ version: 'v1', auth: oauth2Client });
       
+      let title = "Generated Presentation";
+      if (type === 'project-dashboard') title = `Project Status - ${new Date().toLocaleDateString()}`;
+      if (type === 'standup') title = `Daily Standup - ${new Date().toLocaleDateString()}`;
+      if (type === 'sprint-planning') title = `Sprint Planning - ${new Date().toLocaleDateString()}`;
+      if (type === 'progress-report') title = `Progress Report - ${new Date().toLocaleDateString()}`;
+      
       const response = await slides.presentations.create({
         requestBody: { title },
       });
+      
+      const presId = response.data.presentationId;
+      if (!presId) throw new Error("Could not create presentation");
+
+      const requests: any[] = [];
+      let slideIdCounter = 1;
+
+      // Slide 1: Main Content Slide
+      const slide1Id = `slide_${slideIdCounter++}`;
+      requests.push({
+        createSlide: {
+          objectId: slide1Id,
+          slideLayoutReference: { predefinedLayout: 'BLANK' }
+        }
+      });
+      
+      const textBoxId = `textbox_${slideIdCounter++}`;
+      requests.push({
+        createShape: {
+          objectId: textBoxId,
+          shapeType: 'TEXT_BOX',
+          elementProperties: {
+            pageObjectId: slide1Id,
+            size: { height: { magnitude: 300, unit: 'PT' }, width: { magnitude: 600, unit: 'PT' } },
+            transform: { scaleX: 1, scaleY: 1, translateX: 50, translateY: 100, unit: 'PT' }
+          }
+        }
+      });
+      
+      let textContent = "";
+      if (type === 'project-dashboard') {
+        textContent = `Project Dashboard\n\nTotal Pending Tasks: ${tasks?.length || 0}\nTotal Completed Tasks: ${completedTasks?.length || 0}`;
+      } else if (type === 'standup') {
+        textContent = `Daily Standup Agenda\n\n- Yesterday's Updates\n- Today's Plan\n- Blockers`;
+      } else if (type === 'sprint-planning') {
+        textContent = `Sprint Planning\n\nSprint Goals:\n\nTasks to complete: ${tasks?.length || 0}`;
+      } else if (type === 'progress-report') {
+        textContent = `Progress Report\n\nTasks Completed: ${completedTasks?.length || 0}\nProductivity Score: ${Math.round(((completedTasks?.length || 0) / ((tasks?.length || 0) + (completedTasks?.length || 0))) * 100) || 0}%`;
+      }
+      
+      requests.push({
+        insertText: {
+          objectId: textBoxId,
+          insertionIndex: 0,
+          text: textContent
+        }
+      });
+      
+      if (requests.length > 0) {
+        await slides.presentations.batchUpdate({
+          presentationId: presId,
+          requestBody: { requests }
+        });
+      }
       
       res.json(response.data);
     } catch (error: any) {

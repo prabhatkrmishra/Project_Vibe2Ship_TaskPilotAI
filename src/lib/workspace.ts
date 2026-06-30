@@ -36,16 +36,16 @@ export const createGoogleDoc = async (accessToken: string, title: string, conten
   return res.json();
 };
 
-export const createGoogleSlide = async (accessToken: string, title: string, subtitle: string) => {
-  const res = await fetch('/api/presentations', {
+export const generatePresentation = async (accessToken: string, reportData: any) => {
+  const res = await fetch('/api/presentations/generate', {
     method: 'POST',
     headers: { 
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ title, subtitle })
+    body: JSON.stringify(reportData)
   });
-  if (!res.ok) throw new Error("Failed to create Google Slide");
+  if (!res.ok) throw new Error("Failed to generate Google Slide presentation");
   return res.json();
 };
 
