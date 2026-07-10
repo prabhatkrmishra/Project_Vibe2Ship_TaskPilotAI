@@ -17,7 +17,8 @@ import {
   CheckCircle,
   Clock,
   Star,
-  Target
+  Target,
+  Briefcase
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
@@ -27,7 +28,7 @@ export function Profile() {
   const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'achievements' | 'settings'>('achievements');
+  const [activeTab, setActiveTab] = useState<'achievements' | 'settings' | 'personalities'>('achievements');
 
   // Profile fields state
   const [name, setName] = useState(user?.name || '');
@@ -251,6 +252,13 @@ export function Profile() {
                 <UserIcon className="w-4 h-4" />
                 Settings
               </button>
+              <button
+                onClick={() => setActiveTab('personalities')}
+                className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'personalities' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+              >
+                <Target className="w-4 h-4" />
+                AI Personalities
+              </button>
             </div>
             
             {activeTab === 'settings' && (
@@ -440,6 +448,111 @@ export function Profile() {
                         <span className={`${isEarned ? 'text-emerald-400' : 'text-slate-500'}`}>
                           {isEarned ? 'Unlocked' : 'Locked'}
                         </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'personalities' && (
+            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
+              <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                <Target className="h-6 w-6 text-cyan-500" />
+                <h3 className="text-xl font-bold text-[#f0f6fc]">AI Personalities</h3>
+              </div>
+              <p className="text-sm text-slate-400">Unlock different AI personalities for Mission Control using your Gamification XP.</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[
+                  { id: 'default', name: 'Standard Assistant', desc: 'Helpful, concise, and professional.', cost: 0, icon: UserIcon },
+                  { id: 'drill_sergeant', name: 'Strict Drill Sergeant', desc: 'Tough love, demanding, no excuses.', cost: 500, icon: Flame },
+                  { id: 'zen_guide', name: 'Zen Guide', desc: 'Calm, mindful, focus on process.', cost: 1000, icon: Target },
+                  { id: 'executive', name: 'Executive Assistant', desc: 'Hyper-organized, business-focused.', cost: 2000, icon: Briefcase }
+                ].map((personality) => {
+                  const isUnlocked = user?.gamification?.unlockedPersonalities?.includes(personality.id) || personality.cost === 0;
+                  const isActive = user?.gamification?.activePersonality === personality.id || (!user?.gamification?.activePersonality && personality.id === 'default');
+                  const Icon = personality.icon;
+
+                  const handleUnlock = async () => {
+                    try {
+                      const token = await user?.getIdToken();
+                      const res = await fetch('/api/user/personalities/unlock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ personalityId: personality.id, cost: personality.cost })
+                      });
+                      if (!res.ok) throw new Error((await res.json()).error);
+                      const data = await res.json();
+                      updateUser({ gamification: data.gamification });
+                      toast.success(`Unlocked ${personality.name}!`);
+                    } catch (err: any) {
+                      toast.error(err.message || 'Failed to unlock');
+                    }
+                  };
+
+                  const handleSelect = async () => {
+                    try {
+                      const token = await user?.getIdToken();
+                      const res = await fetch('/api/user/personalities/active', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ personalityId: personality.id })
+                      });
+                      if (!res.ok) throw new Error((await res.json()).error);
+                      const data = await res.json();
+                      updateUser({ gamification: data.gamification });
+                      toast.success(`Active personality changed to ${personality.name}!`);
+                    } catch (err: any) {
+                      toast.error(err.message || 'Failed to set active personality');
+                    }
+                  };
+
+                  return (
+                    <div 
+                      key={personality.id}
+                      className={`relative flex flex-col p-5 rounded-2xl border transition-all ${
+                        isActive ? 'bg-indigo-500/10 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' :
+                        isUnlocked ? 'bg-[#161b22] border-[#30363d] hover:border-indigo-500/50' : 'bg-[#0a0d14] border-[#161b22] opacity-80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={`p-2 rounded-full ${isActive ? 'bg-indigo-500 text-white' : isUnlocked ? 'bg-slate-800 text-slate-300' : 'bg-slate-900 text-slate-600'}`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <h4 className="font-bold text-[#f0f6fc]">{personality.name}</h4>
+                      </div>
+                      <p className="text-xs text-slate-400 flex-1 mb-4">{personality.desc}</p>
+                      
+                      <div className="mt-auto flex items-center justify-between">
+                        {!isUnlocked ? (
+                          <span className="text-xs font-bold text-yellow-500">{personality.cost} XP</span>
+                        ) : (
+                          <span className="text-xs font-bold text-emerald-500">Unlocked</span>
+                        )}
+
+                        {!isUnlocked ? (
+                          <Button 
+                            onClick={handleUnlock}
+                            disabled={!user?.gamification?.xp || user.gamification.xp < personality.cost}
+                            size="sm" 
+                            className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3"
+                          >
+                            Unlock
+                          </Button>
+                        ) : isActive ? (
+                          <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider px-2">Active</span>
+                        ) : (
+                          <Button 
+                            onClick={handleSelect}
+                            size="sm" 
+                            variant="outline"
+                            className="h-7 text-xs border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 rounded-lg px-3"
+                          >
+                            Select
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

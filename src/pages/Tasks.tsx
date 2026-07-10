@@ -946,6 +946,27 @@ export function Tasks() {
                            <p className="text-xs text-[#8b949e] italic p-1">No subtasks generated yet.</p>
                         )}
 
+                        {task.resources && task.resources.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-[#21262d]/50 space-y-2">
+                            <label className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider block">
+                              AI Research Resources
+                            </label>
+                            <div className="space-y-1">
+                              {task.resources.map((link: string, idx: number) => (
+                                <a 
+                                  key={idx} 
+                                  href={link} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors p-2 bg-[#161b22]/50 hover:bg-[#161b22] rounded-lg border border-transparent hover:border-[#21262d] line-clamp-1 overflow-hidden text-ellipsis"
+                                >
+                                  🔗 {link}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="mt-4 pt-4 border-t border-[#21262d]/50 space-y-4">
                           {/* AI Generator Block */}
                           <div className="space-y-1.5">

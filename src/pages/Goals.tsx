@@ -279,6 +279,7 @@ export function Goals() {
                   category: 'quest',
                   estimatedHours: t.estimatedHours || 1,
                   riskScore: t.riskScore ?? 30,
+                  resources: t.resources || [],
                   subtasks: [],
                   goalId: goalRef.id,
                   createdAt: new Date().toISOString()

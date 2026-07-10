@@ -21,6 +21,7 @@ export interface Task {
   createdAt: string;
   riskScore?: number;
   confidenceScore?: number;
+  resources?: string[];
   goalId?: string | null;
 }
 
@@ -55,6 +56,8 @@ export interface GamificationState {
   totalTasksCompleted: number;
   onTimeTasksCompleted: number;
   earnedBadges: string[];
+  unlockedPersonalities?: string[];
+  activePersonality?: string;
 }
 
 export interface Achievement {

@@ -90,7 +90,7 @@ async function startServer() {
           const lastActive = new Date(gamification.lastActiveDate);
           const todayDate = new Date(today);
           const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
           if (diffDays === 1) {
             gamification.currentStreak += 1;
           } else {
@@ -185,7 +185,8 @@ async function startServer() {
           email: newUser.email,
           name: newUser.name,
           picture: newUser.picture,
-          address: newUser.address
+          address: newUser.address,
+          gamification: getCorrectedGamification(newUser.gamification)
         }
       });
     } catch (error: any) {
@@ -220,7 +221,8 @@ async function startServer() {
           email: user.email,
           name: user.name,
           picture: user.picture,
-          address: user.address || ""
+          address: user.address || "",
+          gamification: getCorrectedGamification(user.gamification)
         }
       });
     } catch (error: any) {
@@ -251,7 +253,8 @@ async function startServer() {
           email: guest.email,
           name: guest.name,
           picture: guest.picture,
-          address: guest.address || ""
+          address: guest.address || "",
+          gamification: getCorrectedGamification(guest.gamification)
         }
       });
     } catch (error: any) {
@@ -259,6 +262,25 @@ async function startServer() {
       res.status(500).json({ error: error.message });
     }
   });
+
+  function getCorrectedGamification(gamificationObj: any) {
+    if (!gamificationObj) return gamificationObj;
+    
+    // Convert to plain object if it's a mongoose document
+    const gamification = gamificationObj.toObject ? gamificationObj.toObject() : { ...gamificationObj };
+    
+    const today = new Date().toISOString().split('T')[0];
+    if (gamification.lastActiveDate && gamification.lastActiveDate !== today) {
+      const lastActive = new Date(gamification.lastActiveDate);
+      const todayDate = new Date(today);
+      const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays > 1) {
+        gamification.currentStreak = 0;
+      }
+    }
+    return gamification;
+  }
 
   app.get("/api/auth/me", verifyToken, async (req: any, res: any) => {
     try {
@@ -271,12 +293,64 @@ async function startServer() {
         name: user.name,
         picture: user.picture,
         address: user.address || "",
-        gamification: user.gamification || {
-          currentStreak: 0, longestStreak: 0, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
+        gamification: getCorrectedGamification(user.gamification) || {
+          currentStreak: 0, longestStreak: 0, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: [], unlockedPersonalities: ['default'], activePersonality: 'default'
         }
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/user/personalities/unlock", verifyToken, async (req: any, res: any) => {
+    try {
+      const { personalityId, cost } = req.body;
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      if (!user.gamification) {
+        user.gamification = { currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: [], unlockedPersonalities: ['default'], activePersonality: 'default' } as any;
+      }
+      if (!user.gamification.unlockedPersonalities) {
+        user.gamification.unlockedPersonalities = ['default'];
+      }
+
+      if (user.gamification.xp < cost) {
+        return res.status(400).json({ error: "Not enough XP" });
+      }
+      if (user.gamification.unlockedPersonalities.includes(personalityId)) {
+        return res.status(400).json({ error: "Already unlocked" });
+      }
+
+      user.gamification.xp -= cost;
+      user.gamification.unlockedPersonalities.push(personalityId);
+      user.gamification.activePersonality = personalityId;
+      user.markModified('gamification');
+      await user.save();
+
+      res.json({ gamification: user.gamification });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/user/personalities/active", verifyToken, async (req: any, res: any) => {
+    try {
+      const { personalityId } = req.body;
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      if (!user.gamification || !user.gamification.unlockedPersonalities?.includes(personalityId)) {
+        return res.status(400).json({ error: "Personality not unlocked" });
+      }
+
+      user.gamification.activePersonality = personalityId;
+      user.markModified('gamification');
+      await user.save();
+
+      res.json({ gamification: user.gamification });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -1133,7 +1207,7 @@ async function startServer() {
       res.json({
         accessToken,
         taskpilotToken,
-        user: { email: user.email, name: user.name, picture: user.picture, uid: user._id.toString(), gamification: user.gamification }
+        user: { email: user.email, name: user.name, picture: user.picture, uid: user._id.toString(), gamification: getCorrectedGamification(user.gamification) }
       });
     } catch (err: any) {
       console.error("Google OAuth error:", err);
@@ -1441,6 +1515,7 @@ async function startServer() {
         - "priority" (string): "high", "medium", or "low".
         - "estimatedHours" (number): Realistic estimated duration in hours (e.g. 1.5, 3, 8).
         - "riskScore" (number): Risk score from 10 to 95 reflecting complexity or tight timelines.
+        - "resources" (array of strings): A list of 1-3 highly relevant URLs, resources, or tutorials to help the user complete this task (use real URLs from your search).
 
         You MUST return a JSON response exactly in this format, with no markdown, backticks, or text before/after:
         {
@@ -1451,7 +1526,8 @@ async function startServer() {
               "deadline": "YYYY-MM-DDTHH:mm:ss.sssZ",
               "priority": "medium",
               "estimatedHours": 2,
-              "riskScore": 30
+              "riskScore": 30,
+              "resources": ["https://example.com/guide"]
             }
           ]
         }
@@ -1461,7 +1537,8 @@ async function startServer() {
         model: selectedModel,
         contents: prompt,
         config: {
-          responseMimeType: "application/json"
+          responseMimeType: "application/json",
+          tools: [{ googleSearch: {} }]
         }
       });
       
@@ -1611,6 +1688,68 @@ async function startServer() {
     }
   });
 
+  app.post("/api/audio-journal", verifyToken, async (req: any, res: any) => {
+    try {
+      const { text, model } = req.body;
+      const selectedModel = getValidModel(model);
+      const prompt = `
+        You are an intelligent productivity assistant analyzing an audio journal reflection.
+        Read the following transcript of a user's voice reflection.
+        Transcript: "${text}"
+        
+        Extract all actionable tasks from this reflection. Also provide a short 1-2 sentence summary of the journal entry.
+        
+        Return a JSON response exactly in this format, no markdown formatting:
+        {
+          "summary": "Short summary of reflection.",
+          "tasks": [
+            {
+              "title": "Clear action item",
+              "description": "Any additional context mentioned",
+              "priority": "high|medium|low"
+            }
+          ]
+        }
+      `;
+      
+      const response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      
+      let outText = response.text || "{}";
+      outText = outText.replace(/```json/g, "").replace(/```/g, "").trim();
+      const result = JSON.parse(outText);
+      
+      // Auto-create tasks
+      const createdTasks = [];
+      if (result.tasks && Array.isArray(result.tasks)) {
+        for (const t of result.tasks) {
+          const newTask = new Task({
+            userId: req.user.uid,
+            title: t.title,
+            description: t.description || "",
+            priority: t.priority || "medium",
+            status: "pending",
+            category: "Journal",
+            estimatedHours: 1,
+            deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // default to 7 days
+          });
+          await newTask.save();
+          createdTasks.push(newTask);
+        }
+      }
+      
+      res.json({ summary: result.summary, createdTasks });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to process audio journal" });
+    }
+  });
+
   app.post("/api/generate-plan", verifyToken, async (req: any, res: any) => {
     try {
       const { tasks, date, model } = req.body;
@@ -1661,9 +1800,21 @@ async function startServer() {
     try {
       const { messages, context, model } = req.body;
       const selectedModel = getValidModel(model);
+      
+      const user = await User.findById(req.uid);
+      const activePersonality = user?.gamification?.activePersonality || 'default';
+
+      let personalityPrompt = "You are TaskPilot AI, an intelligent productivity executive assistant. The user is asking you for help. Respond conversationally, helpfully, and concisely.";
+      if (activePersonality === 'drill_sergeant') {
+        personalityPrompt = "You are a Strict Drill Sergeant AI. You give tough love, demand excellence, accept absolutely no excuses, and speak in a sharp, motivating, military style.";
+      } else if (activePersonality === 'zen_guide') {
+        personalityPrompt = "You are a Zen Guide AI. You are calm, mindful, centered, and encourage the user to focus on the present process rather than the stress of outcomes. Speak peacefully and thoughtfully.";
+      } else if (activePersonality === 'executive') {
+        personalityPrompt = "You are a Hyper-organized Executive Assistant AI. You are highly professional, strictly business-focused, concise, and structured. You speak in bullet points and action-oriented corporate language.";
+      }
+
       const prompt = `
-        You are TaskPilot AI, an intelligent productivity executive assistant.
-        The user is asking you for help.
+        ${personalityPrompt}
         
         CRITICAL INSTRUCTION: Here is the CURRENT, up-to-date context of their Tasks, Quests, and Habits.
         Even if you said they had no tasks, quests, or habits in the past conversation history, you MUST use this NEW context as the absolute truth for their current state:
@@ -1677,7 +1828,7 @@ async function startServer() {
         
         Conversation History: ${JSON.stringify(messages, null, 2)}
         
-        Respond conversationally, helpfully, and concisely. If they ask about their workload, quests, habits, or what to do next, strictly analyze the CURRENT context provided above. Do not claim their tasks, quests, or habits are empty if the Current Context above contains items.
+        Respond to the user in your designated personality. If they ask about their workload, quests, habits, or what to do next, strictly analyze the CURRENT context provided above. Do not claim their tasks, quests, or habits are empty if the Current Context above contains items.
       `;
       
       const response = await ai.models.generateContent({

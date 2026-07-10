@@ -413,6 +413,62 @@ export function Chat() {
     }
   };
 
+  const handleExtractJournal = async () => {
+    if (!input.trim() || !user) return;
+    setIsSending(true);
+    try {
+      const token = await user.getIdToken();
+      const headers = { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json' 
+      };
+      
+      const userMsgRes = await fetch('/api/chats', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ role: 'user', content: `[Audio Journal] ${input}` })
+      });
+      const savedUserMsg = userMsgRes.ok ? await userMsgRes.json() : { role: 'user' as const, content: `[Audio Journal] ${input}` };
+      setMessages(prev => [...prev, savedUserMsg]);
+      
+      const currentInput = input;
+      setInput('');
+      
+      const res = await fetch('/api/audio-journal', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          text: currentInput,
+          model: selectedModel
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to process journal');
+      }
+
+      const data = await res.json();
+      
+      const botResponse = `**Audio Journal Processed**\n\n${data.summary}\n\nI have extracted and automatically created **${data.createdTasks?.length || 0} tasks** from this reflection. You can find them on your dashboard.`;
+      
+      const assistantMsgRes = await fetch('/api/chats', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ role: 'assistant', content: botResponse })
+      });
+      const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : { role: 'assistant' as const, content: botResponse };
+      
+      setMessages(prev => [...prev, savedAssistantMsg]);
+      toast.success(`Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
+      
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Error processing audio journal.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto h-full flex flex-col w-full animate-fade-in relative">
       {isRecording && (
@@ -569,6 +625,15 @@ export function Chat() {
                 className="flex-1 bg-[#161b22] border-[#21262d] text-[#f0f6fc] placeholder:text-slate-500 rounded-xl"
                 disabled={isSending}
               />
+              <Button 
+                type="button" 
+                onClick={handleExtractJournal}
+                disabled={isSending || !input.trim()} 
+                title="Extract Tasks from Journal"
+                className="bg-[#161b22] border border-[#21262d] text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-xl"
+              >
+                <Sparkles className="w-4 h-4" />
+              </Button>
               <Button type="submit" disabled={isSending || !input.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20">
                 <Send className="w-4 h-4" />
               </Button>

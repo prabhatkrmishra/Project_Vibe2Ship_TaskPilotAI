@@ -41,7 +41,9 @@ const UserSchema = new mongoose.Schema({
     level: { type: Number, default: 1 },
     totalTasksCompleted: { type: Number, default: 0 },
     onTimeTasksCompleted: { type: Number, default: 0 },
-    earnedBadges: { type: [String], default: [] }
+    earnedBadges: { type: [String], default: [] },
+    unlockedPersonalities: { type: [String], default: ['default'] },
+    activePersonality: { type: String, default: 'default' }
   },
 
   createdAt: { type: Date, default: Date.now }
@@ -88,6 +90,7 @@ const TaskSchema = new mongoose.Schema({
   hasBeenCompleted: { type: Boolean, default: false },
   riskScore: { type: Number },
   confidenceScore: { type: Number },
+  resources: { type: [String], default: [] },
   subtasks: { type: [SubtaskSchema], default: [] },
   createdAt: { type: Date, default: Date.now }
 });
