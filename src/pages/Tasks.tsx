@@ -764,11 +764,12 @@ export function Tasks() {
 
             return (
               <motion.div 
+                layout
                 key={task.id} 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className={`col-span-12 md:col-span-6 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 flex flex-col group card-lift ${task.status === 'completed' ? 'opacity-50' : ''}`}
+                className={`col-span-12 md:col-span-6 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 flex flex-col group transition-all duration-300 hover:border-[#30363d] hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 ${task.status === 'completed' ? 'opacity-50 grayscale' : ''}`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">

@@ -3,7 +3,7 @@ import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Send, Bot, Mic, Loader2, Sparkles } from 'lucide-react';
+import { Send, Bot, Mic, Loader2, Sparkles, Plus, Trash2, History, Edit2, Check, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
 import { Task } from '../types';
@@ -15,9 +15,31 @@ interface Message {
   isError?: boolean;
 }
 
+const safeJson = async (res: Response) => {
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('text/html')) {
+    throw new Error('Server returned HTML (this can happen during authentication redirects or server startup). Please refresh or try again in a moment.');
+  }
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error(`Expected JSON but received: ${contentType || 'none'}`);
+  }
+  return res.json();
+};
+
 export function Chat() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessions, setSessions] = useState<{ chatId: string; title: string; timestamp: string; messagesCount: number }[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>(() => {
+    return localStorage.getItem('active_chat_id') || 'default';
+  });
+  const [activeChatTitle, setActiveChatTitle] = useState<string>('New Chat');
+  const [isDeletingSession, setIsDeletingSession] = useState<string | null>(null);
+  
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameTitleInput, setRenameTitleInput] = useState('');
+  const [isUpdatingTitle, setIsUpdatingTitle] = useState(false);
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [input, setInput] = useState('');
@@ -209,7 +231,7 @@ export function Chat() {
           }
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = await safeJson(res);
           setModelsList(data);
           
           // If the currently saved model is not in the list, but list has items, set to default or first
@@ -236,23 +258,64 @@ export function Chat() {
     toast.success(`Active AI Model changed to: ${value.split('/').pop()}`);
   };
 
+  const fetchSessions = async (overrideActiveChatId?: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/chats/sessions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await safeJson(res);
+        const currentId = overrideActiveChatId !== undefined ? overrideActiveChatId : activeChatId;
+        
+        let sessionsList = [...data];
+        const exists = sessionsList.some((s: any) => s.chatId === currentId);
+        if (!exists && currentId !== 'default') {
+          sessionsList.unshift({
+            chatId: currentId,
+            title: currentId === 'default' ? 'Default Chat' : 'New Chat',
+            timestamp: new Date().toISOString(),
+            messagesCount: 0
+          });
+        }
+        setSessions(sessionsList);
+
+        // Find and set current active chat's title
+        const current = sessionsList.find((s: any) => s.chatId === currentId);
+        if (current) {
+          setActiveChatTitle(current.title);
+        } else if (currentId === 'default') {
+          setActiveChatTitle('Default Chat');
+        } else {
+          setActiveChatTitle('New Chat');
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch sessions:", err);
+    }
+  };
+
   const fetchAllData = async () => {
     if (!user) return;
     try {
       const token = await user.getIdToken();
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      // Fetch messages
-      const resChats = await fetch('/api/chats', { headers });
+      // Fetch messages for active chat
+      const resChats = await fetch(`/api/chats?chatId=${activeChatId}`, { headers });
       if (resChats.ok) {
-        const chatsData = await resChats.json();
+        const chatsData = await safeJson(resChats);
         setMessages(chatsData);
       }
+
+      // Fetch sessions list
+      fetchSessions(activeChatId);
 
       // Fetch tasks
       const resTasks = await fetch('/api/tasks', { headers });
       if (resTasks.ok) {
-        const tasksData = await resTasks.json();
+        const tasksData = await safeJson(resTasks);
         const pendingTasks = tasksData.filter((t: any) => t.status === 'pending' || t.status === 'in_progress');
         setTasks(pendingTasks);
       }
@@ -260,7 +323,7 @@ export function Chat() {
       // Fetch goals
       const resGoals = await fetch('/api/goals', { headers });
       if (resGoals.ok) {
-        const goalsData = await resGoals.json();
+        const goalsData = await safeJson(resGoals);
         setGoals(goalsData);
       }
     } catch (err) {
@@ -272,7 +335,109 @@ export function Chat() {
     if (user) {
       fetchAllData();
     }
-  }, [user]);
+  }, [user, activeChatId]);
+
+  const handleStartNewChat = () => {
+    const newId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    setActiveChatId(newId);
+    setActiveChatTitle('New Chat');
+    setMessages([]);
+    localStorage.setItem('active_chat_id', newId);
+    toast.success("Started a new conversation session");
+    
+    // Add to sessions list provisionally so it shows in the dropdown
+    setSessions(prev => [
+      { chatId: newId, title: 'New Chat', timestamp: new Date().toISOString(), messagesCount: 0 },
+      ...prev
+    ]);
+  };
+
+  const handleSelectSession = (chatId: string) => {
+    setActiveChatId(chatId);
+    localStorage.setItem('active_chat_id', chatId);
+    const session = sessions.find(s => s.chatId === chatId);
+    if (session) {
+      setActiveChatTitle(session.title);
+    } else {
+      setActiveChatTitle(chatId === 'default' ? 'Default Chat' : 'New Chat');
+    }
+    setIsRenaming(false); // cancel renaming if we switch chats
+    toast.success("Switched conversation session");
+  };
+
+  const startRenameMode = () => {
+    setRenameTitleInput(activeChatTitle);
+    setIsRenaming(true);
+  };
+
+  const handleRenameSession = async () => {
+    const trimmed = renameTitleInput.trim();
+    if (!trimmed) {
+      toast.error("Title cannot be empty");
+      return;
+    }
+    if (!user) return;
+    setIsUpdatingTitle(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/chats/sessions/${activeChatId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title: trimmed })
+      });
+      if (res.ok) {
+        toast.success("Chat renamed successfully");
+        setActiveChatTitle(trimmed);
+        setIsRenaming(false);
+        fetchSessions(activeChatId);
+      } else {
+        toast.error("Failed to rename chat session");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred while renaming chat session");
+    } finally {
+      setIsUpdatingTitle(false);
+    }
+  };
+
+  const handleDeleteSession = async (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // prevent select action
+    if (!user) return;
+    if (!confirm("Are you sure you want to delete this chat session? This cannot be undone.")) return;
+    
+    setIsDeletingSession(chatId);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/chats/sessions/${chatId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        toast.success("Conversation deleted successfully");
+        // If we deleted the active chat, switch to default or another
+        if (activeChatId === chatId) {
+          const nextSession = sessions.find(s => s.chatId !== chatId);
+          const nextId = nextSession?.chatId || 'default';
+          setActiveChatId(nextId);
+          localStorage.setItem('active_chat_id', nextId);
+        } else {
+          // If we deleted some other chat, just refresh sessions
+          fetchSessions(activeChatId);
+        }
+      } else {
+        toast.error("Failed to delete session");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred while deleting session");
+    } finally {
+      setIsDeletingSession(null);
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -281,6 +446,14 @@ export function Chat() {
     const userMsg = input.trim();
     setInput('');
     setIsSending(true);
+
+    // Calculate new title if this is the first message
+    let updatedTitle = activeChatTitle;
+    const isNewSession = messages.length === 0 || activeChatTitle === 'New Chat';
+    if (isNewSession) {
+      updatedTitle = userMsg.substring(0, 40) + (userMsg.length > 40 ? '...' : '');
+      setActiveChatTitle(updatedTitle);
+    }
     
     try {
       const token = await user.getIdToken();
@@ -293,7 +466,12 @@ export function Chat() {
       const userMsgRes = await fetch('/api/chats', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ role: 'user', content: userMsg })
+        body: JSON.stringify({ 
+          role: 'user', 
+          content: userMsg,
+          chatId: activeChatId,
+          chatTitle: updatedTitle
+        })
       });
       
       let savedUserMsg: Message = { role: 'user', content: userMsg };
@@ -370,10 +548,16 @@ export function Chat() {
         const errorMsgRes = await fetch('/api/chats', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ role: 'assistant', content: `⚠️ **Service Error**: ${friendlyError}` })
+          body: JSON.stringify({ 
+            role: 'assistant', 
+            content: `⚠️ **Service Error**: ${friendlyError}`,
+            chatId: activeChatId,
+            chatTitle: updatedTitle
+          })
         });
         const savedErrorMsg = errorMsgRes.ok ? await errorMsgRes.json() : { role: 'assistant' as const, content: `⚠️ **Service Error**: ${friendlyError}` };
         setMessages(prev => [...prev, { ...savedErrorMsg, isError: true }]);
+        fetchSessions(activeChatId);
         toast.error(friendlyError);
         return;
       }
@@ -384,10 +568,16 @@ export function Chat() {
       const assistantMsgRes = await fetch('/api/chats', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ role: 'assistant', content: data.text || 'No response generated.' })
+        body: JSON.stringify({ 
+          role: 'assistant', 
+          content: data.text || 'No response generated.',
+          chatId: activeChatId,
+          chatTitle: updatedTitle
+        })
       });
       const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : { role: 'assistant' as const, content: data.text || 'No response generated.' };
       setMessages(prev => [...prev, savedAssistantMsg]);
+      fetchSessions(activeChatId);
     } catch (error: any) {
       console.error(error);
       const fallbackError = error.message || 'Sorry, I encountered an error while thinking.';
@@ -400,10 +590,16 @@ export function Chat() {
         const assistantMsgRes = await fetch('/api/chats', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ role: 'assistant', content: `⚠️ **Connection Error**: ${fallbackError}` })
+          body: JSON.stringify({ 
+            role: 'assistant', 
+            content: `⚠️ **Connection Error**: ${fallbackError}`,
+            chatId: activeChatId,
+            chatTitle: updatedTitle
+          })
         });
         const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : { role: 'assistant' as const, content: `⚠️ **Connection Error**: ${fallbackError}` };
         setMessages(prev => [...prev, { ...savedAssistantMsg, isError: true }]);
+        fetchSessions(activeChatId);
       } catch (err) {
         console.error("Double failure during error logging:", err);
       }
@@ -416,6 +612,15 @@ export function Chat() {
   const handleExtractJournal = async () => {
     if (!input.trim() || !user) return;
     setIsSending(true);
+
+    // Calculate new title if this is the first message
+    let updatedTitle = activeChatTitle;
+    const isNewSession = messages.length === 0 || activeChatTitle === 'New Chat';
+    if (isNewSession) {
+      updatedTitle = '[Journal] ' + input.substring(0, 30) + (input.length > 30 ? '...' : '');
+      setActiveChatTitle(updatedTitle);
+    }
+
     try {
       const token = await user.getIdToken();
       const headers = { 
@@ -426,7 +631,12 @@ export function Chat() {
       const userMsgRes = await fetch('/api/chats', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ role: 'user', content: `[Audio Journal] ${input}` })
+        body: JSON.stringify({ 
+          role: 'user', 
+          content: `[Audio Journal] ${input}`,
+          chatId: activeChatId,
+          chatTitle: updatedTitle
+        })
       });
       const savedUserMsg = userMsgRes.ok ? await userMsgRes.json() : { role: 'user' as const, content: `[Audio Journal] ${input}` };
       setMessages(prev => [...prev, savedUserMsg]);
@@ -454,11 +664,17 @@ export function Chat() {
       const assistantMsgRes = await fetch('/api/chats', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ role: 'assistant', content: botResponse })
+        body: JSON.stringify({ 
+          role: 'assistant', 
+          content: botResponse,
+          chatId: activeChatId,
+          chatTitle: updatedTitle
+        })
       });
       const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : { role: 'assistant' as const, content: botResponse };
       
       setMessages(prev => [...prev, savedAssistantMsg]);
+      fetchSessions(activeChatId);
       toast.success(`Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
       
     } catch (err: any) {
@@ -502,41 +718,172 @@ export function Chat() {
         </div>
       )}
 
-      <div className="mb-6 px-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-6">
         <div>
           <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Pilot <br/><span className="font-semibold italic text-indigo-400">Intelligence</span></h1>
           <p className="text-[#8b949e] mt-2">Ask for schedule adjustments, task breakdowns, or productivity advice.</p>
         </div>
         
-        <div className="flex flex-col gap-1.5 shrink-0 sm:w-64">
-          <label className="text-xs font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 uppercase font-mono">
-            <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" /> Active AI Brain
-          </label>
-          <Select value={selectedModel} onValueChange={handleModelChange} disabled={isLoadingModels}>
-            <SelectTrigger className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500">
-              <SelectValue placeholder={isLoadingModels ? "Syncing core brains..." : "Choose model"}>
-                {(value: string) => {
-                  if (isLoadingModels) return "Syncing core brains...";
-                  const m = models.find(m => m.name === value);
-                  return m ? m.displayName : (value ? value.replace(/^models\//, '') : "Choose model");
-                }}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc]">
-              {isLoadingModels ? (
-                <div className="flex items-center justify-center p-4">
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mr-2" />
-                  <span className="text-xs text-slate-400">Querying brain nodes...</span>
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 w-full">
+          {/* Left group: New Chat & Chat History */}
+          <div className="flex flex-wrap items-end gap-3">
+            {/* New Chat Button */}
+            <div className="flex flex-col gap-1.5 shrink-0">
+              <Button
+                onClick={handleStartNewChat}
+                className="h-10 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-indigo-600/10 px-4 font-medium"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Chat</span>
+              </Button>
+            </div>
+
+            {/* Chat History Select with Rename/Delete controls */}
+            {isRenaming ? (
+              <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-64 md:w-72">
+                <label className="text-xs font-semibold text-amber-400 tracking-wider flex items-center gap-1.5 uppercase font-mono">
+                  <Edit2 className="w-3 h-3 text-amber-400 animate-pulse" /> Rename Current Session
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={renameTitleInput}
+                    onChange={(e) => setRenameTitleInput(e.target.value)}
+                    className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 flex-1 px-3 text-sm"
+                    placeholder="Enter session name..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleRenameSession();
+                      if (e.key === 'Escape') setIsRenaming(false);
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRenameSession}
+                    disabled={isUpdatingTitle}
+                    className="h-10 w-10 shrink-0 border-emerald-500/20 bg-[#0d1117] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl cursor-pointer transition-all"
+                    title="Save new title"
+                  >
+                    {isUpdatingTitle ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsRenaming(false)}
+                    disabled={isUpdatingTitle}
+                    className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-[#f0f6fc] rounded-xl cursor-pointer transition-all"
+                    title="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
                 </div>
-              ) : (
-                models.map((model) => (
-                  <SelectItem key={model.name} value={model.name} className="focus:bg-indigo-600/20 focus:text-indigo-200">
-                    {model.displayName}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
+              </div>
+            ) : (
+              <div className="flex items-end gap-2 w-full sm:w-auto">
+                {/* Chat History Select */}
+                <div className="flex flex-col gap-1.5 w-full sm:w-48 md:w-52 min-w-[150px]">
+                  <label className="text-xs font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 uppercase font-mono">
+                    <History className="w-3 h-3 text-violet-400" /> Chat History
+                  </label>
+                  <Select value={activeChatId} onValueChange={handleSelectSession}>
+                    <SelectTrigger className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
+                      <SelectValue placeholder="Select session">
+                        {(value: string) => {
+                          const sess = sessions.find((s) => s.chatId === value);
+                          return sess ? sess.title : (value === 'default' ? 'Default Chat' : 'New Chat');
+                        }}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] max-h-72">
+                      {sessions.length === 0 ? (
+                        <SelectItem value="default" className="focus:bg-indigo-600/20 focus:text-indigo-200">
+                          Default Chat
+                        </SelectItem>
+                      ) : (
+                        sessions.map((sess) => (
+                          <SelectItem 
+                            key={sess.chatId} 
+                            value={sess.chatId} 
+                            className="focus:bg-indigo-600/20 focus:text-indigo-200"
+                          >
+                            <div className="flex items-center gap-2 py-0.5">
+                              <span className="truncate max-w-[120px] text-left block">{sess.title}</span>
+                              <span className="text-[10px] text-slate-500 font-mono">({sess.messagesCount})</span>
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Rename Button */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={startRenameMode}
+                  className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-amber-400 hover:border-amber-500/30 rounded-xl cursor-pointer transition-all"
+                  title="Rename current session"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </Button>
+
+                {/* Delete Button (only if not default chat) */}
+                {activeChatId !== 'default' && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={(e) => handleDeleteSession(activeChatId, e)}
+                    disabled={isDeletingSession === activeChatId}
+                    className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-rose-400 hover:border-rose-500/30 rounded-xl cursor-pointer transition-all"
+                    title="Delete current session"
+                  >
+                    {isDeletingSession === activeChatId ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Active AI Brain Select */}
+          <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-48 md:w-52 md:ml-auto">
+            <label className="text-xs font-semibold text-slate-400 tracking-wider flex items-center gap-1.5 uppercase font-mono">
+              <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" /> Active AI Brain
+            </label>
+            <Select value={selectedModel} onValueChange={handleModelChange} disabled={isLoadingModels}>
+              <SelectTrigger className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
+                <SelectValue placeholder={isLoadingModels ? "Syncing core brains..." : "Choose model"}>
+                  {(value: string) => {
+                    if (isLoadingModels) return "Syncing core brains...";
+                    const m = models.find(m => m.name === value);
+                    return m ? m.displayName : (value ? value.replace(/^models\//, '') : "Choose model");
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc]">
+                {isLoadingModels ? (
+                  <div className="flex items-center justify-center p-4">
+                    <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mr-2" />
+                    <span className="text-xs text-slate-400">Querying brain nodes...</span>
+                  </div>
+                ) : (
+                  models.map((model) => (
+                    <SelectItem key={model.name} value={model.name} className="focus:bg-indigo-600/20 focus:text-indigo-200">
+                      {model.displayName}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

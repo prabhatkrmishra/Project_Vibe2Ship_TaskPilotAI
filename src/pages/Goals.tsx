@@ -319,10 +319,13 @@ export function Goals() {
       const token = await user?.getIdToken();
       let newStreak = goal.streak || 0;
       let newProgress = goal.progress;
+      const today = new Date().toISOString().split('T')[0];
 
       if (increment) {
         newProgress += 1;
-        newStreak += 1;
+        if (goal.lastLogged !== today) {
+          newStreak += 1;
+        }
       } else {
         newStreak = 0;
       }
@@ -335,7 +338,8 @@ export function Goals() {
         },
         body: JSON.stringify({
           progress: newProgress,
-          streak: newStreak
+          streak: newStreak,
+          lastLogged: increment ? today : goal.lastLogged
         })
       });
 

@@ -527,12 +527,30 @@ async function startServer() {
     }
   });
 
+  function getCorrectedGoal(goalObj: any) {
+    if (!goalObj) return goalObj;
+    const goal = goalObj.toObject ? goalObj.toObject() : { ...goalObj };
+    if (goal.type === 'habit' && goal.lastLogged) {
+      const today = new Date().toISOString().split('T')[0];
+      if (goal.lastLogged !== today) {
+        const lastActive = new Date(goal.lastLogged);
+        const todayDate = new Date(today);
+        const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays > 1) {
+          goal.streak = 0;
+        }
+      }
+    }
+    return goal;
+  }
+
   app.get("/api/goals", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
       const goals = await Goal.find({ userId: req.uid }).sort({ createdAt: -1 });
       const formattedGoals = goals.map(g => {
-        const obj = g.toObject();
+        const obj = getCorrectedGoal(g);
         obj.id = obj._id.toString();
         delete obj._id;
         delete obj.__v;
@@ -551,7 +569,7 @@ async function startServer() {
       delete goalData.id;
       delete goalData._id;
       const newGoal = await Goal.create(goalData);
-      const obj = newGoal.toObject();
+      const obj = getCorrectedGoal(newGoal);
       obj.id = obj._id.toString();
       delete obj._id;
       delete obj.__v;
@@ -570,7 +588,7 @@ async function startServer() {
         { new: true }
       );
       if (!updatedGoal) return res.status(404).json({ error: "Goal not found" });
-      const obj = updatedGoal.toObject();
+      const obj = getCorrectedGoal(updatedGoal);
       obj.id = obj._id.toString();
       delete obj._id;
       delete obj.__v;
@@ -596,7 +614,20 @@ async function startServer() {
   app.get("/api/chats", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
-      const chats = await ChatMessage.find({ userId: req.uid }).sort({ timestamp: 1 });
+      const { chatId } = req.query;
+      const query: any = { userId: req.uid };
+      if (chatId) {
+        if (chatId === 'default') {
+          query.$or = [
+            { chatId: 'default' },
+            { chatId: { $exists: false } },
+            { chatId: null }
+          ];
+        } else {
+          query.chatId = chatId;
+        }
+      }
+      const chats = await ChatMessage.find(query).sort({ timestamp: 1 });
       const formatted = chats.map(c => {
         const obj = c.toObject();
         obj.id = obj._id.toString();
@@ -610,14 +641,102 @@ async function startServer() {
     }
   });
 
+  app.get("/api/chats/sessions", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const chats = await ChatMessage.find({ userId: req.uid }).sort({ timestamp: 1 });
+      const sessionsMap = new Map();
+      
+      // Always guarantee the default session exists in the map
+      sessionsMap.set('default', {
+        chatId: 'default',
+        title: 'Default Chat',
+        timestamp: new Date(0),
+        messagesCount: 0
+      });
+
+      for (const msg of chats) {
+        const cId = msg.chatId || 'default';
+        if (!sessionsMap.has(cId)) {
+          sessionsMap.set(cId, {
+            chatId: cId,
+            title: msg.chatTitle || (cId === 'default' ? 'Default Chat' : 'New Chat'),
+            timestamp: msg.timestamp || new Date(),
+            messagesCount: 0
+          });
+        }
+        const sess = sessionsMap.get(cId);
+        sess.timestamp = msg.timestamp || new Date();
+        sess.messagesCount += 1;
+        
+        // Dynamic title update if title is default
+        if (msg.role === 'user' && (!msg.chatTitle || msg.chatTitle === 'New Chat' || msg.chatTitle === 'Default Chat' || msg.chatTitle === msg.content) && (sess.title === 'New Chat' || sess.title === 'Default Chat')) {
+          sess.title = msg.content.substring(0, 40) + (msg.content.length > 40 ? '...' : '');
+        }
+      }
+      const sessions = Array.from(sessionsMap.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/chats/sessions/:chatId", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { chatId } = req.params;
+      const query: any = { userId: req.uid };
+      if (chatId === 'default') {
+        query.$or = [
+          { chatId: 'default' },
+          { chatId: { $exists: false } },
+          { chatId: null }
+        ];
+      } else {
+        query.chatId = chatId;
+      }
+      await ChatMessage.deleteMany(query);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/chats/sessions/:chatId", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { chatId } = req.params;
+      const { title } = req.body;
+      if (!title || typeof title !== 'string') {
+        return res.status(400).json({ error: "Title is required" });
+      }
+      const query: any = { userId: req.uid };
+      if (chatId === 'default') {
+        query.$or = [
+          { chatId: 'default' },
+          { chatId: { $exists: false } },
+          { chatId: null }
+        ];
+      } else {
+        query.chatId = chatId;
+      }
+      await ChatMessage.updateMany(query, { chatTitle: title });
+      res.json({ success: true, title });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/chats", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
-      const { role, content } = req.body;
+      const { role, content, chatId, chatTitle } = req.body;
       const newChat = await ChatMessage.create({
         userId: req.uid,
         role,
         content,
+        chatId: chatId || 'default',
+        chatTitle: chatTitle || 'New Chat',
         timestamp: new Date()
       });
       const obj = newChat.toObject();

@@ -6,6 +6,18 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame } from 'lucide-react';
 import { toast } from 'sonner';
+import { CircularProgress } from '../components/CircularProgress';
+
+const safeJson = async (res: Response) => {
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('text/html')) {
+    throw new Error('Server returned HTML (this can happen during authentication redirects or server startup). Please refresh or try again in a moment.');
+  }
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error(`Expected JSON response but received ${contentType || 'none'}`);
+  }
+  return res.json();
+};
 
 export function Dashboard() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -36,24 +48,24 @@ export function Dashboard() {
 
       let goalsData: Goal[] = [];
       if (resGoals.ok) {
-        goalsData = await resGoals.json() as Goal[];
+        goalsData = await safeJson(resGoals) as Goal[];
         setGoals(goalsData);
       }
 
       if (resDecisions.ok) {
-        const decisionsData = await resDecisions.json();
+        const decisionsData = await safeJson(resDecisions);
         setDecisions(decisionsData.slice(0, 3));
       }
 
       if (resPlan.ok) {
-        const planData = await resPlan.json();
+        const planData = await safeJson(resPlan);
         setPlan(planData);
       } else {
         setPlan(null);
       }
 
       if (resTasks.ok) {
-        const allTasksData = await resTasks.json() as Task[];
+        const allTasksData = await safeJson(resTasks) as Task[];
         
         // Sort tasks globally based on parent quest's creation date (oldest quest first)
         const sorted = allTasksData.sort((a, b) => {
@@ -165,9 +177,9 @@ export function Dashboard() {
               </div>
               <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
                 <span className="text-xs font-bold text-indigo-400">LVL {user.gamification.level}</span>
-                <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500" style={{ width: `${(user.gamification.xp / (user.gamification.level * 200)) * 100}%` }}></div>
-                </div>
+                <CircularProgress progress={(user.gamification.xp / (user.gamification.level * 200)) * 100} size={24} strokeWidth={3} color="stroke-indigo-500">
+                  <span className="text-[8px] font-bold text-indigo-400">XP</span>
+                </CircularProgress>
               </div>
             </div>
           )}
@@ -270,13 +282,13 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-12 gap-4 flex-grow">
-        {/* Main Plan Area */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 flex-grow auto-rows-min">
+        {/* Main Plan Area - large block */}
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="col-span-12 lg:col-span-8 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group min-h-[400px]"
+          className="col-span-1 md:col-span-2 lg:col-span-8 lg:row-span-2 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group min-h-[400px] transition-all hover:border-[#30363d] shadow-lg"
         >
           <div className="relative z-10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6">
@@ -285,7 +297,7 @@ export function Dashboard() {
               </div>
               <Button onClick={forceReplan} disabled={isGenerating || loadingTasks} size="sm" className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg">
                 {isGenerating ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <Sparkles className="w-3 h-3 mr-2" />}
-                {plan ? "Regenerate" : "Auto-Schedule"}
+                {plan ? "Reschedule" : "Auto-Schedule"}
               </Button>
             </div>
             
@@ -337,7 +349,7 @@ export function Dashboard() {
                   })}
                   {plan.sessions.length === 0 && (
                     <div className="text-center text-slate-500 py-8 text-sm">
-                      Your day is clear! No urgent tasks required.
+                      All clear for today. Time to rest or plan ahead.
                     </div>
                   )}
                 </div>
@@ -346,15 +358,15 @@ export function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Side panel */}
+
         <motion.div 
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="col-span-12 lg:col-span-4 flex flex-col gap-4"
+          className="col-span-1 md:col-span-1 lg:col-span-4 bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex flex-col justify-between transition-transform hover:-translate-y-1"
         >
           {/* Workload card */}
-          <div className="bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex-grow">
+          <div className="flex-grow">
              <h3 className="text-xl font-bold text-white mb-6">Pending Workload</h3>
              {loadingTasks ? (
                <Loader2 className="w-5 h-5 animate-spin text-white/50" />
@@ -377,32 +389,50 @@ export function Dashboard() {
                </div>
              )}
           </div>
+        </motion.div>
           
-          {/* Telemetry card */}
-          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5">
+        {/* Telemetry card */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="col-span-1 md:col-span-1 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
+        >
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Pilot Telemetry</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Tasks Completed</p>
-                <p className="text-2xl font-bold text-[#f0f6fc] font-data">{completedTasks.length}</p>
+              <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                <CircularProgress progress={Math.min(100, completedTasks.length * 10)} size={64} color="stroke-indigo-400" trackColor="stroke-[#21262d]">
+                  <span className="text-lg font-mono font-bold text-[#f0f6fc]">{completedTasks.length}</span>
+                </CircularProgress>
+                <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Tasks<br/>Done</p>
               </div>
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Productivity Score</p>
-                <p className="text-2xl font-bold text-indigo-400 font-data">{productivityScore}</p>
+              <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                <CircularProgress progress={Math.min(100, productivityScore)} size={64} color="stroke-cyan-400" trackColor="stroke-[#21262d]">
+                  <span className="text-lg font-mono font-bold text-cyan-400">{productivityScore}</span>
+                </CircularProgress>
+                <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Prod<br/>Score</p>
               </div>
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Tasks At Risk</p>
-                <p className={`text-2xl font-bold font-data ${tasksAtRisk > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{tasksAtRisk}</p>
+              <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                <CircularProgress progress={tasksAtRisk > 0 ? 100 : 0} size={64} color={tasksAtRisk > 0 ? "stroke-red-500" : "stroke-emerald-400"} trackColor="stroke-[#21262d]">
+                  <span className={`text-lg font-mono font-bold ${tasksAtRisk > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{tasksAtRisk}</span>
+                </CircularProgress>
+                <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">At<br/>Risk</p>
               </div>
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase font-bold">Focus Goal</p>
-                <p className="text-sm font-medium text-[#f0f6fc] truncate" title={focusGoalTitle}>{focusGoalTitle}</p>
+              <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 overflow-hidden">
+                <Target className="w-8 h-8 text-indigo-400/50 mb-2" />
+                <p className="text-xs font-medium text-[#f0f6fc] text-center w-full truncate px-2" title={focusGoalTitle}>{focusGoalTitle}</p>
+                <p className="text-[10px] text-slate-500 uppercase font-bold mt-1">Focus</p>
               </div>
             </div>
-          </div>
+          </motion.div>
           
-          {/* Goals & Habits Monitor */}
-          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5">
+        {/* Goals & Habits Monitor */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="col-span-1 md:col-span-2 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
+        >
             <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Target className="w-4 h-4 text-cyan-400" />
               Goals & Habits Monitor
@@ -420,27 +450,34 @@ export function Dashboard() {
                       </span>
                     </div>
                     {g.type === 'quest' ? (
-                      <div className="flex items-center gap-2 w-full">
-                        <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-cyan-400 transition-all duration-500" style={{ width: `${g.progress}%` }}></div>
-                        </div>
-                        <span className="text-[10px] font-bold text-cyan-400 shrink-0 font-mono">{g.progress}%</span>
+                      <div className="flex items-center gap-3 w-full justify-between">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Progress</span>
+                        <CircularProgress progress={g.progress} size={32} strokeWidth={4} color="stroke-cyan-400">
+                          <span className="text-[8px] font-mono font-bold text-cyan-400">{g.progress}%</span>
+                        </CircularProgress>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 text-orange-400 text-xs">
-                        <Flame className="w-3.5 h-3.5 fill-orange-500/20" />
-                        <span className="font-bold font-mono">{g.streak || 0}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">day streak</span>
+                      <div className="flex items-center gap-2">
+                        <motion.div animate={{ filter: ["drop-shadow(0px 0px 2px rgba(249,115,22,0.4))", "drop-shadow(0px 0px 6px rgba(249,115,22,0.8))", "drop-shadow(0px 0px 2px rgba(249,115,22,0.4))"] }} transition={{ duration: 2, repeat: Infinity }} className="flex items-center gap-1.5 px-2 py-1 bg-orange-500/10 rounded-lg border border-orange-500/20 text-orange-400">
+                          <Flame className="w-3.5 h-3.5" />
+                          <span className="text-xs font-bold font-mono">{g.streak || 0}</span>
+                        </motion.div>
+                        <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">Day Streak</span>
                       </div>
                     )}
                   </div>
                 ))
               )}
             </div>
-          </div>
+        </motion.div>
           
-          {/* AI Decision Feed */}
-          <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 md:col-span-2">
+        {/* AI Decision Feed */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="col-span-1 md:col-span-2 lg:col-span-12 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
+        >
             <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
               <Sparkles className="w-3 h-3" />
               AI Decisions
@@ -462,7 +499,6 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
-          </div>
         </motion.div>
       </div>
     </div>

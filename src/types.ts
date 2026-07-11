@@ -103,6 +103,7 @@ export interface Goal {
   type: 'habit' | 'quest';
   progress: number; // 0-100 for quest, or completion count for habits
   streak?: number; // for habits
+  lastLogged?: string; // ISO date string for habits
   steps?: GoalStep[];
   completed: boolean;
   createdAt: any;
