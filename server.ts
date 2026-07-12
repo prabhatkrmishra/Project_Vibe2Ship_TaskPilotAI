@@ -3,7 +3,6 @@ dotenv.config();
 
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import * as fs from 'fs';
@@ -2566,6 +2565,13 @@ async function startServer() {
 
   // --- Vite Middleware ---
   if (process.env.NODE_ENV !== "production") {
+    // Dynamic import: keeps 'vite' (and its rollup native binary dependency)
+    // out of the production code path entirely. A static top-level import
+    // would load vite/rollup on every environment, including production,
+    // which crashed the Vercel serverless function with
+    // "Cannot find module '@rollup/rollup-linux-x64-gnu'" since vite is
+    // never actually needed once we're serving the prebuilt dist/ folder.
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
