@@ -1,18 +1,41 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/taskpilot';
+const MONGODB_URI = process.env.MONGODB_URI;
 
-let isConnected = false;
+// Cache the connection *promise* (not just a boolean) on the global object.
+// This survives warm serverless invocations and, critically, ensures that
+// concurrent cold-start requests share a single in-flight connect() call
+// instead of racing each other. A failed attempt clears the cached promise
+// so the next call retries instead of being permanently stuck.
+let cached = (global as any)._mongooseConn;
+if (!cached) {
+  cached = (global as any)._mongooseConn = { conn: null, promise: null };
+}
 
 export const connectDB = async () => {
-  if (isConnected) return;
-  try {
-    await mongoose.connect(MONGODB_URI);
-    isConnected = true;
-    console.log("Connected to MongoDB successfully");
-  } catch (error) {
-    console.error("MongoDB connection error:", error);
+  if (cached.conn) return cached.conn;
+
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI environment variable is not set.");
   }
+
+  if (!cached.promise) {
+    cached.promise = mongoose
+      .connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 })
+      .then((m) => {
+        console.log("Connected to MongoDB successfully");
+        return m;
+      })
+      .catch((error) => {
+        // Allow the next call to retry instead of being stuck forever.
+        cached.promise = null;
+        console.error("MongoDB connection error:", error);
+        throw error;
+      });
+  }
+
+  cached.conn = await cached.promise;
+  return cached.conn;
 };
 
 // 1. User Schema
