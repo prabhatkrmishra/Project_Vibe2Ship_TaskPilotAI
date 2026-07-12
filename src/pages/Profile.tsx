@@ -18,11 +18,14 @@ import {
   Clock,
   Star,
   Target,
-  Briefcase
+  Briefcase,
+  Cpu,
+  Check
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { ACHIEVEMENTS, Achievement } from '../types';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 
 export function Profile() {
   const { user, updateUser, logout } = useAuth();
@@ -34,6 +37,57 @@ export function Profile() {
   const [name, setName] = useState(user?.name || '');
   const [address, setAddress] = useState(user?.address || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+
+  // Model selection state
+  const [models, setModelsList] = useState<{ name: string; displayName: string }[]>([]);
+  const [defaultModel, setDefaultModel] = useState<string>(() => {
+    return localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+  });
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchModels = async () => {
+      if (!user) return;
+      setIsLoadingModels(true);
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/models', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setModelsList(data);
+          
+          // Ensure valid selection
+          const exists = data.some((m: any) => m.name === defaultModel);
+          if (!exists && data.length > 0) {
+            const liteModel = data.find((m: any) => m.name.includes('gemini-3.1-flash-lite'))?.name;
+            const fallbackModel = liteModel || data[0].name;
+            setDefaultModel(fallbackModel);
+            localStorage.setItem('default_gemini_model', fallbackModel);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load models:", error);
+      } finally {
+        setIsLoadingModels(false);
+      }
+    };
+    
+    if (activeTab === 'settings') {
+      fetchModels();
+    }
+  }, [user, activeTab]);
+
+  const handleDefaultModelChange = (value: string) => {
+    setDefaultModel(value);
+    localStorage.setItem('default_gemini_model', value);
+    toast.success(`Default AI Model updated to: ${value.split('/').pop()}`);
+    setIsModelModalOpen(false);
+  };
 
   // Password fields state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -402,6 +456,82 @@ export function Profile() {
                   </Button>
                 </div>
               </form>
+            </div>
+
+            {/* Default AI Brain Model Selector Card */}
+            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
+              <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                <Cpu className="h-5 w-5 text-indigo-400" />
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-[#f0f6fc]">AI Brain Configuration</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Choose the default model used for task analysis, subtask generation, quest planning, and daily routine rescheduling.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/40 border border-[#21262d] hover:border-indigo-500/30 transition-all">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-indigo-400 uppercase tracking-wider font-mono font-bold">Active Workspace Default Brain</span>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+                    {models.find(m => m.name === defaultModel)?.displayName || defaultModel.replace(/^models\//, '')}
+                  </div>
+                </div>
+
+                <Dialog open={isModelModalOpen} onOpenChange={setIsModelModalOpen}>
+                  <DialogTrigger className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/15 border border-indigo-500/20 cursor-pointer">
+                    <Cpu className="h-4 w-4" />
+                    Configure Brain
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl p-6">
+                    <DialogHeader className="border-b border-[#21262d] pb-4">
+                      <DialogTitle className="text-[#f0f6fc] text-xl flex items-center gap-2">
+                        <Cpu className="h-5 w-5 text-indigo-400" />
+                        Select Default AI Model
+                      </DialogTitle>
+                      <p className="text-slate-400 text-xs mt-1">This setting changes the default brain model used globally for all automated planning and execution features except chat.</p>
+                    </DialogHeader>
+
+                    <div className="space-y-3 my-5 max-h-[300px] overflow-y-auto pr-1">
+                      {isLoadingModels && models.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-slate-500 gap-2">
+                          <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                          <span className="text-xs font-mono">Syncing active models...</span>
+                        </div>
+                      ) : (
+                        (models.length > 0 ? models : [
+                          { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash" },
+                          { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
+                          { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
+                        ]).map((model) => {
+                          const isSelected = model.name === defaultModel;
+                          return (
+                            <button
+                              key={model.name}
+                              onClick={() => handleDefaultModelChange(model.name)}
+                              type="button"
+                              className={`w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-500/10 border-indigo-500 text-white'
+                                  : 'bg-slate-900/40 border-[#21262d] hover:border-[#30363d] hover:bg-slate-900/80 text-slate-300'
+                              }`}
+                            >
+                              <div className="space-y-1">
+                                <p className="text-sm font-bold">{model.displayName}</p>
+                                <p className="text-[10px] font-mono text-slate-500">{model.name}</p>
+                              </div>
+                              {isSelected && (
+                                <Check className="h-5 w-5 text-indigo-400 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </div>
           )}

@@ -3,12 +3,14 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/button';
-import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud, CheckCircle2, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Dashboard } from './pages/Dashboard';
+import { Timetable } from './pages/Timetable';
 import { Tasks } from './pages/Tasks';
 import { Chat } from './pages/Chat';
 import { Goals } from './pages/Goals';
+import { Completions } from './pages/Completions';
 import { Workspace } from './pages/Workspace';
 import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
@@ -50,6 +52,12 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
         </Link>
         <Link to="/goals" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/goals' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <Target className="h-4 w-4 text-cyan-400" /> Quest & Habit
+        </Link>
+        <Link to="/timetable" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/timetable' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
+          <Calendar className="h-4 w-4 text-pink-400" /> Timetable
+        </Link>
+        <Link to="/completions" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/completions' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
+          <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Completions
         </Link>
         <Link to="/workspace" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/workspace' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <Cloud className="h-4 w-4 text-amber-400" /> Workspace Actions
@@ -416,6 +424,13 @@ export default function App() {
                 </Layout>
               </ProtectedRoute>
             } />
+            <Route path="/completions" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Completions />
+                </Layout>
+              </ProtectedRoute>
+            } />
             <Route path="/workspace" element={
               <ProtectedRoute>
                 <Layout>
@@ -427,6 +442,13 @@ export default function App() {
               <ProtectedRoute>
                 <Layout>
                   <Chat />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/timetable" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Timetable />
                 </Layout>
               </ProtectedRoute>
             } />

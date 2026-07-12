@@ -407,7 +407,6 @@ export function Chat() {
   const handleDeleteSession = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // prevent select action
     if (!user) return;
-    if (!confirm("Are you sure you want to delete this chat session? This cannot be undone.")) return;
     
     setIsDeletingSession(chatId);
     try {
@@ -508,6 +507,13 @@ export function Chat() {
       const cleanQuests = cleanGoals.filter(g => g.type === 'Quest');
       const cleanHabits = cleanGoals.filter(g => g.type === 'Habit');
 
+      const getLocalYYYYMMDD = (d = new Date()) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers,
@@ -518,7 +524,9 @@ export function Chat() {
             quests: cleanQuests,
             habits: cleanHabits
           },
-          model: selectedModel
+          model: selectedModel,
+          localDateStr: getLocalYYYYMMDD(),
+          localTimeStr: new Date().toLocaleTimeString()
         })
       });
 
@@ -563,6 +571,13 @@ export function Chat() {
       }
       
       const data = await res.json();
+      
+      if (data.planUpdated) {
+        toast.success("📅 Custom timetable updated on your Command Center!", {
+          duration: 6000,
+          description: "Your daily execution plan has been updated according to your instructions."
+        });
+      }
       
       // Add assistant message to DB
       const assistantMsgRes = await fetch('/api/chats', {

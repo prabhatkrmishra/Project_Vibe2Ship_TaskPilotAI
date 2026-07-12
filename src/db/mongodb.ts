@@ -66,6 +66,7 @@ const GoalSchema = new mongoose.Schema({
   streak: { type: Number, default: 0 },
   lastLogged: { type: String },
   completed: { type: Boolean, default: false },
+  completedAt: { type: String },
   steps: { type: [GoalStepSchema], default: [] },
   createdAt: { type: Date, default: Date.now }
 });
@@ -88,6 +89,7 @@ const TaskSchema = new mongoose.Schema({
   category: { type: String, default: 'General' },
   estimatedHours: { type: Number, default: 1 },
   hasBeenCompleted: { type: Boolean, default: false },
+  completedAt: { type: String },
   riskScore: { type: Number },
   confidenceScore: { type: Number },
   resources: { type: [String], default: [] },
@@ -118,7 +120,9 @@ const ScheduledSessionSchema = new mongoose.Schema({
   taskId: { type: String, required: true },
   taskTitle: { type: String, required: true },
   startTime: { type: String, required: true },
-  endTime: { type: String, required: true }
+  endTime: { type: String, required: true },
+  completed: { type: Boolean, default: false },
+  started: { type: Boolean, default: false }
 });
 
 const DailyPlanSchema = new mongoose.Schema({

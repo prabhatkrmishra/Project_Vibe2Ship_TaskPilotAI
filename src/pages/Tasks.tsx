@@ -31,6 +31,102 @@ export function Tasks() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [selectedGoalId, setSelectedGoalId] = useState<string>('none');
 
+  // Timetable Sync States
+  const [timetableSessions, setTimetableSessions] = useState<any[]>([]);
+  const [selectedSessionIdx, setSelectedSessionIdx] = useState<string>('custom');
+  const [isLoadingTimetable, setIsLoadingTimetable] = useState(false);
+  const [timeConflict, setTimeConflict] = useState<string | null>(null);
+
+  const checkTimeConflicts = (chosenTime: string, sessions: any[]) => {
+    if (!chosenTime || sessions.length === 0) {
+      setTimeConflict(null);
+      return;
+    }
+    const [chHours, chMins] = chosenTime.split(':').map(Number);
+    const chosenVal = chHours * 60 + chMins;
+
+    for (const session of sessions) {
+      const sDate = new Date(session.startTime);
+      const eDate = new Date(session.endTime);
+      
+      const sVal = sDate.getHours() * 60 + sDate.getMinutes();
+      const eVal = eDate.getHours() * 60 + eDate.getMinutes();
+
+      if (chosenVal >= sVal && chosenVal < eVal) {
+        const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(session.taskTitle);
+        const displayTime = sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' - ' + eDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (isRoutine) {
+          setTimeConflict(`⚠️ Overlap: This time overlaps with your scheduled routine "${session.taskTitle}" (${displayTime}). Consider choosing an available focus session instead!`);
+        } else {
+          setTimeConflict(`⚠️ Conflict: This overlaps with scheduled "${session.taskTitle}" (${displayTime}).`);
+        }
+        return;
+      }
+    }
+    setTimeConflict(null);
+  };
+
+  useEffect(() => {
+    const fetchTimetableForDate = async (selectedDate: Date) => {
+      if (!user) return;
+      setIsLoadingTimetable(true);
+      setTimeConflict(null);
+      try {
+        const token = await user.getIdToken();
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(selectedDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const res = await fetch(`/api/plans/${dateStr}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTimetableSessions(data.sessions || []);
+        } else {
+          setTimetableSessions([]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch timetable for task date:", err);
+        setTimetableSessions([]);
+      } finally {
+        setIsLoadingTimetable(false);
+      }
+    };
+
+    if (date) {
+      fetchTimetableForDate(date);
+      setSelectedSessionIdx('custom');
+    } else {
+      setTimetableSessions([]);
+      setSelectedSessionIdx('custom');
+      setTimeConflict(null);
+    }
+  }, [date, user]);
+
+  useEffect(() => {
+    if (selectedSessionIdx === 'custom') {
+      checkTimeConflicts(time, timetableSessions);
+    } else {
+      setTimeConflict(null);
+    }
+  }, [time, selectedSessionIdx, timetableSessions]);
+
+  const handleSessionChange = (val: string) => {
+    setSelectedSessionIdx(val);
+    if (val !== 'custom') {
+      const idx = Number(val);
+      const session = timetableSessions[idx];
+      if (session) {
+        const sDate = new Date(session.startTime);
+        const hours = sDate.getHours().toString().padStart(2, '0');
+        const mins = sDate.getMinutes().toString().padStart(2, '0');
+        setTime(`${hours}:${mins}`);
+      }
+    }
+  };
+
   // Subtask Edit & AI Generation State
   const [editingSubtask, setEditingSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
   const [editingSubtaskText, setEditingSubtaskText] = useState('');
@@ -110,7 +206,7 @@ export function Tasks() {
     if (!user) return;
     try {
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
       await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
@@ -141,7 +237,7 @@ export function Tasks() {
     try {
       const deadlineString = new Date(`${format(date, 'yyyy-MM-dd')}T${time}`).toISOString();
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
       const res = await fetch('/api/analyze-task', {
         method: 'POST',
         headers: { 
@@ -189,6 +285,35 @@ export function Tasks() {
 
       if (!resPost.ok) throw new Error("Failed to save task");
       
+      const savedTask = await resPost.json();
+
+      if (selectedSessionIdx !== 'custom' && date) {
+        const idx = Number(selectedSessionIdx);
+        const updatedSessions = [...timetableSessions];
+        if (updatedSessions[idx]) {
+          const originalTitle = updatedSessions[idx].taskTitle;
+          const cleanOriginal = originalTitle.includes(":") 
+            ? originalTitle.split(":")[0].trim() 
+            : originalTitle;
+          updatedSessions[idx].taskTitle = `${cleanOriginal}: ${savedTask.title}`;
+          updatedSessions[idx].taskId = savedTask.id;
+
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+
+          await fetch(`/api/plans/${dateStr}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sessions: updatedSessions })
+          });
+        }
+      }
+
       toast.success("Task analyzed and created successfully!");
       setIsDialogOpen(false);
       setTitle('');
@@ -196,8 +321,10 @@ export function Tasks() {
       setDate(undefined);
       setTime('');
       setSelectedGoalId('none');
+      setTimetableSessions([]);
+      setSelectedSessionIdx('custom');
+      setTimeConflict(null);
 
-      const savedTask = await resPost.json();
       triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, savedTask]);
     } catch (error) {
       console.error(error);
@@ -283,7 +410,7 @@ export function Tasks() {
     setIsGeneratingSubtasks(prev => ({ ...prev, [task.id]: true }));
     try {
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
       const res = await fetch('/api/generate-subtasks', {
         method: 'POST',
         headers: {
@@ -690,18 +817,57 @@ export function Tasks() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2 flex flex-col">
-                <Label className="text-slate-400">Deadline</Label>
-                <div className="grid grid-cols-2 gap-4">
-                  <Popover>
-                    <PopoverTrigger className={`inline-flex items-center justify-start whitespace-nowrap rounded-md text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border h-10 px-4 py-2 w-full font-normal bg-slate-800/50 border-slate-700 hover:bg-slate-800 hover:text-white ${!date ? 'text-slate-500' : 'text-white'}`}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, "PPP") : <span>Pick a date</span>}
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 bg-slate-900 border-slate-800 text-white" align="start">
-                      <Calendar mode="single" selected={date} onSelect={setDate} />
-                    </PopoverContent>
-                  </Popover>
+              <div className="space-y-3 flex flex-col">
+                <Label className="text-slate-400">Deadline Date</Label>
+                <Popover>
+                  <PopoverTrigger className={`inline-flex items-center justify-start whitespace-nowrap rounded-md text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border h-10 px-4 py-2 w-full font-normal bg-slate-800/50 border-slate-700 hover:bg-slate-800 hover:text-white ${!date ? 'text-slate-500' : 'text-white'}`}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(date, "PPP") : <span>Pick a date</span>}
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-slate-900 border-slate-800 text-white" align="start">
+                    <Calendar mode="single" selected={date} onSelect={setDate} />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {date && (
+                <div className="space-y-2">
+                  <Label className="text-slate-400">Reference Daily Timetable Session</Label>
+                  {isLoadingTimetable ? (
+                    <div className="text-xs text-indigo-400 animate-pulse font-mono py-1">Fetching daily timetable...</div>
+                  ) : timetableSessions.length === 0 ? (
+                    <div className="text-[11px] text-slate-500 italic bg-slate-900/40 p-2.5 rounded-xl border border-[#21262d]">
+                      No active timetable found for this date. Task will be scheduled freely.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Select value={selectedSessionIdx} onValueChange={handleSessionChange}>
+                        <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white w-full">
+                          <SelectValue placeholder="How to reference daily timetable?" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#0d1117] border border-[#21262d] text-[#f0f6fc] max-h-[220px]">
+                          <SelectItem value="custom" className="focus:bg-slate-800 focus:text-white cursor-pointer font-bold">
+                            Custom Time (Check Conflicts)
+                          </SelectItem>
+                          {timetableSessions.map((session, i) => {
+                            const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(session.taskTitle);
+                            const label = `${new Date(session.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(session.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${session.taskTitle}`;
+                            return (
+                              <SelectItem key={i} value={String(i)} className="focus:bg-slate-800 focus:text-white cursor-pointer text-xs">
+                                {isRoutine ? `🔁 ${label}` : `⚡ ${label}`}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {date && selectedSessionIdx === 'custom' && (
+                <div className="space-y-2 flex flex-col">
+                  <Label className="text-slate-400">Custom Time</Label>
                   <Select value={time} onValueChange={setTime}>
                     <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                       <SelectValue placeholder="Select time" />
@@ -720,7 +886,13 @@ export function Tasks() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
+
+              {timeConflict && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-[11px] leading-relaxed font-medium animate-in fade-in duration-200">
+                  {timeConflict}
+                </div>
+              )}
               <Button type="submit" className="w-full bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white border-0 font-bold tracking-widest uppercase text-xs rounded-xl" disabled={isAnalyzing}>
                 {isAnalyzing ? "AI Analyzing & Planning..." : "Create & Analyze"}
               </Button>

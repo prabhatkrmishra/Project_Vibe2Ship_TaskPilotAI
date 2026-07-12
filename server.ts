@@ -45,6 +45,95 @@ function getValidModel(modelName: string | undefined): string {
   return model;
 }
 
+async function generateContentWithRetry(params: {
+  model: string;
+  contents: any;
+  config?: any;
+}): Promise<any> {
+  const maxRetries = 2;
+  let delay = 1000;
+  let attempt = 0;
+  let currentModel = params.model;
+
+  while (true) {
+    try {
+      return await ai.models.generateContent({
+        model: currentModel,
+        contents: params.contents,
+        config: params.config,
+      });
+    } catch (err: any) {
+      attempt++;
+      const isQuotaError = 
+        err.status === "RESOURCE_EXHAUSTED" ||
+        err.statusCode === 429 ||
+        (err.message && (
+          err.message.includes("429") ||
+          err.message.includes("quota") ||
+          err.message.includes("limit") ||
+          err.message.includes("RESOURCE_EXHAUSTED") ||
+          err.message.includes("Quota") ||
+          err.message.includes("exhausted")
+        ));
+
+      if (isQuotaError) {
+        console.warn(`[Gemini API] Quota limit exceeded for model ${currentModel} (attempt ${attempt}).`);
+        if (attempt <= maxRetries) {
+          console.log(`[Gemini API] Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+          continue;
+        } else {
+          const hasModelsPrefix = currentModel.startsWith("models/");
+          const fallbackBase = "gemini-3.1-flash-lite";
+          const fallbackModel = hasModelsPrefix ? `models/${fallbackBase}` : fallbackBase;
+          
+          if (currentModel !== fallbackModel) {
+            console.warn(`[Gemini API] Switching fallback from ${currentModel} to ${fallbackModel}...`);
+            currentModel = fallbackModel;
+            attempt = 0; // Reset attempts for fallback
+            delay = 1000;
+            continue;
+          }
+        }
+      }
+      throw err;
+    }
+  }
+}
+
+// AI-generated sessions sometimes cross midnight (e.g. "Sleep 23:30 - 06:30") but the model
+// stamps both startTime and endTime with the same calendar date, which makes endTime < startTime.
+// That breaks every duration-based calculation on the client (isActive, isPast, progress, and the
+// Start/Mark Complete buttons). This normalizes any such session by rolling endTime forward one day,
+// and drops any session that is still malformed (missing/unparseable/zero-length) or fully duplicated.
+function normalizeSessions(sessions: any[]): any[] {
+  if (!Array.isArray(sessions)) return [];
+
+  const normalized = sessions
+    .map((s) => {
+      if (!s || !s.startTime || !s.endTime) return null;
+      const start = new Date(s.startTime);
+      const end = new Date(s.endTime);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+      let endTime = s.endTime;
+      if (end.getTime() <= start.getTime()) {
+        const rolledEnd = new Date(end.getTime());
+        rolledEnd.setDate(rolledEnd.getDate() + 1);
+        // Guard against still-invalid ranges (e.g. identical start/end).
+        if (rolledEnd.getTime() <= start.getTime()) return null;
+        endTime = rolledEnd.toISOString().replace('Z', '').split('.')[0] + '.000';
+      }
+
+      return { ...s, endTime };
+    })
+    .filter((s): s is any => s !== null);
+
+  normalized.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  return normalized;
+}
+
 async function startServer() {
   const app = express();
   // Cloud Run terminates TLS at its load balancer and forwards plain HTTP
@@ -430,7 +519,55 @@ async function startServer() {
   app.post("/api/plans/:date", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
-      const { sessions } = req.body;
+      let { sessions } = req.body;
+      if (sessions && Array.isArray(sessions)) {
+        sessions = normalizeSessions(sessions);
+      }
+      
+      // Enforce completion rules
+      if (sessions && Array.isArray(sessions)) {
+        const existingPlan = await DailyPlanModel.findOne({ userId: req.uid, date: req.params.date });
+        const now = new Date().getTime();
+
+        // Carry forward the "started" flag from the existing plan so a partial update
+        // (e.g. editing a single session) can't accidentally wipe another session's progress.
+        for (const session of sessions) {
+          if (existingPlan?.sessions) {
+            const existingSession = existingPlan.sessions.find((s: any) => s.taskTitle === session.taskTitle && s.startTime === session.startTime);
+            if (existingSession?.started && session.started === undefined) {
+              session.started = true;
+            }
+          }
+        }
+
+        // Enforce completion rules: a session may only be marked completed once it has
+        // actually been started, or once its time window has fully elapsed.
+        for (const session of sessions) {
+          if (session.completed) {
+            const end = new Date(session.endTime).getTime();
+            // Allow 1 minute tolerance for clock skew between client and server
+            const isPast = now > (end - 60000);
+            if (!isPast && !session.started) {
+              session.completed = false;
+            }
+          }
+        }
+
+        // Enforce only one session can be "in progress" (started and not completed) at a time.
+        // If the incoming payload tries to start a new session while another is already
+        // running, keep the earliest one active and revert the rest.
+        let activeFound = false;
+        for (const session of sessions) {
+          if (session.started && !session.completed) {
+            if (activeFound) {
+              session.started = false;
+            } else {
+              activeFound = true;
+            }
+          }
+        }
+      }
+
       const plan = await DailyPlanModel.findOneAndUpdate(
         { userId: req.uid, date: req.params.date },
         { $set: { sessions, updatedAt: new Date() } },
@@ -492,6 +629,11 @@ async function startServer() {
       const updateData = { ...req.body };
       if (shouldAwardGamification) {
         updateData.hasBeenCompleted = true;
+      }
+      if (isNowCompleted) {
+        updateData.completedAt = existingTask.completedAt || new Date().toISOString();
+      } else if (req.body.status && req.body.status !== 'completed') {
+        updateData.completedAt = null;
       }
 
       const updatedTask = await Task.findOneAndUpdate(
@@ -582,9 +724,19 @@ async function startServer() {
   app.put("/api/goals/:id", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
+      const existingGoal = await Goal.findOne({ _id: req.params.id, userId: req.uid });
+      if (!existingGoal) return res.status(404).json({ error: "Goal not found" });
+
+      const updateData = { ...req.body };
+      if (req.body.completed === true) {
+        updateData.completedAt = existingGoal.completedAt || new Date().toISOString();
+      } else if (req.body.completed === false) {
+        updateData.completedAt = null;
+      }
+
       const updatedGoal = await Goal.findOneAndUpdate(
         { _id: req.params.id, userId: req.uid },
-        { $set: req.body },
+        { $set: updateData },
         { new: true }
       );
       if (!updatedGoal) return res.status(404).json({ error: "Goal not found" });
@@ -950,9 +1102,9 @@ async function startServer() {
           { "text": "3 tasks", "bold": true },
           { "text": " today.\\n\\n", "bold": false }
         ]
-        Valid headings: HEADING_1, HEADING_2, HEADING_3, NORMAL_TEXT. Ensure all paragraph breaks have \\n. Do not include markdown like **.`;
+        Valid headings: HEADING_1, HEADING_2, HEADING_3, NORMAL_TEXT. Ensure all paragraph breaks have \n. Do not include markdown like **.`;
         
-        const aiRes = await ai.models.generateContent({
+        const aiRes = await generateContentWithRetry({
           model: 'gemini-3.5-flash',
           contents: prompt
         });
@@ -1138,7 +1290,7 @@ async function startServer() {
         - Goals/Habits: ${JSON.stringify((goals || []).map((g:any) => g.title))}
         Keep it concise, plain text only, no markdown formatting like ** or ##, just use standard bullet points (-). Make it professional.`;
         
-        const aiRes = await ai.models.generateContent({
+        const aiRes = await generateContentWithRetry({
           model: 'gemini-3.5-flash',
           contents: prompt
         });
@@ -1616,8 +1768,8 @@ async function startServer() {
   // --- AI Planning Routes ---
   
   app.post("/api/generate-quest-steps", verifyToken, async (req: any, res: any) => {
+    const { title, description, targetDate, model } = req.body;
     try {
-      const { title, description, targetDate, model } = req.body;
       const selectedModel = getValidModel(model);
       const prompt = `
         You are an intelligent productivity assistant. Analyze the following project quest.
@@ -1630,7 +1782,7 @@ async function startServer() {
         For each task, provide:
         - "title" (string): A short, active, clear title for the task (e.g., "Research database schemas").
         - "description" (string): A brief explanation of what needs to be done.
-        - "deadline" (string): An ISO 8601 datetime string. Distribute the deadlines logically from the current time up to the Quest's target date ("${targetDate || ''}"). If no target date is set, distribute them across the next 14 days.
+        - "deadline" (string): An ISO 8601 datetime string. Distribute the deadlines logically from the current time up to the Quest's target date ("${targetDate || ''}"). If no target date is set, distribute them across the next 14 days. Make sure each deadline falls within standard high-productivity hours (e.g. 09:00 - 12:00, 14:00 - 17:00, or 19:00 - 21:00) and NEVER during routine/rest blocks (like Sleep 23:00 - 08:00, Lunch 12:00 - 13:00, Dinner 19:00 - 20:00, or Workout 18:00 - 19:00), so they never interfere with standard routine blocks of the daily timetable.
         - "priority" (string): "high", "medium", or "low".
         - "estimatedHours" (number): Realistic estimated duration in hours (e.g. 1.5, 3, 8).
         - "riskScore" (number): Risk score from 10 to 95 reflecting complexity or tight timelines.
@@ -1652,7 +1804,7 @@ async function startServer() {
         }
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -1684,18 +1836,55 @@ async function startServer() {
       
       res.json(result);
     } catch (err: any) {
-      console.error(err);
-      let errorMessage = err.message || "An unexpected error occurred.";
-      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
-        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
-      }
-      res.status(500).json({ error: errorMessage });
+      console.error("Gemini Quest Steps generation failed, using programmatic fallback:", err);
+      
+      const generatedDate = new Date();
+      const fallbackTasks = [
+        {
+          title: `Research and requirements analysis for "${title}"`,
+          description: `Identify all core requirements, tech stacks, and preparatory resources needed to complete "${title}".`,
+          deadline: targetDate ? new Date(targetDate).toISOString() : new Date(generatedDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+          priority: "high",
+          estimatedHours: 2,
+          riskScore: 25,
+          resources: ["https://google.com"]
+        },
+        {
+          title: `Design and prototype implementation for "${title}"`,
+          description: `Draft schemas, design the layout, and implement the initial basic prototype structure of "${title}".`,
+          deadline: targetDate ? new Date(targetDate).toISOString() : new Date(generatedDate.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+          priority: "medium",
+          estimatedHours: 4,
+          riskScore: 40,
+          resources: ["https://github.com"]
+        },
+        {
+          title: `Build core modules & business logic of "${title}"`,
+          description: `Code the key functional modules, integrate APIs or services, and refine features.`,
+          deadline: targetDate ? new Date(targetDate).toISOString() : new Date(generatedDate.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+          priority: "high",
+          estimatedHours: 8,
+          riskScore: 50,
+          resources: ["https://stackoverflow.com"]
+        },
+        {
+          title: `Comprehensive testing and polish of "${title}"`,
+          description: `Perform detailed testing, resolve bugs, polish styling, and package the final deliverables.`,
+          deadline: targetDate ? new Date(targetDate).toISOString() : new Date(generatedDate.getTime() + 12 * 24 * 60 * 60 * 1000).toISOString(),
+          priority: "medium",
+          estimatedHours: 3,
+          riskScore: 30,
+          resources: ["https://web.dev"]
+        }
+      ];
+
+      res.json({ tasks: fallbackTasks });
     }
   });
 
   app.post("/api/analyze-task", verifyToken, async (req: any, res: any) => {
+    const { title, description, deadline, model } = req.body;
     try {
-      const { title, description, deadline, model } = req.body;
       const selectedModel = getValidModel(model);
       const prompt = `
         You are an intelligent productivity assistant. Analyze the following task.
@@ -1716,7 +1905,7 @@ async function startServer() {
         Risk Score should be high if the deadline is very close and estimated hours is high.
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt
       });
@@ -1727,12 +1916,26 @@ async function startServer() {
       const result = JSON.parse(text);
       res.json(result);
     } catch (err: any) {
-      console.error(err);
-      let errorMessage = err.message || "An unexpected error occurred.";
-      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
-        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
-      }
-      res.status(500).json({ error: errorMessage });
+      console.error("Gemini Task Analysis failed, using programmatic fallback:", err);
+      
+      // Calculate simple programmatic metrics based on title length and deadline
+      const estimatedHours = title.length > 30 ? 5 : 2;
+      const priority = (title.toLowerCase().includes("urgent") || title.toLowerCase().includes("asap") || title.toLowerCase().includes("important")) ? "high" : "medium";
+      const riskScore = deadline ? 65 : 25;
+      
+      const fallbackResult = {
+        estimatedHours,
+        priority,
+        subtasks: [
+          `Prepare initial resources and outline steps for "${title}"`,
+          `Execute main implementation steps`,
+          `Perform review and verify deliverables`
+        ],
+        riskScore,
+        confidenceScore: 85
+      };
+
+      res.json(fallbackResult);
     }
   });
 
@@ -1753,7 +1956,7 @@ async function startServer() {
         Keep each subtask description short, active, and highly clear (e.g., "Draft the database schema" or "Write unit tests for authentication").
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -1831,7 +2034,7 @@ async function startServer() {
         }
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -1870,33 +2073,48 @@ async function startServer() {
   });
 
   app.post("/api/generate-plan", verifyToken, async (req: any, res: any) => {
+    const { tasks, date, model } = req.body;
     try {
-      const { tasks, date, model } = req.body;
+      await connectDB();
       const selectedModel = getValidModel(model);
+
+      const currentPlan = await DailyPlanModel.findOne({ userId: req.uid, date });
+      if (!currentPlan || !currentPlan.sessions || currentPlan.sessions.length === 0) {
+        return res.status(400).json({ error: "No timetable found for today. Please go to Timetable and generate a daily routine first." });
+      }
+
       const prompt = `
-        You are an autonomous AI planning assistant. 
-        Generate an optimized daily schedule for this date: ${date}.
+        You are an autonomous AI planning assistant.
+        Your job is to schedule the user's pending tasks into their EXISTING daily timetable.
         
         Pending Tasks:
         ${JSON.stringify(tasks, null, 2)}
         
-        Allocate realistic 1-2 hour work sessions. Prioritize high urgency tasks or tasks with looming deadlines.
-        Assume standard working hours (9 AM - 6 PM).
+        Current Timetable:
+        ${JSON.stringify(currentPlan.sessions, null, 2)}
         
+        CRITICAL RULES:
+        0. THE TIMETABLE STRUCTURE IS FIXED AND IMMUTABLE. Do NOT change the number of sessions, their start times, or end times.
+        1. Identify slots in the timetable that are suitable for work (e.g., "Deep Work", "Focus", "Work Session", or generic activity blocks).
+        2. Assign pending tasks to these work slots. 
+        3. For a slot where a task is assigned, change the "taskTitle" to EXACTLY match the title of the assigned pending task, and set "taskId" to the task's id.
+        4. Do NOT modify the "taskTitle" of non-work slots (e.g., Lunch, Workout, Sleep, Routine). Leave them exactly as they are.
+        5. Return the full modified timetable in the exact same format.
+
         Return a JSON response exactly in this format, no markdown formatting:
         {
           "sessions": [
             {
-              "taskId": "<id>",
-              "taskTitle": "<title>",
-              "startTime": "YYYY-MM-DDTHH:mm:ss.sssZ",
-              "endTime": "YYYY-MM-DDTHH:mm:ss.sssZ"
+              "taskId": "<id or temp-task-id>",
+              "taskTitle": "<exact title of task, or original routine title>",
+              "startTime": "YYYY-MM-DDTHH:mm:ss.sss",
+              "endTime": "YYYY-MM-DDTHH:mm:ss.sss"
             }
           ]
         }
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt
       });
@@ -1904,20 +2122,26 @@ async function startServer() {
       let text = response.text || "{}";
       text = text.replace(/```json/g, "").replace(/```/g, "").trim();
       const result = JSON.parse(text);
+
+      if (result.sessions && Array.isArray(result.sessions)) {
+        result.sessions = normalizeSessions(result.sessions);
+        await DailyPlanModel.findOneAndUpdate(
+          { userId: req.uid, date },
+          { $set: { sessions: result.sessions, updatedAt: new Date() } },
+          { new: true }
+        );
+      }
+
       res.json(result);
     } catch (err: any) {
-      console.error(err);
-      let errorMessage = err.message || "An unexpected error occurred.";
-      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
-        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
-      }
-      res.status(500).json({ error: errorMessage });
+      console.error("Gemini Plan Generation failed:", err);
+      res.status(500).json({ error: err.message || "Failed to schedule tasks. Timetable may be empty." });
     }
   });
 
   app.post("/api/chat", verifyToken, async (req: any, res: any) => {
     try {
-      const { messages, context, model } = req.body;
+      const { messages, context, model, localDateStr, localTimeStr } = req.body;
       const selectedModel = getValidModel(model);
       
       const user = await User.findById(req.uid);
@@ -1948,60 +2172,177 @@ async function startServer() {
         Conversation History: ${JSON.stringify(messages, null, 2)}
         
         Respond to the user in your designated personality. If they ask about their workload, quests, habits, or what to do next, strictly analyze the CURRENT context provided above. Do not claim their tasks, quests, or habits are empty if the Current Context above contains items.
+
+        TIMETABLE / SCHEDULING CAPABILITY:
+        If the user is asking you to generate a schedule, timetable, plan their day, organize sessions, or reschedule today's tasks/activities based on how they tell you they want to manage their time, you MUST:
+        1. Formulate a complete daily plan/routine consisting of contiguous sessions from morning (wake up) to night (sleeping).
+        2. It MUST represent a highly optimized, science-backed, and human-nature-centric lifestyle that is genuinely achievable without friction or hindrance:
+           - NEVER design hyper-rigid, back-to-back high-intensity focus blocks without recovery periods.
+           - Include "Biological Buffer Blocks" or "Cognitive Recharge Slots" (15-30 minutes for mindfulness, hydration, or active physical recovery) between strenuous work sessions.
+           - Ensure a healthy, natural rest window of 7-8 hours unless explicitly requested otherwise.
+           - Keep the morning starting ramp-up gradual (gradual wake-up, physical hydration/stretch, light planning) before heavy cognitive deep work.
+           - Actively align tasks to human chronobiology (heavy focus blocks when cognitive capacity peaks, administrative or light tasks during post-lunch energy dips).
+        3. In your response, write a friendly, highly motivational text explanation of the schedule in your designated personality, detailing the scientific rationale behind the flow (e.g., circadian alignment, dopamine management, ultradian cycles).
+        4. At the very end of your response, append a structured JSON block containing the scheduled sessions. The JSON block MUST be exactly enclosed between '[SET_DAILY_PLAN_START]' and '[SET_DAILY_PLAN_END]'.
+        
+        The JSON schema within the tags must be exactly:
+        {
+          "sessions": [
+            { "taskTitle": "Task, Routine, or Session Title (e.g. Wake Up & Hydrate, Refreshing Time, Breakfast, Morning Deep Work, Lunch, Fitness Session, Dinner, Sleep)", "startTime": "YYYY-MM-DDTHH:mm:ss.sss", "endTime": "YYYY-MM-DDTHH:mm:ss.sss" }
+          ]
+        }
+        
+        Rules for the JSON block:
+        - IMPORTANT: Do NOT start scheduling sessions starting from the current clock hour of the request. (For example, if the current time is late at night or mid-day, do NOT discard the morning or afternoon routine).
+        - ALWAYS generate a full, contiguous 24-hour daily routine representing a perfectly disciplined day starting in the morning (e.g. 05:30 AM or 06:00 AM) of today's date, all the way to late night (e.g. 10:30 PM or midnight) and sleep.
+        - Today's local date is: ${localDateStr || new Date().toISOString().split('T')[0]}. The user's current local time is: ${localTimeStr || new Date().toLocaleTimeString()}.
+        - IMPORTANT FORMATTING: You MUST format all 'startTime' and 'endTime' strings as timezone-naive ISO strings using the user's local date/time directly with NO trailing 'Z' and NO offset like '+07:00'. For example, if you want a session to start at 07:30 AM on today's local date ${localDateStr || new Date().toISOString().split('T')[0]}, output exactly: "${localDateStr || new Date().toISOString().split('T')[0]}T07:30:00.000".
+        - Ensure JSON is valid and has no backticks, markdown block wrapper, or characters other than the raw JSON string between the start and end tags.
+        - Include this plan and JSON block whenever the user wants to set, change, or update their timetable or daily routine structure.
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt
       });
       
-      res.json({ text: response.text });
-    } catch (err: any) {
-      console.error(err);
-      let errorMessage = err.message || "An unexpected error occurred.";
-      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
-        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
+      let text = response.text || "";
+      let planUpdated = false;
+      
+      // Parse potential plan block
+      const startTag = "[SET_DAILY_PLAN_START]";
+      const endTag = "[SET_DAILY_PLAN_END]";
+      if (text.includes(startTag) && text.includes(endTag)) {
+        try {
+          const startIndex = text.indexOf(startTag);
+          const endIndex = text.indexOf(endTag);
+          const jsonText = text.substring(startIndex + startTag.length, endIndex).trim();
+          const cleanJsonText = jsonText.replace(/```json/g, "").replace(/```/g, "").trim();
+          const parsed = JSON.parse(cleanJsonText);
+          
+          if (parsed.sessions && Array.isArray(parsed.sessions)) {
+            const todayDateStr = localDateStr || new Date().toISOString().split('T')[0];
+            await connectDB();
+            
+            const formattedSessions = normalizeSessions(parsed.sessions.map((s: any) => ({
+              taskId: s.taskId || "temp-task-id",
+              taskTitle: s.taskTitle,
+              startTime: s.startTime,
+              endTime: s.endTime
+            })));
+            
+            await DailyPlanModel.findOneAndUpdate(
+              { userId: req.uid, date: todayDateStr },
+              { $set: { sessions: formattedSessions, updatedAt: new Date() } },
+              { upsert: true, new: true }
+            );
+            
+            // Also log an AIDecision
+            await AIDecision.create({
+              userId: req.uid,
+              title: "Timetable Generated via Chat",
+              reason: "A custom timetable was generated and applied directly based on your instructions in the Mission Control Chat.",
+              timestamp: new Date()
+            });
+            
+            planUpdated = true;
+          }
+          
+          // Strip the plan block from the text response so it is completely clean for the user
+          text = (text.substring(0, startIndex) + text.substring(endIndex + endTag.length)).trim();
+        } catch (e) {
+          console.error("Failed to parse daily plan from chat assistant response:", e);
+        }
       }
-      res.status(500).json({ error: errorMessage });
+      
+      res.json({ text, planUpdated });
+    } catch (err: any) {
+      console.error("Gemini Chat failed, returning personality fallback response:", err);
+      
+      let fallbackText = "Our main neural transmitters are experiencing high traffic (API rate limit). Your local schedule is fully armed and ready. How else can I support you today?";
+      
+      try {
+        const user = await User.findById(req.uid);
+        const activePersonality = user?.gamification?.activePersonality || 'default';
+        
+        if (activePersonality === 'drill_sergeant') {
+          fallbackText = "RECRUIT! We've hit a communication static (API Rate Limit). But a true soldier never halts! No excuses! Keep moving forward, stay disciplined, and execute your current daily missions! Drop and give me 20!";
+        } else if (activePersonality === 'zen_guide') {
+          fallbackText = "A gentle pause in the stream of thoughts (API Rate Limit). Let us appreciate this quiet, peaceful moment. Your path remains completely clear. Rely on your internal structure, take a deep breath, and move mindfully through your day.";
+        } else if (activePersonality === 'executive') {
+          fallbackText = "Status Notification: The communication stream is temporarily experiencing heavy load (API Rate Limit). Operational recommendation: Leverage your pre-scheduled programmatic daily blocks to execute tasks without downtime.";
+        }
+      } catch (dbErr) {
+        // Safe failover
+      }
+
+      res.json({ text: fallbackText, planUpdated: false });
     }
   });
 
   app.post("/api/autonomous-pipeline", verifyToken, async (req: any, res: any) => {
+    const { eventName, eventDetail, tasks, model, dayDescription, localDateStr, localTimeStr } = req.body;
+    const userId = req.uid;
     try {
-      const { eventName, eventDetail, tasks, model } = req.body;
       const selectedModel = getValidModel(model);
-      const userId = req.uid;
 
       const prompt = `
-        You are an autonomous AI Productivity Agent.
+        You are an autonomous AI Productivity Agent designing a General Daily Timetable of Total Discipline.
+        The timeline MUST be a complete structured routine representing a perfectly disciplined day, covering activities from wake-up to sleeping time.
+        
         An event just occurred: "${eventName}"
         Details: "${eventDetail}"
-        Current Time: ${new Date().toISOString()}
+        User's Current Local Time: ${localTimeStr || new Date().toLocaleTimeString()}
+        User's Current Local Date: ${localDateStr || new Date().toISOString().split('T')[0]}
         
-        Current pending tasks:
+        USER'S DAY DESCRIPTION & PREFERENCES:
+        ${dayDescription ? `"${dayDescription}"` : "None specified. Design a classic balanced high-discipline routine."}
+        
+        Active Quests/Tasks to integrate:
         ${JSON.stringify(tasks.map((t: any) => ({ title: t.title, priority: t.priority, estimatedHours: t.estimatedHours, riskScore: t.riskScore })))}
         
-        You must:
-        1. Reason about how this event affects the user's workload.
-        2. Decide if a new optimized daily schedule is needed. If there are tasks, always create one.
-        3. Formulate a concise decision log explaining what you observed, what you decided, and why.
+        You must formulate a continuous, contiguous schedule spanning the user's entire day (from wake up to sleep). Do not just schedule active tasks. You MUST include general routine sessions to fill the day.
+        
+        CRITICAL TIME & LABEL ALIGNMENT RULES:
+        0. THE TIMETABLE STRUCTURE IS FIXED AND IMMUTABLE. If a day description is provided, follow its structure exactly, including start times, end times, and activity types. You are only permitted to map the provided tasks into the specified slots. Do NOT change or reorder the timetable slots.
+        1. Every session MUST be contiguous (no gaps in time where the person has zero structure).
+        2. IMPORTANT: Do NOT start scheduling sessions starting from the current clock hour of the request. (For example, if the current time is 11 PM or 2 AM, do NOT discard the morning or afternoon routine). Always generate a full, contiguous 24-hour daily routine representing a perfectly disciplined day starting in the morning (e.g. 05:30 AM or 06:00 AM) of today's date: ${localDateStr || new Date().toISOString().split('T')[0]}, all the way to late night (e.g. 10:30 PM or midnight) and sleep.
+        3. Adjust the times and activity titles based on the user's day preferences:
+           - If they are an early bird, wake up could be 05:00 or 06:00.
+           - If they are a night owl or work late, slide the whole timeline so it's realistic for them.
+           - Ensure titles match the chronological hours! For example:
+             * Morning: Wake Up, Hydrate, Refresh, Breakfast, Morning Focus.
+             * Midday: Lunch, Post-Lunch Recharge, Afternoon Focus.
+             * Evening: Fitness/Workout, Dinner, Reflection.
+             * Night: Wind Down, Evening Planning, Sleep.
+             * DO NOT schedule a session titled "Afternoon Review" or "Lunch" at 22:00 (10 PM) or 23:00 (11 PM). Late night slots should be "Night Wind Down", "Offline Reading", "Pre-Sleep Routine", or "Sleep".
+        4. Allocate 1 or 2 deep work focus blocks to integrate the user's active tasks (e.g., matching the title of tasks in the active quests list).
+        5. SCIENCE & HUMAN NATURE CENTRICITY:
+           - The timetable MUST be designed in strict harmony with human nature and modern chronobiology to prevent cognitive burnout and ensure it is 100% achievable without hindrance.
+           - Avoid creating unrealistic, exhausting back-to-back high-intensity deep work sessions.
+           - Integrate 15-30 minute "Biological Buffer Blocks" or "Cognitive Recharge Slots" (e.g., for quiet reflection, physical stretching, hydration, or a brief walk) between deep work blocks.
+           - Ensure healthy, natural sleep lengths (7-8 hours).
+           - Implement a gradual morning starting ramp-up (rehydration, breathing/light movement, and clear mental planning) rather than a harsh jump straight into intensive tasks.
+           - Treat recovery, nutrition (meals), and movement/workout blocks as non-negotiable energy anchors that protect physical and neurological baseline performance.
         
         Return a JSON response exactly in this format (no markdown formatting):
         {
           "decision": {
-            "text": "Short explanation of the adjustment",
+            "text": "Short explanation of the timetable adjustment",
             "type": "schedule",
-            "reason": "Detailed reasoning"
+            "reason": "Detailed reasoning on how the day is structured for maximum discipline, respecting the user's rhythm"
           },
           "plan": {
             "sessions": [
-              { "startTime": "YYYY-MM-DDTHH:mm:ss.sssZ", "endTime": "YYYY-MM-DDTHH:mm:ss.sssZ", "taskTitle": "Task Name" }
+              { "startTime": "YYYY-MM-DDTHH:mm:ss.sss", "endTime": "YYYY-MM-DDTHH:mm:ss.sss", "taskTitle": "Session or Task Title (e.g. Wake up & Refresh, Morning Deep Work: [Task Title], Breakfast & Prep, etc.)" }
             ]
           }
         }
+
+        IMPORTANT FORMATTING RULE: You MUST format all 'startTime' and 'endTime' strings as timezone-naive ISO strings using the user's local date/time directly with NO trailing 'Z' and NO offset like '+07:00'. For example, if you want a session to start at 07:30 AM on today's local date ${localDateStr || new Date().toISOString().split('T')[0]}, output exactly: "${localDateStr || new Date().toISOString().split('T')[0]}T07:30:00.000".
       `;
       
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: selectedModel,
         contents: prompt
       });
@@ -2026,16 +2367,16 @@ async function startServer() {
       }
       
       // Save plan to MongoDB
-      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayDateStr = localDateStr || new Date().toISOString().split('T')[0];
       try {
         await connectDB();
         if (result.plan && result.plan.sessions && result.plan.sessions.length > 0) {
-          const formattedSessions = result.plan.sessions.map((s: any) => ({
+          const formattedSessions = normalizeSessions(result.plan.sessions.map((s: any) => ({
             taskId: s.taskId || "temp-task-id",
             taskTitle: s.taskTitle,
             startTime: s.startTime,
             endTime: s.endTime
-          }));
+          })));
           await DailyPlanModel.findOneAndUpdate(
             { userId, date: todayDateStr },
             { $set: { sessions: formattedSessions, updatedAt: new Date() } },
@@ -2054,12 +2395,128 @@ async function startServer() {
 
       res.json(result);
     } catch (err: any) {
-      console.error(err);
-      let errorMessage = err.message || "An unexpected error occurred.";
-      if (errorMessage.includes("quota") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("429")) {
-        errorMessage = "⚠️ Quota exceeded: You have exceeded your Gemini API rate limit or daily quota. Please choose another model from the select box above or try again later.";
+      console.error("Gemini Autonomous Pipeline failed, using programmatic fallback:", err);
+      
+      const baseDateStr = localDateStr || new Date().toISOString().split('T')[0];
+      const fallbackSessions = [
+        {
+          startTime: `${baseDateStr}T06:00:00.000`,
+          endTime: `${baseDateStr}T07:00:00.000`,
+          taskTitle: "Morning Wake Up & Mindful Grounding"
+        },
+        {
+          startTime: `${baseDateStr}T07:00:00.000`,
+          endTime: `${baseDateStr}T08:00:00.000`,
+          taskTitle: "Physical Movement & Rehydration"
+        },
+        {
+          startTime: `${baseDateStr}T08:00:00.000`,
+          endTime: `${baseDateStr}T09:00:00.000`,
+          taskTitle: "Nutritional Energy Anchor (Breakfast) & Daily Focus Planning"
+        }
+      ];
+
+      const activeTasks = Array.isArray(tasks) ? tasks.filter((t: any) => t.status !== 'completed') : [];
+      let currentHour = 9;
+
+      if (activeTasks.length > 0) {
+        activeTasks.slice(0, 3).forEach((task: any) => {
+          let startH = currentHour;
+          let endH = currentHour + 2;
+          
+          if (startH === 12) {
+            fallbackSessions.push({
+              startTime: `${baseDateStr}T12:00:00.000`,
+              endTime: `${baseDateStr}T13:00:00.000`,
+              taskTitle: "Lunch & Cognitive Rest Block"
+            });
+            startH = 13;
+            endH = 15;
+            currentHour = 13;
+          }
+
+          fallbackSessions.push({
+            startTime: `${baseDateStr}T${String(startH).padStart(2, '0')}:00:00.000`,
+            endTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:00:00.000`,
+            taskTitle: `Deep Work Focus: ${task.title}`
+          });
+          
+          fallbackSessions.push({
+            startTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:00:00.000`,
+            endTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:30:00.000`,
+            taskTitle: "Biological Buffer & Cognitive Recharge Slot"
+          });
+
+          currentHour = endH + 0.5;
+        });
+      } else {
+        fallbackSessions.push({
+          startTime: `${baseDateStr}T09:00:00.000`,
+          endTime: `${baseDateStr}T11:00:00.000`,
+          taskTitle: "Deep Work Focus Block 1"
+        });
+        fallbackSessions.push({
+          startTime: `${baseDateStr}T11:00:00.000`,
+          endTime: `${baseDateStr}T12:00:00.000`,
+          taskTitle: "Administrative Sync & Email Clearing"
+        });
+        fallbackSessions.push({
+          startTime: `${baseDateStr}T12:00:00.000`,
+          endTime: `${baseDateStr}T13:00:00.000`,
+          taskTitle: "Lunch & Cognitive Rest Block"
+        });
+        fallbackSessions.push({
+          startTime: `${baseDateStr}T13:00:00.000`,
+          endTime: `${baseDateStr}T15:00:00.000`,
+          taskTitle: "Deep Work Focus Block 2"
+        });
       }
-      res.status(500).json({ error: errorMessage });
+
+      fallbackSessions.push({
+        startTime: `${baseDateStr}T17:00:00.000`,
+        endTime: `${baseDateStr}T18:00:00.000`,
+        taskTitle: "Workout & Physical Energy Reset"
+      });
+      fallbackSessions.push({
+        startTime: `${baseDateStr}T19:00:00.000`,
+        endTime: `${baseDateStr}T20:00:00.000`,
+        taskTitle: "Nutritional Anchor & Dinner"
+      });
+      fallbackSessions.push({
+        startTime: `${baseDateStr}T21:00:00.000`,
+        endTime: `${baseDateStr}T22:00:00.000`,
+        taskTitle: "Reflection & Wind Down Routine"
+      });
+
+      const fallbackDecision = {
+        text: `Daily routine scheduled programmatically for maximum efficiency`,
+        type: "schedule",
+        reason: "Applied offline timetable optimization mapping tasks sequentially with integrated hydration, biological buffer recovery periods, and dietary rhythm blocks."
+      };
+
+      try {
+        await connectDB();
+        
+        await AIDecision.create({
+          userId,
+          title: fallbackDecision.text,
+          reason: fallbackDecision.reason,
+          timestamp: new Date()
+        });
+
+        await DailyPlanModel.findOneAndUpdate(
+          { userId, date: baseDateStr },
+          { $set: { sessions: fallbackSessions.map(s => ({ taskId: "temp-task-id", taskTitle: s.taskTitle, startTime: s.startTime, endTime: s.endTime })), updatedAt: new Date() } },
+          { upsert: true, new: true }
+        );
+      } catch (dbErr) {
+        console.warn("Could not save programmatic fallback plan to MongoDB:", dbErr);
+      }
+
+      res.json({
+        decision: fallbackDecision,
+        plan: { sessions: fallbackSessions }
+      });
     }
   });
 

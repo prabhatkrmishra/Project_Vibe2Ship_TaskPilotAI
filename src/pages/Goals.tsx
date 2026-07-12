@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { Goal, Task } from '../types';
@@ -15,6 +15,8 @@ export function Goals() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const shownCompletionsRef = useRef<Set<string>>(new Set());
+  const syncingGoalsRef = useRef<Map<string, { progress: number, completed: boolean }>>(new Map());
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -23,9 +25,98 @@ export function Goals() {
   const [targetDate, setTargetDate] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
+  const [timetableSessions, setTimetableSessions] = useState<any[]>([]);
+  const [isCheckingTimetable, setIsCheckingTimetable] = useState(false);
+  const [timetableConflict, setTimetableConflict] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkTargetDateTimetable = async () => {
+      if (!user || !targetDate || type !== 'quest') {
+        setTimetableConflict(null);
+        setTimetableSessions([]);
+        return;
+      }
+      setIsCheckingTimetable(true);
+      setTimetableConflict(null);
+      try {
+        const token = await user.getIdToken();
+        const tDate = new Date(targetDate);
+        const year = tDate.getFullYear();
+        const month = String(tDate.getMonth() + 1).padStart(2, '0');
+        const day = String(tDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        const res = await fetch(`/api/plans/${dateStr}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const sessions = data.sessions || [];
+          setTimetableSessions(sessions);
+
+          const tHours = tDate.getHours();
+          const tMins = tDate.getMinutes();
+          const targetVal = tHours * 60 + tMins;
+
+          for (const s of sessions) {
+            const sStart = new Date(s.startTime);
+            const sEnd = new Date(s.endTime);
+            const startVal = sStart.getHours() * 60 + sStart.getMinutes();
+            const endVal = sEnd.getHours() * 60 + sEnd.getMinutes();
+
+            if (targetVal >= startVal && targetVal < endVal) {
+              const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(s.taskTitle);
+              const displayTime = sStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' - ' + sEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              if (isRoutine) {
+                setTimetableConflict(`⚠️ Overlap Warning: Selected deadline time (${tDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}) falls during your scheduled routine "${s.taskTitle}" (${displayTime}). Adjusting is recommended.`);
+              } else {
+                setTimetableConflict(`⚠️ Note: Selected deadline overlaps with scheduled session "${s.taskTitle}" (${displayTime}).`);
+              }
+              break;
+            }
+          }
+        } else {
+          setTimetableSessions([]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch timetable in goals check:", err);
+      } finally {
+        setIsCheckingTimetable(false);
+      }
+    };
+
+    checkTargetDateTimetable();
+  }, [targetDate, type, user]);
+
   const [activeTab, setActiveTab] = useState<'goals' | 'habits'>('goals');
   const [dismissedReminders, setDismissedReminders] = useState<Record<string, boolean>>({});
   const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
+
+  // Helper functions for completions delay tracking
+  const getDelayText = (deadlineStr?: string, completedAtStr?: string) => {
+    if (!deadlineStr) return null;
+    const deadline = new Date(deadlineStr);
+    const completedAt = completedAtStr ? new Date(completedAtStr) : new Date();
+    const diffTime = completedAt.getTime() - deadline.getTime();
+    if (diffTime <= 0) {
+      return { text: "On time", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
+    }
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays === 1) {
+      return { text: "1 day delay", color: "text-red-400 bg-red-500/10 border-red-500/20" };
+    }
+    return { text: `${diffDays} days delay`, color: "text-red-400 bg-red-500/10 border-red-500/20" };
+  };
+
+  const getGoalCompletionDate = (goal: Goal) => {
+    if (goal.completedAt) return goal.completedAt;
+    const qTasks = linkedTasks.filter(t => t.goalId === goal.id && t.status === 'completed');
+    const dates = qTasks.map(t => t.completedAt).filter(Boolean) as string[];
+    if (dates.length > 0) {
+      return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+    }
+    return undefined;
+  };
 
   // Quest Manual Task & Editing State
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -161,7 +252,7 @@ export function Goals() {
       const resTasks = await fetch('/api/tasks', { headers });
       if (resTasks.ok) {
         const tasksData = await resTasks.json() as Task[];
-        setLinkedTasks(tasksData.filter(t => !!t.goalId));
+        setLinkedTasks(tasksData);
       }
     } catch (err) {
       console.error("Failed to load goals and tasks:", err);
@@ -188,6 +279,18 @@ export function Goals() {
 
     if (goal.progress === progress && goal.completed === isCompleted) return;
 
+    // Guard duplicate or subsequent sync calls for this state change
+    const cached = syncingGoalsRef.current.get(goalId);
+    if (cached && cached.progress === progress && cached.completed === isCompleted) {
+      return;
+    }
+    syncingGoalsRef.current.set(goalId, { progress, completed: isCompleted });
+
+    const shouldShowCompletion = isCompleted && !goal.completed && !shownCompletionsRef.current.has(goalId);
+    if (shouldShowCompletion) {
+      shownCompletionsRef.current.add(goalId);
+    }
+
     try {
       const token = await user?.getIdToken();
       await fetch(`/api/goals/${goalId}`, {
@@ -198,7 +301,7 @@ export function Goals() {
         },
         body: JSON.stringify({ progress, completed: isCompleted })
       });
-      if (isCompleted && !goal.completed) {
+      if (shouldShowCompletion) {
         showBeautifulCompletion(goal.title, 'quest');
       }
       fetchGoalsAndTasks();
@@ -242,7 +345,7 @@ export function Goals() {
       const goalRef = await resGoal.json();
 
       if (type === 'quest') {
-        const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+        const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
         const res = await fetch('/api/generate-quest-steps', {
           method: 'POST',
           headers: {
@@ -492,7 +595,10 @@ export function Goals() {
     }
   };
 
-  const filteredGoals = goals.filter(g => activeTab === 'goals' ? g.type === 'quest' : g.type === 'habit');
+  const filteredGoals = goals.filter(g => {
+    if (g.completed) return false;
+    return activeTab === 'goals' ? g.type === 'quest' : g.type === 'habit';
+  });
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
@@ -678,6 +784,19 @@ export function Goals() {
                         required 
                       />
                     </div>
+                    {isCheckingTimetable && (
+                      <div className="text-[10px] text-cyan-400 animate-pulse font-mono mt-1">Comparing against daily timetable...</div>
+                    )}
+                    {timetableConflict && (
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-[11px] leading-relaxed font-medium animate-in fade-in duration-200 mt-1.5">
+                        {timetableConflict}
+                      </div>
+                    )}
+                    {!timetableConflict && targetDate && !isCheckingTimetable && (
+                      <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 mt-1.5">
+                        ✓ Target deadline is clear of daily routine blocks.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -723,7 +842,6 @@ export function Goals() {
           </AnimatePresence>
         </div>
       )}
-
       <div className="flex gap-3 mb-2 border-b border-[#21262d] pb-4">
         <button
           onClick={() => setActiveTab('goals')}
@@ -744,12 +862,27 @@ export function Goals() {
       ) : filteredGoals.length === 0 ? (
         <div className="text-center py-24 bg-[#0d1117] rounded-3xl border border-dashed border-[#21262d]">
           {activeTab === 'goals' ? (
-            <Sparkles className="mx-auto h-12 w-12 text-cyan-400/50 mb-4" />
+            <>
+              <Sparkles className="mx-auto h-12 w-12 text-cyan-400/50 mb-4" />
+              {goals.some(g => g.type === 'quest' && g.completed) ? (
+                <>
+                  <h3 className="text-lg font-medium text-[#f0f6fc]">All Quests Completed!</h3>
+                  <p className="text-[#8b949e] max-w-md mx-auto mt-1">You have completed all active quests. Check the <strong className="text-emerald-400">Completions</strong> page in the sidebar to celebrate your journey!</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-medium text-[#f0f6fc]">No active quests yet</h3>
+                  <p className="text-[#8b949e]">Set a quest to start tracking progress.</p>
+                </>
+              )}
+            </>
           ) : (
-            <Flame className="mx-auto h-12 w-12 text-orange-400/50 mb-4" />
+            <>
+              <Flame className="mx-auto h-12 w-12 text-orange-400/50 mb-4" />
+              <h3 className="text-lg font-medium text-[#f0f6fc]">No active habits yet</h3>
+              <p className="text-[#8b949e]">Set a habit to start tracking progress.</p>
+            </>
           )}
-          <h3 className="text-lg font-medium text-[#f0f6fc]">No {activeTab === 'goals' ? 'quests' : 'habits'} yet</h3>
-          <p className="text-[#8b949e]">Set a {activeTab === 'goals' ? 'quest' : 'habit'} to start tracking progress.</p>
         </div>
       ) : (
         <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
@@ -757,7 +890,9 @@ export function Goals() {
           {filteredGoals.map(goal => {
             const tasks = goal.type === 'quest' ? tasksByGoal(goal.id) : [];
             const isGeneratingTasks = goal.type === 'quest' && tasks.length === 0 && isCreating;
-            const isExpanded = expandedGoals[goal.id] !== false; // default expanded
+            const isExpanded = expandedGoals[goal.id] !== undefined
+              ? expandedGoals[goal.id]
+              : (goal.completed ? false : true);
             const completedTasks = tasks.filter(t => t.status === 'completed').length;
 
             let countdownText = '';
@@ -778,7 +913,12 @@ export function Goals() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className={`bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 relative overflow-hidden group card-lift flex flex-col ${goal.completed ? 'opacity-50' : ''}`}
+              onClick={() => {
+                if (goal.type === 'quest') {
+                  toggleGoalExpand(goal.id);
+                }
+              }}
+              className={`bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 relative overflow-hidden group card-lift flex flex-col ${goal.completed ? 'opacity-50' : ''} ${goal.type === 'quest' ? 'cursor-pointer' : ''}`}
             >
               {goal.type === 'quest' && goal.targetDate && (
                 <div className={`absolute top-0 left-0 w-full h-1 ${
@@ -800,9 +940,11 @@ export function Goals() {
                   {goal.type === 'quest' && goal.targetDate && (
                     <p className={`text-[10px] font-mono font-bold ${countdownColor} mt-1 mb-2 uppercase tracking-wider`}>{countdownText}</p>
                   )}
-                  <p className="text-xs text-[#8b949e] line-clamp-2">{goal.description}</p>
+                  {(goal.type !== 'quest' || isExpanded) && (
+                    <p className="text-xs text-[#8b949e] line-clamp-2">{goal.description}</p>
+                  )}
                 </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={() => deleteGoal(goal)}>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => { e.stopPropagation(); deleteGoal(goal); }}>
                   <Trash2 className="w-3 h-3" />
                 </Button>
               </div>
@@ -810,25 +952,26 @@ export function Goals() {
               <div className="flex gap-2 mb-4 flex-wrap">
                 {goal.type === 'habit' ? (
                   <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${(goal.streak || 0) >= 7 ? 'bg-red-500/15 text-red-400 border-red-500/25' : (goal.streak || 0) >= 3 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'}`}>
-                    <Flame className="w-3 h-3 mr-1" />
+                    <Flame className="w-3.5 h-3.5 mr-1" />
                     {goal.streak || 0} Day Streak
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center">
-                    <Sparkles className="w-3 h-3 mr-1" />
+                    <Sparkles className="w-3.5 h-3.5 mr-1" />
                     Quest
                   </span>
                 )}
                 {goal.type === 'quest' && tasks.length > 0 && (
                   <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center">
-                    <ListTree className="w-3 h-3 mr-1" />
+                    <ListTree className="w-3.5 h-3.5 mr-1" />
                     {completedTasks}/{tasks.length} Done
                   </span>
                 )}
               </div>
 
-              <div className="mt-auto pt-2">
-                {goal.type === 'habit' ? (
+              {(goal.type !== 'quest' || isExpanded) && (
+                <div className="mt-auto pt-2">
+                  {goal.type === 'habit' ? (
                   <div className="space-y-4">
                     <div className="flex items-center gap-4">
                       <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[#161b22] border border-[#21262d] shrink-0">
@@ -863,11 +1006,14 @@ export function Goals() {
                       <div className="space-y-2">
                         <button
                           type="button"
-                          onClick={() => toggleGoalExpand(goal.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleGoalExpand(goal.id);
+                          }}
                           className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
                         >
                           <span className="flex items-center gap-1.5">
-                            <ListTree className="w-3 h-3" /> Scheduled Tasks <span className="text-cyan-400 font-mono">({completedTasks}/{tasks.length})</span>
+                            <ListTree className="w-3.5 h-3.5" /> Scheduled Tasks <span className="text-cyan-400 font-mono">({completedTasks}/{tasks.length})</span>
                           </span>
                           <span className="text-[9px] transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                             ▼
@@ -888,7 +1034,8 @@ export function Goals() {
                                 return (
                                   <div
                                     key={t.id}
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       if (editingTaskId !== t.id) {
                                         toggleLinkedTask(t.id, t.status);
                                       }
@@ -961,6 +1108,7 @@ export function Goals() {
                           placeholder="Add manual task to quest..."
                           value={newManualTaskTitles[goal.id] || ''}
                           onChange={(e) => setNewManualTaskTitles(prev => ({ ...prev, [goal.id]: e.target.value }))}
+                          onClick={(e) => e.stopPropagation()}
                           onKeyDown={async (e: any) => {
                             if (e.key === 'Enter' && e.target.value.trim() !== '') {
                               await handleAddManualTaskToQuest(goal.id, goal.targetDate);
@@ -972,7 +1120,10 @@ export function Goals() {
                           type="button"
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleAddManualTaskToQuest(goal.id, goal.targetDate)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddManualTaskToQuest(goal.id, goal.targetDate);
+                          }}
                           className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/50 text-[11px] font-bold px-3 rounded-xl shrink-0"
                         >
                           Add Task
@@ -982,6 +1133,7 @@ export function Goals() {
                   </div>
                 )}
               </div>
+              )}
             </motion.div>
             );
           })}

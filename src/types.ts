@@ -23,6 +23,7 @@ export interface Task {
   confidenceScore?: number;
   resources?: string[];
   goalId?: string | null;
+  completedAt?: string;
 }
 
 export interface ScheduledSession {
@@ -30,6 +31,8 @@ export interface ScheduledSession {
   taskTitle: string;
   startTime: string; // ISO datetime
   endTime: string;   // ISO datetime
+  completed?: boolean;
+  started?: boolean;
 }
 
 export interface DailyPlan {
@@ -106,5 +109,6 @@ export interface Goal {
   lastLogged?: string; // ISO date string for habits
   steps?: GoalStep[];
   completed: boolean;
+  completedAt?: string;
   createdAt: any;
 }
