@@ -624,6 +624,9 @@ export function Tasks() {
         const matchingGoal = goals.find(g => g.id === goalId);
         if (matchingGoal && matchingGoal.type === 'habit' && isAllCompleted) {
           const currentStreak = matchingGoal.streak || 0;
+          const today = new Date().toISOString().split('T')[0];
+          const alreadyLoggedToday = matchingGoal.lastLogged === today;
+          const newStreak = alreadyLoggedToday ? currentStreak : currentStreak + 1;
           await fetch(`/api/goals/${goalId}`, {
             method: 'PUT',
             headers: {
@@ -631,11 +634,14 @@ export function Tasks() {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              streak: currentStreak + 1,
-              progress: (matchingGoal.progress || 0) + 1
+              streak: newStreak,
+              progress: (matchingGoal.progress || 0) + 1,
+              lastLogged: today
             })
           });
-          toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${currentStreak + 1}!`);
+          if (!alreadyLoggedToday) {
+            toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
+          }
         }
       }
       fetchTasksAndGoals();
@@ -693,6 +699,9 @@ export function Tasks() {
         const matchingGoal = goals.find(g => g.id === goalId);
         if (matchingGoal && matchingGoal.type === 'habit' && isNowCompleted) {
           const currentStreak = matchingGoal.streak || 0;
+          const today = new Date().toISOString().split('T')[0];
+          const alreadyLoggedToday = matchingGoal.lastLogged === today;
+          const newStreak = alreadyLoggedToday ? currentStreak : currentStreak + 1;
           await fetch(`/api/goals/${goalId}`, {
             method: 'PUT',
             headers: {
@@ -700,11 +709,14 @@ export function Tasks() {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              streak: currentStreak + 1,
-              progress: (matchingGoal.progress || 0) + 1
+              streak: newStreak,
+              progress: (matchingGoal.progress || 0) + 1,
+              lastLogged: today
             })
           });
-          toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${currentStreak + 1}!`);
+          if (!alreadyLoggedToday) {
+            toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
+          }
         }
       }
       fetchTasksAndGoals();

@@ -215,7 +215,7 @@ export function Chat() {
   
   const [models, setModelsList] = useState<{ name: string; displayName: string }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+    return localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -239,7 +239,7 @@ export function Chat() {
           if (!exists && data.length > 0) {
             const defaultModel = data.find((m: any) => m.name.includes('gemini-3.5-flash'))?.name || data[0].name;
             setSelectedModel(defaultModel);
-            localStorage.setItem('selected_gemini_model', defaultModel);
+            localStorage.setItem('default_gemini_model', defaultModel);
           }
         }
       } catch (error) {
@@ -254,7 +254,7 @@ export function Chat() {
 
   const handleModelChange = (value: string) => {
     setSelectedModel(value);
-    localStorage.setItem('selected_gemini_model', value);
+    localStorage.setItem('default_gemini_model', value);
     toast.success(`Active AI Model changed to: ${value.split('/').pop()}`);
   };
 

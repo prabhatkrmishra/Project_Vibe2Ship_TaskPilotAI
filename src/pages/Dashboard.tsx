@@ -107,7 +107,12 @@ export function Dashboard() {
     }
   }, [user]);
 
-  const forceReplan = async () => {
+  // NOTE: This calls /api/generate-plan, which only assigns pending tasks into the
+  // EXISTING timetable's work slots and preserves each session's completed/started
+  // progress. It intentionally does NOT regenerate the day from scratch — that is a
+  // different, more destructive action available from the Timetable page's "Force
+  // Replan" button (POST /api/autonomous-pipeline). Keep these two contracts distinct.
+  const scheduleTasksIntoTimetable = async () => {
     if (tasks.length === 0) {
       toast.info("No pending tasks to plan.");
       return;
@@ -116,7 +121,7 @@ export function Dashboard() {
     setIsGenerating(true);
     try {
       const token = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('selected_gemini_model') || 'models/gemini-3.5-flash';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
       const res = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: { 
@@ -296,9 +301,9 @@ export function Dashboard() {
                 <span className="px-2 py-1 bg-indigo-500/20 text-indigo-400 text-[10px] font-bold rounded uppercase tracking-wider">Active Execution</span>
               </div>
               {tasks.length > 0 && (
-                <Button onClick={forceReplan} disabled={isGenerating || loadingTasks} size="sm" className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg">
+                <Button onClick={scheduleTasksIntoTimetable} disabled={isGenerating || loadingTasks} size="sm" className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg">
                   {isGenerating ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <Sparkles className="w-3 h-3 mr-2" />}
-                  {plan ? "Reschedule" : "Auto-Schedule"}
+                  {plan ? "Assign Tasks to Timetable" : "Auto-Schedule"}
                 </Button>
               )}
             </div>

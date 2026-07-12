@@ -7,6 +7,7 @@ import { createServer as createViteServer } from "vite";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
 import { google } from "googleapis";
@@ -19,7 +20,13 @@ const ChatMessage = ChatMessageSrc as any;
 const AIDecision = AIDecisionSrc as any;
 const DailyPlanModel = DailyPlanModelSrc as any;
 
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-taskpilot-key-2026";
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+  throw new Error(
+    "JWT_SECRET environment variable is not set. Refusing to start with an insecure default secret. " +
+    "Set JWT_SECRET to a long, random value (e.g. `openssl rand -hex 32`)."
+  );
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -119,11 +126,19 @@ function normalizeSessions(sessions: any[]): any[] {
 
       let endTime = s.endTime;
       if (end.getTime() <= start.getTime()) {
-        const rolledEnd = new Date(end.getTime());
-        rolledEnd.setDate(rolledEnd.getDate() + 1);
+        // Roll the calendar date portion of the naive ISO string forward by one day while
+        // keeping the wall-clock time-of-day untouched. Using Date math + toISOString() here
+        // would re-interpret/convert through the server process's timezone and can silently
+        // shift the stored time if the server isn't running in UTC.
+        const match = endTime.match(/^(\d{4})-(\d{2})-(\d{2})T(.*)$/);
+        if (!match) return null;
+        const [, y, m, d, rest] = match;
+        const rolled = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d) + 1));
+        const rolledDateStr = rolled.toISOString().split('T')[0];
+        endTime = `${rolledDateStr}T${rest}`;
+
         // Guard against still-invalid ranges (e.g. identical start/end).
-        if (rolledEnd.getTime() <= start.getTime()) return null;
-        endTime = rolledEnd.toISOString().replace('Z', '').split('.')[0] + '.000';
+        if (new Date(endTime).getTime() <= start.getTime()) return null;
       }
 
       return { ...s, endTime };
@@ -323,17 +338,20 @@ async function startServer() {
   app.post("/api/auth/guest", async (req, res) => {
     try {
       await connectDB();
-      let guest = await User.findOne({ email: "guest@taskpilot.ai" });
-      if (!guest) {
-        const hashedPassword = await bcrypt.hash("guest_password_123", 10);
-        guest = await User.create({
-          email: "guest@taskpilot.ai",
-          password: hashedPassword,
-          name: "Guest Pilot",
-          picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
-          address: "123 Pilot Way, AI Station"
-        });
-      }
+      // Each guest session gets its own isolated account so guests never
+      // share (or can see/edit/delete) each other's tasks, goals, chats, etc.
+      const uniqueSuffix = `${Date.now()}-${crypto.randomUUID()}`;
+      const guestEmail = `guest-${uniqueSuffix}@taskpilot.ai`;
+      const randomPassword = crypto.randomBytes(32).toString("hex");
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+      const guest = await User.create({
+        email: guestEmail,
+        password: hashedPassword,
+        name: "Guest Pilot",
+        picture: "https://api.dicebear.com/7.x/avataaars/svg?seed=Guest",
+        address: "123 Pilot Way, AI Station",
+        isGuest: true
+      });
       const token = jwt.sign({ uid: guest._id.toString(), email: guest.email }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
@@ -541,7 +559,8 @@ async function startServer() {
         }
 
         // Enforce completion rules: a session may only be marked completed once it has
-        // actually been started, or once its time window has fully elapsed.
+        // actually been started, or once its time window has fully elapsed. Completing a
+        // session implies it was started, so keep the two flags in sync either way.
         for (const session of sessions) {
           if (session.completed) {
             const end = new Date(session.endTime).getTime();
@@ -549,6 +568,8 @@ async function startServer() {
             const isPast = now > (end - 60000);
             if (!isPast && !session.started) {
               session.completed = false;
+            } else {
+              session.started = true;
             }
           }
         }
@@ -989,8 +1010,6 @@ async function startServer() {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
-      
-      console.log('GET Access Token:', accessToken);
       
       const oauth2Client = new google.auth.OAuth2();
       oauth2Client.setCredentials({ access_token: accessToken, token_type: 'Bearer' });
@@ -2124,10 +2143,35 @@ async function startServer() {
       const result = JSON.parse(text);
 
       if (result.sessions && Array.isArray(result.sessions)) {
-        result.sessions = normalizeSessions(result.sessions);
+        const normalizedResult = normalizeSessions(result.sessions);
+
+        // The AI is only supposed to slot tasks into the EXISTING, immutable timetable
+        // (see prompt rule 0), but its response schema only carries taskId/taskTitle/
+        // startTime/endTime. Saving that verbatim would wipe every session's completed/
+        // started progress flags. Instead, merge just the taskId/taskTitle assignment
+        // back onto the existing session objects (matched by original start/end time),
+        // and keep every other existing field — including completed/started — intact.
+        const existingSessions = currentPlan.sessions || [];
+        const mergedSessions = existingSessions.map((existing: any) => {
+          const existingStart = new Date(existing.startTime).getTime();
+          const existingEnd = new Date(existing.endTime).getTime();
+          const match = normalizedResult.find((s: any) => {
+            const start = new Date(s.startTime).getTime();
+            const end = new Date(s.endTime).getTime();
+            return start === existingStart && end === existingEnd;
+          });
+          if (!match) return existing;
+          return {
+            ...existing,
+            taskId: match.taskId,
+            taskTitle: match.taskTitle
+          };
+        });
+
+        result.sessions = mergedSessions;
         await DailyPlanModel.findOneAndUpdate(
           { userId: req.uid, date },
-          { $set: { sessions: result.sessions, updatedAt: new Date() } },
+          { $set: { sessions: mergedSessions, updatedAt: new Date() } },
           { new: true }
         );
       }

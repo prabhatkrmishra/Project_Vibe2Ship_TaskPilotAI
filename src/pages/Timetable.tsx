@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { Task, DailyPlan } from '../types';
 import { Button } from '../components/ui/button';
-import { Loader2, Calendar as CalendarIcon, Sparkles, Clock, CheckCircle2, Printer, Download, FileText, Pencil, Plus, Trash2, GripVertical, X, PlayCircle } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Sparkles, Clock, CheckCircle2, Printer, Download, FileText, Pencil, Plus, Trash2, GripVertical, X, PlayCircle, AlertTriangle, Info, RefreshCw, CalendarCheck, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
+import { createCalendarEvent } from '../lib/workspace';
 
 const safeJson = async (res: Response) => {
   const contentType = res.headers.get('content-type');
@@ -15,6 +16,129 @@ const safeJson = async (res: Response) => {
     throw new Error(`Expected JSON response but received ${contentType || 'none'}`);
   }
   return res.json();
+};
+
+// Shared visual language for EVERY popup banner on this page. This is the original dark-glass
+// card style used for "Session already in progress": a soft gradient wash over a near-black
+// panel, a glowing icon halo, and a colored border — reused here for every toast (info, success,
+// error) instead of each action picking its own one-off look.
+type ToastAccent = 'amber' | 'cyan' | 'emerald' | 'indigo' | 'red';
+
+const TOAST_THEME: Record<ToastAccent, {
+  panel: string;
+  halo: string;
+  iconRing: string;
+  iconText: string;
+  primaryBtn: string;
+}> = {
+  amber: {
+    panel: 'from-amber-500/[0.08] via-[#12161d] to-[#0a0d12] border-amber-500/25',
+    halo: 'from-amber-400/40 to-amber-500/0',
+    iconRing: 'border-amber-400/40 bg-amber-500/15',
+    iconText: 'text-amber-300',
+    primaryBtn: 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25',
+  },
+  cyan: {
+    panel: 'from-cyan-500/[0.08] via-[#12161d] to-[#0a0d12] border-cyan-500/25',
+    halo: 'from-cyan-400/40 to-cyan-500/0',
+    iconRing: 'border-cyan-400/40 bg-cyan-500/15',
+    iconText: 'text-cyan-300',
+    primaryBtn: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25',
+  },
+  emerald: {
+    panel: 'from-emerald-500/[0.08] via-[#12161d] to-[#0a0d12] border-emerald-500/25',
+    halo: 'from-emerald-400/40 to-emerald-500/0',
+    iconRing: 'border-emerald-400/40 bg-emerald-500/15',
+    iconText: 'text-emerald-300',
+    primaryBtn: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25',
+  },
+  indigo: {
+    panel: 'from-indigo-500/[0.08] via-[#12161d] to-[#0a0d12] border-indigo-500/25',
+    halo: 'from-indigo-400/40 to-indigo-500/0',
+    iconRing: 'border-indigo-400/40 bg-indigo-500/15',
+    iconText: 'text-indigo-300',
+    primaryBtn: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25',
+  },
+  red: {
+    panel: 'from-red-500/[0.08] via-[#12161d] to-[#0a0d12] border-red-500/25',
+    halo: 'from-red-400/40 to-red-500/0',
+    iconRing: 'border-red-400/40 bg-red-500/15',
+    iconText: 'text-red-300',
+    primaryBtn: 'bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25',
+  },
+};
+
+const SessionToastCard = ({
+  accent,
+  icon,
+  title,
+  message,
+  meta,
+  primaryLabel,
+  onPrimary,
+  onDismiss,
+}: {
+  accent: ToastAccent;
+  icon: ReactNode;
+  title: string;
+  message: ReactNode;
+  meta?: ReactNode;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  onDismiss: () => void;
+}) => {
+  const theme = TOAST_THEME[accent];
+  return (
+    <div className={`relative flex items-start gap-3 w-full max-w-sm bg-gradient-to-br ${theme.panel} border rounded-2xl p-4 shadow-[0_12px_36px_rgba(0,0,0,0.55)] backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+      {/* Ambient glow orb — the one bit of color life instead of a flat dark panel */}
+      <div className={`pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-gradient-to-br ${theme.halo} blur-2xl opacity-70`} />
+
+      <div className={`relative shrink-0 w-10 h-10 rounded-xl border ${theme.iconRing} flex items-center justify-center ${theme.iconText}`}>
+        {icon}
+      </div>
+      <div className="relative flex-1 min-w-0">
+        <p className="text-sm font-bold text-white leading-tight">{title}</p>
+        <p className="text-xs text-slate-400 mt-1 leading-relaxed">{message}</p>
+        {meta && (
+          <div className="flex items-center gap-2 mt-2.5 text-[11px] text-slate-500 font-mono">
+            {meta}
+          </div>
+        )}
+        <div className="flex items-center gap-2 mt-3">
+          {primaryLabel && onPrimary && (
+            <button
+              onClick={onPrimary}
+              className={`text-[11px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${theme.primaryBtn}`}
+            >
+              {primaryLabel}
+            </button>
+          )}
+          <button
+            onClick={onDismiss}
+            className={`text-[11px] font-bold uppercase tracking-widest py-1.5 rounded-lg text-slate-500 hover:text-white transition-colors cursor-pointer ${
+              primaryLabel && onPrimary ? 'px-3' : '-ml-3 px-3'
+            }`}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Small helpers so every plain toast.success()/toast.error() on this page is rendered through
+// the same SessionToastCard shell instead of sonner's default plain banner.
+const showInfoToast = (accent: ToastAccent, icon: ReactNode, title: string, message: ReactNode) => {
+  toast.custom((t) => (
+    <SessionToastCard
+      accent={accent}
+      icon={icon}
+      title={title}
+      message={message}
+      onDismiss={() => toast.dismiss(t)}
+    />
+  ));
 };
 
 const DAY_PRESETS = [
@@ -41,7 +165,7 @@ const DAY_PRESETS = [
 ];
 
 export function Timetable() {
-  const { user } = useAuth();
+  const { user, requestWorkspaceAccess } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [plan, setPlan] = useState<DailyPlan | null>(null);
@@ -49,6 +173,21 @@ export function Timetable() {
   const [loading, setLoading] = useState(true);
   const [dayDescription, setDayDescription] = useState<string>('');
   const [showConfig, setShowConfig] = useState<boolean>(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!actionsMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setActionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [actionsMenuOpen]);
 
   // Editing, Adding, Dragging States
   const [editingIndex, setEditingIndex] = useState<number | null>(null); // null = none, -1 = add new
@@ -56,7 +195,25 @@ export function Timetable() {
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [highlightedIdx, setHighlightedIdx] = useState<number | null>(null);
+  // Session timing (isPast, progress %, and the 10-minutes-remaining complete window) is
+  // computed from Date.now() on every render. Without something driving periodic re-renders,
+  // that clock is effectively frozen until an unrelated state change happens to re-render this
+  // component. Ticking every 30s keeps the timeline live.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((t) => t + 1), 30000);
+    return () => window.clearInterval(id);
+  }, []);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  // Tracks whether we've already auto-regenerated the timetable for the current
+  // "today" value, so the midnight rollover effect below only fires the
+  // auto-refresh/auto-generate once per day instead of on every 30s clock tick.
+  const autoRefreshedForDateRef = useRef<string>('');
+  // Snapshot of the pending-task signature at the moment sessions were last (re)scheduled.
+  // Used by "Reschedule Routine" to detect whether anything has actually changed.
+  const lastRescheduleSignatureRef = useRef<string>('');
 
   const isoToTimeStr = (isoString: string) => {
     const match = isoString.match(/T(\d{2}):(\d{2})/);
@@ -77,7 +234,11 @@ export function Timetable() {
     setEditEndTime(prepopulatedEndTime || "09:00");
   };
 
-  const saveSessions = async (updatedSessions: any[]) => {
+  const saveSessions = async (
+    updatedSessions: any[],
+    rollbackPlan?: DailyPlan | null,
+    options?: { successMessage?: string; suppressSuccessToast?: boolean }
+  ) => {
     if (!user) return;
     try {
       const token = await user.getIdToken();
@@ -92,20 +253,24 @@ export function Timetable() {
       if (res.ok) {
         const updatedPlan = await res.json();
         setPlan(updatedPlan);
-        toast.success("Timetable updated and synchronized!");
+        if (!options?.suppressSuccessToast) {
+          showInfoToast('emerald', <CheckCircle2 className="w-5 h-5" />, "Synced", options?.successMessage || "Timetable updated and synchronized!");
+        }
       } else {
-        toast.error("Failed to sync updated timetable with server.");
+        if (rollbackPlan) setPlan(rollbackPlan);
+        showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Sync failed", "Failed to sync updated timetable with server.");
       }
     } catch (err) {
       console.error("Error syncing timetable:", err);
-      toast.error("Network error while syncing timetable.");
+      if (rollbackPlan) setPlan(rollbackPlan);
+      showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Network error", "Could not reach the server to sync your timetable.");
     }
   };
 
   const handleSaveSlot = async () => {
     if (!plan) return;
     if (!editTitle.trim()) {
-      toast.error("Please enter a title for the session.");
+      showInfoToast('amber', <AlertTriangle className="w-5 h-5" />, "Title required", "Please enter a title for the session.");
       return;
     }
 
@@ -119,6 +284,7 @@ export function Timetable() {
     }
 
     let updatedSessions = [...plan.sessions];
+    const isNewSession = editingIndex === -1;
 
     if (editingIndex === -1) {
       updatedSessions.push({
@@ -141,13 +307,20 @@ export function Timetable() {
     updatedSessions.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
     setEditingIndex(null);
-    await saveSessions(updatedSessions);
+    await saveSessions(updatedSessions, undefined, {
+      successMessage: isNewSession
+        ? `"${editTitle.trim()}" added to your timetable!`
+        : `"${editTitle.trim()}" updated!`
+    });
   };
 
   const handleDeleteSlot = async (idx: number) => {
     if (!plan) return;
+    const removedTitle = plan.sessions[idx]?.taskTitle;
     const updatedSessions = plan.sessions.filter((_, i) => i !== idx);
-    await saveSessions(updatedSessions);
+    await saveSessions(updatedSessions, undefined, {
+      successMessage: removedTitle ? `"${removedTitle}" removed from your timetable.` : "Session removed from your timetable."
+    });
   };
 
   const handleDragStart = (e: React.DragEvent, idx: number) => {
@@ -184,7 +357,7 @@ export function Timetable() {
 
     setDraggedIdx(null);
     setDragOverIdx(null);
-    await saveSessions(finalSessions);
+    await saveSessions(finalSessions, undefined, { successMessage: "Timetable reordered!" });
   };
 
   const handleDragEnd = () => {
@@ -200,6 +373,15 @@ export function Timetable() {
   };
 
   const today = getLocalYYYYMMDD();
+
+  // A stable fingerprint of the pending/in-progress task pool (id, status, title, priority,
+  // estimated hours). Used to detect whether anything relevant to scheduling has actually
+  // changed since the last time sessions were generated/reshuffled — see "Reschedule Routine".
+  const computeTaskSignature = (taskList: Task[]) =>
+    taskList
+      .map(t => `${t.id}:${t.status}:${t.title}:${t.priority}:${t.estimatedHours}`)
+      .sort()
+      .join('|');
 
   const fetchTimetableData = async () => {
     if (!user) return;
@@ -221,8 +403,11 @@ export function Timetable() {
 
       if (resTasks.ok) {
         const allTasks = await safeJson(resTasks) as Task[];
-        setTasks(allTasks.filter(t => t.status === 'pending' || t.status === 'in_progress'));
+        const pending = allTasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
+        setTasks(pending);
         setCompletedTasks(allTasks.filter(t => t.status === 'completed'));
+        // Baseline: assume the timetable we just loaded already reflects this task state.
+        lastRescheduleSignatureRef.current = computeTaskSignature(pending);
       }
     } catch (err) {
       console.error("Error loading timetable data:", err);
@@ -237,9 +422,90 @@ export function Timetable() {
     }
   }, [user]);
 
-  const forceReplan = async (customDesc?: string) => {
+  // Feature: once the date rolls past 00:00, refresh the timetable for the new day. If a
+  // timetable already exists for today (e.g. pre-planned), just load it; if not, auto-generate
+  // one — built from whatever pending tasks/quests remain, or a general routine if none exist.
+  // "today" is derived from Date.now() on every render, and the clockTick interval (below)
+  // already forces a re-render every 30s, so this effect's dependency naturally picks up the
+  // date change shortly after midnight without any extra timers.
+  useEffect(() => {
+    if (!user) return;
+    if (!autoRefreshedForDateRef.current) {
+      // First run for this mount — the [user] effect above already handles the initial load.
+      autoRefreshedForDateRef.current = today;
+      return;
+    }
+    if (autoRefreshedForDateRef.current === today) return;
+    autoRefreshedForDateRef.current = today;
+    handleDayRollover();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today, user]);
+
+  const handleDayRollover = async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [resTasks, resPlan] = await Promise.all([
+        fetch('/api/tasks', { headers }),
+        fetch(`/api/plans/${today}`, { headers })
+      ]);
+
+      let freshTasks: Task[] = [];
+      if (resTasks.ok) {
+        const allTasks = await safeJson(resTasks) as Task[];
+        freshTasks = allTasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
+        setTasks(freshTasks);
+        setCompletedTasks(allTasks.filter(t => t.status === 'completed'));
+      }
+
+      let hasPlanForToday = false;
+      if (resPlan.ok) {
+        const planData = await safeJson(resPlan);
+        hasPlanForToday = !!(planData && planData.sessions && planData.sessions.length > 0);
+        setPlan(planData);
+      } else {
+        setPlan(null);
+      }
+
+      if (!hasPlanForToday) {
+        showInfoToast(
+          'indigo',
+          <Sparkles className="w-5 h-5" />,
+          "New day, new timetable",
+          freshTasks.length > 0
+            ? "Building today's timetable from your remaining tasks and quests..."
+            : "No pending tasks or quests — generating a general daily routine..."
+        );
+        await regenerateFullTimetable(dayDescription || undefined, freshTasks);
+      } else {
+        lastRescheduleSignatureRef.current = computeTaskSignature(freshTasks);
+      }
+    } catch (err) {
+      console.error("Error auto-refreshing timetable after midnight rollover:", err);
+    }
+  };
+
+  // NOTE: This calls /api/autonomous-pipeline, which regenerates the ENTIRE day's
+  // timetable from scratch — unlike Dashboard's "Assign Tasks to Timetable" action
+  // (POST /api/generate-plan), which only slots tasks into the existing timetable and
+  // preserves completed/started progress. This action discards that progress, so warn
+  // the user before wiping a timetable that already has sessions marked started/done.
+  const regenerateFullTimetable = async (customDesc?: string, tasksOverride?: Task[]) => {
+    const hasProgress = !!plan?.sessions?.some((s: any) => s.completed || s.started);
+    if (hasProgress) {
+      const confirmed = window.confirm(
+        "This will regenerate your entire timetable from scratch and will discard progress " +
+        "(completed/started sessions) on today's plan. If you only want to slot new tasks into " +
+        "your existing timetable without losing progress, use Dashboard's \"Assign Tasks to " +
+        "Timetable\" instead. Continue with a full replan?"
+      );
+      if (!confirmed) return;
+    }
+
     setIsGenerating(true);
     const descToUse = customDesc !== undefined ? customDesc : dayDescription;
+    const tasksToUse = tasksOverride !== undefined ? tasksOverride : tasks;
     try {
       const token = await user?.getIdToken();
       const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
@@ -252,7 +518,7 @@ export function Timetable() {
         body: JSON.stringify({ 
           eventName: 'Manual Replan Request',
           eventDetail: 'User requested a forced replan of the schedule with custom preferences.',
-          tasks: tasks,
+          tasks: tasksToUse,
           model: selectedModel,
           dayDescription: descToUse || "Design a classic balanced high-discipline routine.",
           localDateStr: today,
@@ -265,14 +531,106 @@ export function Timetable() {
         throw new Error(errData.error || "The AI is currently out of quota. Please switch the AI Brain model in Mission Control.");
       }
 
-      toast.success("Gemini has customized your daily timetable!");
+      showInfoToast('cyan', <Sparkles className="w-5 h-5" />, "Timetable regenerated", "Gemini has customized your daily timetable!");
       await fetchTimetableData();
+      lastRescheduleSignatureRef.current = computeTaskSignature(tasksToUse);
       setShowConfig(false);
     } catch (error: any) {
        console.error(error);
-       toast.error(error.message || "Failed to generate plan");
+       showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Replan failed", error.message || "Failed to generate plan");
     } finally {
        setIsGenerating(false);
+    }
+  };
+
+  // Feature: "Reschedule Routine" — slots any updated/new pending tasks into the EXISTING
+  // timetable structure (via /api/generate-plan) without discarding completed/started
+  // progress. If nothing about the pending task pool has changed since the last time sessions
+  // were (re)generated, warn instead of making a pointless AI call.
+  const handleRescheduleRoutine = async () => {
+    if (!plan || !plan.sessions || plan.sessions.length === 0) {
+      showInfoToast('amber', <AlertTriangle className="w-5 h-5" />, "No timetable yet", "Generate a timetable first before rescheduling sessions.");
+      return;
+    }
+
+    const currentSignature = computeTaskSignature(tasks);
+    if (currentSignature === lastRescheduleSignatureRef.current) {
+      showInfoToast('amber', <Info className="w-5 h-5" />, "Nothing to reschedule", "Nothing new to reschedule sessions — no task changes since the last update.");
+      return;
+    }
+
+    setIsRescheduling(true);
+    try {
+      const token = await user?.getIdToken();
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const res = await fetch('/api/generate-plan', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ date: today, tasks, model: selectedModel })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to reschedule sessions.");
+      }
+
+      showInfoToast('cyan', <Sparkles className="w-5 h-5" />, "Routine rescheduled", "Sessions have been updated to reflect your latest tasks.");
+      lastRescheduleSignatureRef.current = currentSignature;
+      await fetchTimetableData();
+    } catch (error: any) {
+      console.error(error);
+      showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Reschedule failed", error.message || "Failed to reschedule sessions.");
+    } finally {
+      setIsRescheduling(false);
+    }
+  };
+
+  // Feature: "Sync with Calendar" — pushes every session for today's plan into the user's
+  // primary Google Calendar. Reuses the existing Workspace OAuth flow (calendar scope is
+  // already requested there) so no separate Google connection step is needed.
+  const handleSyncCalendar = async () => {
+    if (!plan || !plan.sessions || plan.sessions.length === 0) {
+      toast.error("No scheduled sessions to sync.");
+      return;
+    }
+
+    setIsSyncingCalendar(true);
+    try {
+      const accessToken = await requestWorkspaceAccess();
+      if (!accessToken) {
+        showInfoToast('amber', <AlertTriangle className="w-5 h-5" />, "Calendar access needed", "Please authorize Google Calendar access to sync your timetable.");
+        return;
+      }
+
+      const results = await Promise.allSettled(
+        plan.sessions.map(session =>
+          createCalendarEvent(accessToken, {
+            summary: session.taskTitle,
+            start: session.startTime,
+            end: session.endTime,
+            description: "Synced from AI Pilot Daily Timetable."
+          })
+        )
+      );
+
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const failCount = results.length - successCount;
+
+      if (failCount === 0) {
+        showInfoToast('emerald', <CalendarCheck className="w-5 h-5" />, "Synced to Google Calendar", `${successCount} session${successCount === 1 ? '' : 's'} added to your Google Calendar for today.`);
+      } else if (successCount === 0) {
+        showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Sync failed", "Could not sync sessions to Google Calendar. Please check your Google account connection.");
+      } else {
+        showInfoToast('amber', <AlertTriangle className="w-5 h-5" />, "Partially synced", `${successCount} synced, ${failCount} failed. Please check your Google account connection.`);
+      }
+    } catch (error: any) {
+      console.error("Error syncing to Google Calendar:", error);
+      showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Sync failed", error.message || "Could not sync your timetable to Google Calendar.");
+    } finally {
+      setIsSyncingCalendar(false);
     }
   };
 
@@ -292,11 +650,33 @@ export function Timetable() {
   const handleMarkCompleted = async (index: number) => {
     if (!plan) return;
     const session = plan.sessions[index];
+    // A session that's being completed is, by definition, started/finished — set both flags
+    // together so the server's "only started/past sessions can complete" rule never contradicts
+    // the action the user just took (this was the cause of the tick silently reverting).
     let updatedSessions = [...plan.sessions];
-    updatedSessions[index] = { ...session, completed: true };
-    await saveSessions(updatedSessions);
-    
-    const matchingTask = tasks.find(t => t.title === session.taskTitle);
+    updatedSessions[index] = { ...session, completed: true, started: true };
+
+    // Optimistic update: reflect the tick immediately instead of waiting on the network
+    // round-trip, then reconcile with (or roll back to) whatever the server confirms.
+    const previousPlan = plan;
+    setPlan({ ...plan, sessions: updatedSessions });
+    await saveSessions(updatedSessions, previousPlan, { suppressSuccessToast: true });
+
+    toast.custom((t) => (
+      <SessionToastCard
+        accent="emerald"
+        icon={<CheckCircle2 className="w-5 h-5" />}
+        title="Session completed"
+        message={<><span className="text-emerald-300 font-semibold">"{session.taskTitle}"</span> is done. Nice work.</>}
+        primaryLabel="Got it"
+        onPrimary={() => toast.dismiss(t)}
+        onDismiss={() => toast.dismiss(t)}
+      />
+    ));
+
+    const matchingTask = session.taskId
+      ? tasks.find(t => t.id === session.taskId)
+      : tasks.find(t => t.title === session.taskTitle);
     if (matchingTask) {
        try {
          const token = await user?.getIdToken();
@@ -316,6 +696,15 @@ export function Timetable() {
     }
   };
 
+  const jumpToSession = (index: number) => {
+    const el = document.getElementById(`session-card-${index}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    setHighlightedIdx(index);
+    window.setTimeout(() => setHighlightedIdx((current) => (current === index ? null : current)), 2200);
+  };
+
   const handleStartSession = async (index: number) => {
     if (!plan) return;
     const session = plan.sessions[index];
@@ -323,13 +712,50 @@ export function Timetable() {
     // Only one session can be running at a time.
     const activeSessionIdx = plan.sessions.findIndex((s, i) => i !== index && s.started && !s.completed);
     if (activeSessionIdx !== -1) {
-      toast.error(`A session is already in progress: "${plan.sessions[activeSessionIdx].taskTitle}". Finish or stop it before starting another.`);
+      const activeTitle = plan.sessions[activeSessionIdx].taskTitle;
+      toast.custom((t) => (
+        <SessionToastCard
+          accent="amber"
+          icon={<PlayCircle className="w-5 h-5" />}
+          title="Session already in progress"
+          message={<><span className="text-amber-300 font-semibold">"{activeTitle}"</span> is still running. Finish or stop it before starting another.</>}
+          primaryLabel="Jump to session"
+          onPrimary={() => { jumpToSession(activeSessionIdx); toast.dismiss(t); }}
+          onDismiss={() => toast.dismiss(t)}
+        />
+      ));
       return;
     }
 
     let updatedSessions = [...plan.sessions];
     updatedSessions[index] = { ...session, started: true };
-    await saveSessions(updatedSessions);
+
+    const previousPlan = plan;
+    setPlan({ ...plan, sessions: updatedSessions });
+    await saveSessions(updatedSessions, previousPlan, { suppressSuccessToast: true });
+
+    const durationMins = Math.max(1, Math.round((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 60000));
+    const durationLabel = durationMins >= 60
+      ? `${Math.floor(durationMins / 60)}h ${durationMins % 60 > 0 ? `${durationMins % 60}m` : ''}`.trim()
+      : `${durationMins}m`;
+
+    toast.custom((t) => (
+      <SessionToastCard
+        accent="cyan"
+        icon={<PlayCircle className="w-5 h-5" />}
+        title="Session started"
+        message={<><span className="text-cyan-300 font-semibold">"{session.taskTitle}"</span> is now in progress.</>}
+        meta={<>
+          <Clock className="w-3 h-3 text-cyan-400" />
+          <span>{formatTime(session.startTime)} – {formatTime(session.endTime)}</span>
+          <span className="text-slate-700">•</span>
+          <span>{durationLabel}</span>
+        </>}
+        primaryLabel="Got it"
+        onPrimary={() => toast.dismiss(t)}
+        onDismiss={() => toast.dismiss(t)}
+      />
+    ));
   };
 
   const exportToICS = () => {
@@ -414,7 +840,7 @@ export function Timetable() {
     `;
 
     visibleSessions.forEach(session => {
-      const isCompleted = session.completed || completedTasks.some(t => t.title === session.taskTitle);
+      const isCompleted = session.completed || (!!session.taskId && completedTasks.some(t => t.id === session.taskId));
       const statusText = isCompleted ? "Completed" : "Scheduled";
       const statusClass = isCompleted ? "status-completed" : "status-scheduled";
       
@@ -465,7 +891,7 @@ export function Timetable() {
     const dateStr = getLocalDateString();
     let itemsHtml = '';
     visibleSessions.forEach(session => {
-      const isCompleted = session.completed || completedTasks.some(t => t.title === session.taskTitle);
+      const isCompleted = session.completed || (!!session.taskId && completedTasks.some(t => t.id === session.taskId));
       itemsHtml += `
         <div class="item ${isCompleted ? 'completed' : ''}">
           <div class="time-block">
@@ -633,30 +1059,55 @@ export function Timetable() {
         </div>
 
         {!loading && (
-          <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
-            {plan && (
-              <Button 
-                onClick={() => handleStartAdd()} 
-                size="sm" 
-                className="bg-[#161b22] border border-[#30363d] hover:border-indigo-500 text-slate-300 hover:text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2.5 h-auto cursor-pointer flex items-center gap-2"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Session
-              </Button>
-            )}
-            <Button 
-              onClick={() => setShowConfig(!showConfig)} 
-              disabled={isGenerating} 
-              size="sm" 
+          <div className="relative self-start sm:self-center" ref={actionsMenuRef}>
+            <Button
+              onClick={() => setActionsMenuOpen(!actionsMenuOpen)}
+              disabled={isGenerating}
+              size="sm"
               className={`rounded-xl font-bold text-xs uppercase tracking-widest transition-colors shadow-lg px-4 py-2.5 h-auto cursor-pointer flex items-center gap-2 ${
-                showConfig 
-                  ? 'bg-slate-800 border border-[#30363d] text-slate-300 hover:text-white' 
+                actionsMenuOpen
+                  ? 'bg-slate-800 border border-[#30363d] text-slate-300 hover:text-white'
                   : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/10'
               }`}
             >
-              {isGenerating ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-2" />}
-              {plan ? (showConfig ? "Close Customizer" : "Customize Routine") : (showConfig ? "Close Settings" : "Set Day Rhythm")}
+              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MoreVertical className="w-3.5 h-3.5" />}
+              Actions
             </Button>
+
+            {actionsMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-[#0d1117] border border-[#30363d] rounded-2xl shadow-2xl z-20 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                {plan && (
+                  <button
+                    type="button"
+                    onClick={() => { setActionsMenuOpen(false); handleStartAdd(); }}
+                    className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest"
+                  >
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    Add Session
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setActionsMenuOpen(false); setShowConfig(!showConfig); }}
+                  disabled={isGenerating}
+                  className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                  {plan ? (showConfig ? "Close Customizer" : "Customize Routine") : (showConfig ? "Close Settings" : "Set Day Rhythm")}
+                </button>
+                {plan && (
+                  <button
+                    type="button"
+                    onClick={() => { setActionsMenuOpen(false); handleRescheduleRoutine(); }}
+                    disabled={isRescheduling || isGenerating}
+                    className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isRescheduling ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
+                    Reschedule Routine
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -727,7 +1178,7 @@ export function Timetable() {
                     </Button>
                   )}
                   <Button
-                    onClick={() => forceReplan()}
+                    onClick={() => regenerateFullTimetable()}
                     className="ml-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-6 py-3 shadow-lg cursor-pointer flex items-center gap-2"
                   >
                     <Sparkles className="w-4 h-4" />
@@ -789,6 +1240,16 @@ export function Timetable() {
                       <FileText className="w-3.5 h-3.5 text-pink-400" />
                       Document (.doc)
                     </Button>
+                    <Button
+                      onClick={handleSyncCalendar}
+                      disabled={isSyncingCalendar}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                    >
+                      {isSyncingCalendar ? <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5 text-emerald-400" />}
+                      Sync with Calendar
+                    </Button>
                   </div>
                 </div>
 
@@ -800,7 +1261,7 @@ export function Timetable() {
                       <div className="text-center py-16 text-slate-400 bg-slate-900/40 border border-slate-800 rounded-2xl p-6">
                         <p className="text-sm mb-4">No scheduled sessions in your Daily Timetable.</p>
                         <Button 
-                          onClick={() => forceReplan()} 
+                          onClick={() => regenerateFullTimetable()} 
                           className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2"
                         >
                           <Sparkles className="w-3.5 h-3.5 mr-2" />
@@ -818,16 +1279,35 @@ export function Timetable() {
                         const end = new Date(session.endTime).getTime();
                         const isPast = now > end;
                         const isTimeWindowActive = now >= start && now <= end;
-                        const isActive = isTimeWindowActive && !!session.started;
-                        const progress = isActive ? ((now - start) / (end - start)) * 100 : 0;
-                        // A session can be marked as finished once it has actually started, or once its
-                        // time window has fully elapsed (e.g. it was missed). The old rule that only allowed
-                        // completion for sessions longer than 3 hours blocked normal short sessions from
-                        // ever being marked complete while still in progress.
-                        const canMarkCompleted = isPast || !!session.started;
-                        
-                        const matchingTask = tasks.find(t => t.title === session.taskTitle);
-                        const isCompleted = session.completed || completedTasks.some(t => t.title === session.taskTitle);
+
+                        // Match the linked task by id, not title. Recurring/routine session names
+                        // (e.g. "Deep Work Block II: Core Execution", "Lunch") repeat across days,
+                        // so matching by title alone could flag today's fresh session as already
+                        // "completed" just because some past task with the same title was finished
+                        // — which silently removed the Start button and made it look broken.
+                        const matchingTask = session.taskId
+                          ? tasks.find(t => t.id === session.taskId)
+                          : tasks.find(t => t.title === session.taskTitle);
+                        const isCompleted = session.completed || (
+                          session.taskId
+                            ? completedTasks.some(t => t.id === session.taskId)
+                            : false
+                        );
+
+                        // A session should visually read as "active" the moment it's started, even if the
+                        // user started it a little early or the scheduled window hasn't technically begun
+                        // yet — not only once the clock catches up to session.startTime.
+                        const isActive = !!session.started && !isCompleted && now <= end;
+                        const rawProgress = isTimeWindowActive ? ((now - start) / (end - start)) * 100 : (now < start ? 0 : 100);
+                        const progress = isActive ? Math.min(100, Math.max(0, rawProgress)) : 0;
+                        // A session can be marked as finished once it has actually started AND is within
+                        // its final 10 minutes, or once its time window has fully elapsed (e.g. it was
+                        // missed). This stops the complete tick from appearing the instant a session is
+                        // started, while still allowing early/late completion once the session is winding
+                        // down or over.
+                        const TEN_MINUTES_MS = 10 * 60 * 1000;
+                        const isWithinFinalTenMinutes = end - now <= TEN_MINUTES_MS;
+                        const canMarkCompleted = isPast || (!!session.started && isWithinFinalTenMinutes);
                         
                         const riskColor = isCompleted 
                           ? 'bg-emerald-500' 
@@ -843,7 +1323,7 @@ export function Timetable() {
                         const isDragOver = dragOverIdx === i;
 
                         return (
-                          <div key={i} className="space-y-4">
+                          <div key={i} id={`session-card-${i}`} className="space-y-4">
                             <div 
                               className="relative"
                               draggable={true}
@@ -862,8 +1342,12 @@ export function Timetable() {
                               }`} />
 
                               <div 
-                                className={`flex flex-col sm:flex-row gap-3 p-4 rounded-2xl border items-start sm:items-center relative overflow-hidden transition-all group/card ${
+                                className={`flex flex-col sm:flex-row gap-3 p-4 rounded-2xl border items-start sm:items-center relative overflow-hidden transition-all duration-500 group/card ${
                                   isDragged ? 'opacity-30' : ''
+                                } ${
+                                  highlightedIdx === i
+                                    ? 'ring-2 ring-amber-400/70 border-amber-400/50 shadow-[0_0_24px_rgba(251,191,36,0.35)] scale-[1.01]'
+                                    : ''
                                 } ${
                                   isDragOver && !isDragged
                                     ? 'border-dashed border-indigo-500 bg-indigo-500/10 shadow-[0_0_12px_rgba(99,102,241,0.2)] scale-[1.01]'

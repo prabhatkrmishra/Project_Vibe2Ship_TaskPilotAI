@@ -6,7 +6,11 @@ export const fetchCalendarEvents = async (accessToken: string, timeMin: string, 
   return res.json();
 };
 
-export const createCalendarEvent = async (accessToken: string, event: { summary: string, start: string, end: string }) => {
+export const createCalendarEvent = async (accessToken: string, event: { summary: string, start: string, end: string, timeZone?: string, description?: string }) => {
+  // The app's session times are timezone-naive local ISO strings (no trailing Z/offset).
+  // Google Calendar requires an explicit timeZone alongside a naive dateTime, otherwise it
+  // silently interprets the string as UTC and every synced session shows up shifted.
+  const timeZone = event.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const res = await fetch('/api/calendar/events', {
     method: 'POST',
     headers: { 
@@ -15,8 +19,9 @@ export const createCalendarEvent = async (accessToken: string, event: { summary:
     },
     body: JSON.stringify({
       summary: event.summary,
-      start: { dateTime: event.start },
-      end: { dateTime: event.end }
+      description: event.description,
+      start: { dateTime: event.start, timeZone },
+      end: { dateTime: event.end, timeZone }
     })
   });
   if (!res.ok) throw new Error("Failed to create calendar event");
