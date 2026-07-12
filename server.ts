@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
 import { google } from "googleapis";
-import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc } from "./src/db/mongodb";
+import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc } from "./src/db/mongodb.js";
 
 const User = UserSrc as any;
 const Goal = GoalSrc as any;
