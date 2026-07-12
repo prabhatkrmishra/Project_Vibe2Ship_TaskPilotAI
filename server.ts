@@ -2579,9 +2579,27 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  // On Vercel, requests are routed to the exported handler below instead of a
+  // listening port — Vercel sets VERCEL=1 in its build/runtime environment.
+  if (process.env.VERCEL !== '1') {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+  }
+
+  return app;
 }
 
-startServer();
+const appPromise = startServer();
+
+if (process.env.VERCEL !== '1') {
+  appPromise.catch(err => console.error("Failed to start server:", err));
+}
+
+// Vercel's Node runtime calls this exported function per request instead of
+// hitting a listening port. We wait for the one-time async setup (routes,
+// Vite middleware in dev, etc.) to finish, then hand the request to Express.
+export default async function handler(req: any, res: any) {
+  const app = await appPromise;
+  return app(req, res);
+}
