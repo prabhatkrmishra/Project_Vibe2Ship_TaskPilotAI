@@ -18,6 +18,7 @@ import { Home } from './pages/Home';
 import { Profile } from './pages/Profile';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './components/ui/sonner';
+import { Analytics } from '@vercel/analytics/react';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -455,6 +456,7 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
           <Toaster />
+          <Analytics />
         </BrowserRouter>
       </AuthProvider>
     </ErrorBoundary>
