@@ -248,7 +248,7 @@ function Login() {
             <LayoutDashboard className="h-7 w-7 text-white" />
           </div>
           <h1 className="text-2xl font-semibold text-[#f0f6fc] tracking-tight leading-snug">
-            {isRegister ? "Create your account" : "Welcome back to TaskPilot"}
+            {isRegister ? "Create your account" : "Welcome back to TaskPilot AI"}
           </h1>
           <p className="text-slate-400 text-xs">
             {isRegister ? "Join the autonomous productivity space" : "Sign in to resume control of your dashboard"}
