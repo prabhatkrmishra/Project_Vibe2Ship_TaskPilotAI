@@ -19,6 +19,7 @@ import { Profile } from './pages/Profile';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './components/ui/sonner';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -457,6 +458,7 @@ export default function App() {
           </Routes>
           <Toaster />
           <Analytics />
+          <SpeedInsights />
         </BrowserRouter>
       </AuthProvider>
     </ErrorBoundary>
