@@ -39,9 +39,9 @@ export function Profile() {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
   // Model selection state
-  const [models, setModelsList] = useState<{ name: string; displayName: string }[]>([]);
+  const [models, setModelsList] = useState<{ name: string; displayName: string; provider: string; available: boolean }[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>(() => {
-    return localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+    return localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
@@ -61,11 +61,12 @@ export function Profile() {
           const data = await res.json();
           setModelsList(data);
           
-          // Ensure valid selection
-          const exists = data.some((m: any) => m.name === defaultModel);
-          if (!exists && data.length > 0) {
-            const liteModel = data.find((m: any) => m.name.includes('gemini-3.1-flash-lite'))?.name;
-            const fallbackModel = liteModel || data[0].name;
+          // Ensure valid selection — prefer an available model
+          const isSelectedAvailable = data.some((m: any) => m.name === defaultModel && m.available);
+          if (!isSelectedAvailable && data.length > 0) {
+            const fallbackModel = data.find((m: any) => m.available && m.name.includes('gemini-3.1-flash-lite'))?.name
+              || data.find((m: any) => m.available)?.name
+              || defaultModel;
             setDefaultModel(fallbackModel);
             localStorage.setItem('default_gemini_model', fallbackModel);
           }
@@ -83,9 +84,15 @@ export function Profile() {
   }, [user, activeTab]);
 
   const handleDefaultModelChange = (value: string) => {
+    const model = models.find(m => m.name === value);
+    if (model && !model.available) {
+      showError('That model is not available. Set the API key for this provider in .env.');
+      return;
+    }
     setDefaultModel(value);
     localStorage.setItem('default_gemini_model', value);
-    showSuccess(`Default AI Model updated to: ${value.split('/').pop()}`);
+    const displayName = model?.displayName || value;
+    showSuccess(`Default AI Model updated to: ${displayName}`);
     setIsModelModalOpen(false);
   };
 
@@ -500,33 +507,53 @@ export function Profile() {
                           <span className="text-xs font-mono">Syncing active models...</span>
                         </div>
                       ) : (
-                        (models.length > 0 ? models : [
-                          { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash" },
-                          { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
-                          { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
-                        ]).map((model) => {
-                          const isSelected = model.name === defaultModel;
-                          return (
-                            <button
-                              key={model.name}
-                              onClick={() => handleDefaultModelChange(model.name)}
-                              type="button"
-                              className={`w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${
-                                isSelected
-                                  ? 'bg-indigo-500/10 border-indigo-500 text-white'
-                                  : 'bg-slate-900/40 border-[#21262d] hover:border-[#30363d] hover:bg-slate-900/80 text-slate-300'
-                              }`}
-                            >
-                              <div className="space-y-1">
-                                <p className="text-sm font-bold">{model.displayName}</p>
-                                <p className="text-[10px] font-mono text-slate-500">{model.name}</p>
+                        (() => {
+                          const modelList = models.length > 0 ? models : [
+                            { name: "gemini-3.5-flash", displayName: "Gemini 3.5 Flash", provider: "Google Gemini", available: true },
+                            { name: "gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite", provider: "Google Gemini", available: true },
+                            { name: "gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)", provider: "Google Gemini", available: true },
+                          ];
+                          const grouped = new Map<string, typeof modelList>();
+                          for (const m of modelList) {
+                            const provider = m.provider || 'Unknown';
+                            if (!grouped.has(provider)) grouped.set(provider, []);
+                            grouped.get(provider)!.push(m);
+                          }
+                          return Array.from(grouped.entries()).map(([provider, providerModels]) => (
+                            <div key={provider}>
+                              <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2 mt-1">{provider}</p>
+                              <div className="space-y-2">
+                                {providerModels.map((model) => {
+                                  const isSelected = model.name === defaultModel;
+                                  return (
+                                    <button
+                                      key={model.name}
+                                      onClick={() => handleDefaultModelChange(model.name)}
+                                      type="button"
+                                      disabled={!model.available}
+                                      className={`w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${
+                                        !model.available
+                                          ? 'bg-slate-900/20 border-[#21262d] text-slate-600 opacity-50 cursor-not-allowed'
+                                          : isSelected
+                                          ? 'bg-indigo-500/10 border-indigo-500 text-white'
+                                          : 'bg-slate-900/40 border-[#21262d] hover:border-[#30363d] hover:bg-slate-900/80 text-slate-300'
+                                      }`}
+                                    >
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-bold">{model.displayName}</p>
+                                        <p className="text-[10px] font-mono text-slate-500">{model.name}</p>
+                                        {!model.available && <p className="text-[9px] text-slate-600">Set the API key for this provider in .env</p>}
+                                      </div>
+                                      {isSelected && model.available && (
+                                        <Check className="h-5 w-5 text-indigo-400 shrink-0" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
                               </div>
-                              {isSelected && (
-                                <Check className="h-5 w-5 text-indigo-400 shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })
+                            </div>
+                          ));
+                        })()
                       )}
                     </div>
                   </DialogContent>

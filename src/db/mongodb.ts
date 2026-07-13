@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_DB = process.env.MONGODB_DB || 'taskpilot-ai';
 
 // Cache the connection *promise* (not just a boolean) on the global object.
 // This survives warm serverless invocations and, critically, ensures that
@@ -21,7 +22,7 @@ export const connectDB = async () => {
 
   if (!cached.promise) {
     cached.promise = mongoose
-      .connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 })
+      .connect(MONGODB_URI, { dbName: MONGODB_DB, serverSelectionTimeoutMS: 10000 })
       .then((m) => {
         console.log("Connected to MongoDB successfully");
         return m;
@@ -145,7 +146,10 @@ const ScheduledSessionSchema = new mongoose.Schema({
   startTime: { type: String, required: true },
   endTime: { type: String, required: true },
   completed: { type: Boolean, default: false },
-  started: { type: Boolean, default: false }
+  started: { type: Boolean, default: false },
+  subtaskIds: { type: [String], default: [] },
+  sessionLabel: { type: String },
+  schedulingMode: { type: String, enum: ['WHOLE_TASK', 'SAME_DAY_SUBTASKS', 'PACED_SUBTASKS'] }
 });
 
 const DailyPlanSchema = new mongoose.Schema({
@@ -156,9 +160,9 @@ const DailyPlanSchema = new mongoose.Schema({
 });
 
 // Helper to handle compilation with hot reloading/re-importing
-export const User = (mongoose.models.User || mongoose.model('User', UserSchema)) as any;
-export const Goal = (mongoose.models.Goal || mongoose.model('Goal', GoalSchema)) as any;
-export const Task = (mongoose.models.Task || mongoose.model('Task', TaskSchema)) as any;
-export const ChatMessage = (mongoose.models.ChatMessage || mongoose.model('ChatMessage', ChatMessageSchema)) as any;
-export const AIDecision = (mongoose.models.AIDecision || mongoose.model('AIDecision', AIDecisionSchema)) as any;
-export const DailyPlanModel = (mongoose.models.DailyPlan || mongoose.model('DailyPlan', DailyPlanSchema)) as any;
+export const User = mongoose.models.User || mongoose.model('User', UserSchema);
+export const Goal = mongoose.models.Goal || mongoose.model('Goal', GoalSchema);
+export const Task = mongoose.models.Task || mongoose.model('Task', TaskSchema);
+export const ChatMessage = mongoose.models.ChatMessage || mongoose.model('ChatMessage', ChatMessageSchema);
+export const AIDecision = mongoose.models.AIDecision || mongoose.model('AIDecision', AIDecisionSchema);
+export const DailyPlanModel = mongoose.models.DailyPlan || mongoose.model('DailyPlan', DailyPlanSchema);

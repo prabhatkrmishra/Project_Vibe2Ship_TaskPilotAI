@@ -9,6 +9,8 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
+import { OpenRouter } from "@openrouter/sdk";
 import { google } from "googleapis";
 import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc } from "./src/db/mongodb.js";
 
@@ -36,21 +38,334 @@ const ai = new GoogleGenAI({
   }
 });
 
+// ─── Multi-Provider AI System ─────────────────────────────────────────────────
+// Supports Gemini (native SDK) + any OpenAI-compatible provider (Groq, NVIDIA NIM,
+// OpenRouter, Together AI, DeepSeek, Mistral, Cerebras, Fireworks).
+// Each provider is configured via env vars; models auto-route to the right client.
+
+interface AIProvider {
+  name: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  models: { id: string; displayName: string }[];
+}
+
+const AI_PROVIDERS: AIProvider[] = [
+  {
+    name: 'Google Gemini',
+    baseUrl: '',
+    apiKeyEnv: 'GEMINI_API_KEY',
+    models: [
+      { id: 'gemini-3.5-flash', displayName: 'Gemini 3.5 Flash' },
+      { id: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
+      { id: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro (Preview)' },
+    ]
+  },
+  {
+    name: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    apiKeyEnv: 'GROQ_API_KEY',
+    models: [
+      { id: 'llama-3.3-70b-versatile', displayName: 'Llama 3.3 70B (Groq)' },
+      { id: 'llama-3.1-8b-instant', displayName: 'Llama 3.1 8B (Groq)' },
+      { id: 'llama-4-scout-17b-16e-instruct', displayName: 'Llama 4 Scout 17B (Groq)' },
+      { id: 'llama-4-maverick-17b-128e-instruct', displayName: 'Llama 4 Maverick 17B (Groq)' },
+      { id: 'mixtral-8x7b-32768', displayName: 'Mixtral 8x7B (Groq)' },
+      { id: 'gemma2-9b-it', displayName: 'Gemma 2 9B (Groq)' },
+      { id: 'deepseek-r1-distill-llama-70b', displayName: 'DeepSeek R1 70B (Groq)' },
+    ]
+  },
+  {
+    name: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    apiKeyEnv: 'NIM_API_KEY',
+    models: [
+      { id: 'deepseek-ai/deepseek-v4-pro', displayName: 'DeepSeek V4 Pro (NIM)' },
+      { id: 'minimaxai/minimax-m3', displayName: 'MiniMax M3 (NIM)' },
+      { id: 'nvidia/nemotron-3-ultra-550b-a55b', displayName: 'Nemotron Ultra 550B (NIM)' },
+      { id: 'stepfun-ai/step-3.7-flash', displayName: 'Step 3.7 Flash (NIM)' },
+      { id: 'mistralai/mistral-medium-3.5-128b', displayName: 'Mistral Medium 3.5 (NIM)' },
+    ]
+  },
+  {
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    models: [
+      { id: 'tencent/hy3:free', displayName: 'Tencent Hy3 (OpenRouter Free)' },
+      { id: 'poolside/laguna-xs-2.1:free', displayName: 'Poolside Laguna XS 2.1 (OpenRouter Free)' },
+      { id: 'cohere/north-mini-code:free', displayName: 'Cohere North Mini Code (OpenRouter Free)' },
+      { id: 'nvidia/nemotron-3.5-content-safety:free', displayName: 'Nemotron 3.5 Content Safety (OpenRouter Free)' },
+      { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', displayName: 'Nemotron 3 Ultra (OpenRouter Free)' },
+      { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', displayName: 'Nemotron 3 Nano Omni (OpenRouter Free)' },
+      { id: 'poolside/laguna-m.1:free', displayName: 'Poolside Laguna M.1 (OpenRouter Free)' },
+      { id: 'google/gemma-4-26b-a4b-it:free', displayName: 'Gemma 4 26B A4B (OpenRouter Free)' },
+      { id: 'google/gemma-4-31b-it:free', displayName: 'Gemma 4 31B (OpenRouter Free)' },
+    ]
+  },
+  {
+    name: 'Together AI',
+    baseUrl: 'https://api.together.ai/v1',
+    apiKeyEnv: 'TOGETHER_API_KEY',
+    models: [
+      { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', displayName: 'Llama 3.3 70B Turbo (Together)' },
+      { id: 'deepseek-ai/DeepSeek-V3', displayName: 'DeepSeek V3 (Together)' },
+      { id: 'Qwen/Qwen3-235B-A22B-Instruct-2507', displayName: 'Qwen 3 235B (Together)' },
+      { id: 'mistralai/Mistral-Small-3.1-24B-Instruct-2503', displayName: 'Mistral Small 3.1 (Together)' },
+    ]
+  },
+  {
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    apiKeyEnv: 'DEEPSEEK_API_KEY',
+    models: [
+      { id: 'deepseek-chat', displayName: 'DeepSeek Chat (V3)' },
+      { id: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner (R1)' },
+    ]
+  },
+  {
+    name: 'Mistral AI',
+    baseUrl: 'https://api.mistral.ai/v1',
+    apiKeyEnv: 'MISTRAL_API_KEY',
+    models: [
+      { id: 'mistral-large-latest', displayName: 'Mistral Large (Mistral)' },
+      { id: 'mistral-medium-latest', displayName: 'Mistral Medium (Mistral)' },
+      { id: 'mistral-nemo', displayName: 'Mistral Nemo (Mistral)' },
+      { id: 'open-mixtral-8x7b', displayName: 'Mixtral 8x7B (Mistral)' },
+    ]
+  },
+  {
+    name: 'Cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    apiKeyEnv: 'CEREBRAS_API_KEY',
+    models: [
+      { id: 'llama-3.3-70b', displayName: 'Llama 3.3 70B (Cerebras)' },
+      { id: 'llama-3.1-8b', displayName: 'Llama 3.1 8B (Cerebras)' },
+      { id: 'qwen-2.5-32b', displayName: 'Qwen 2.5 32B (Cerebras)' },
+    ]
+  },
+  {
+    name: 'Fireworks AI',
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    apiKeyEnv: 'FIREWORKS_API_KEY',
+    models: [
+      { id: 'accounts/fireworks/models/deepseek-v3', displayName: 'DeepSeek V3 (Fireworks)' },
+      { id: 'accounts/fireworks/models/llama-v3p3-70b-instruct', displayName: 'Llama 3.3 70B (Fireworks)' },
+      { id: 'accounts/fireworks/models/qwen3-235b', displayName: 'Qwen 3 235B (Fireworks)' },
+    ]
+  },
+];
+
+// Build a flat lookup: modelId → provider (first provider wins for duplicates)
+const MODEL_PROVIDER_MAP = new Map<string, AIProvider>();
+for (const provider of AI_PROVIDERS) {
+  for (const model of provider.models) {
+    if (!MODEL_PROVIDER_MAP.has(model.id)) {
+      MODEL_PROVIDER_MAP.set(model.id, provider);
+    }
+  }
+}
+
+function isGeminiModel(model: string): boolean {
+  return model.startsWith('gemini') || model.startsWith('models/gemini');
+}
+
+function getProviderForModel(model: string): AIProvider | undefined {
+  // Check direct match
+  if (MODEL_PROVIDER_MAP.has(model)) return MODEL_PROVIDER_MAP.get(model);
+  // Check with models/ prefix stripped
+  const stripped = model.replace(/^models\//, '');
+  if (MODEL_PROVIDER_MAP.has(stripped)) return MODEL_PROVIDER_MAP.get(stripped);
+  // Check if it looks like a gemini model
+  if (isGeminiModel(model)) return MODEL_PROVIDER_MAP.get('gemini-3.5-flash');
+  return undefined;
+}
+
+function getApiKeyForProvider(provider: AIProvider): string | undefined {
+  return process.env[provider.apiKeyEnv];
+}
+
+// OpenAI-compatible chat completion via the openai SDK
+async function openaiCompatChat(params: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  messages: { role: string; content: string }[];
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  responseFormat?: { type: string };
+}): Promise<string> {
+  const client = new OpenAI({
+    apiKey: params.apiKey,
+    baseURL: params.baseUrl,
+    timeout: 300000, // 5 minutes — NIM cold starts can be slow
+    maxRetries: 2,
+  });
+
+  const completion = await client.chat.completions.create({
+    model: params.model,
+    messages: params.messages as any,
+    temperature: params.temperature ?? 0.7,
+    top_p: params.topP ?? 0.95,
+    max_tokens: params.maxTokens ?? 8192,
+    stream: false,
+    ...(params.responseFormat ? { response_format: params.responseFormat as any } : {}),
+  });
+
+  const content = completion.choices?.[0]?.message?.content ?? '';
+  if (!content && completion.choices?.length) {
+    console.warn(`[AI] Empty content from ${params.model}. Finish reason: ${completion.choices[0]?.finish_reason}`);
+  }
+  return content;
+}
+
+// OpenRouter chat completion via the official @openrouter/sdk
+async function openrouterChat(params: {
+  apiKey: string;
+  model: string;
+  messages: { role: string; content: string }[];
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  responseFormat?: { type: string };
+}): Promise<string> {
+  const client = new OpenRouter({
+    apiKey: params.apiKey,
+    httpReferer: process.env.APP_URL || 'http://localhost:3000',
+    appTitle: 'TaskPilot AI',
+    timeoutMs: 300000,
+  });
+
+  const result = await client.chat.send({
+    chatRequest: {
+      model: params.model,
+      messages: params.messages as any,
+      temperature: params.temperature ?? 0.7,
+      topP: params.topP ?? 0.95,
+      maxTokens: params.maxTokens ?? 8192,
+      stream: false,
+      ...(params.responseFormat ? { responseFormat: params.responseFormat as any } : {}),
+    },
+  });
+
+  const raw = result.choices?.[0]?.message?.content ?? '';
+  const content = Array.isArray(raw)
+    ? raw.map((item: any) => item?.text || '').join('')
+    : typeof raw === 'string' ? raw
+    : String(raw);
+  if (!content && result.choices?.length) {
+    console.warn(`[AI] Empty content from OpenRouter model ${params.model}.`);
+  }
+  return content;
+}
+
+// Unified content generation — routes to Gemini SDK or OpenAI-compatible provider
+async function generateAIContent(params: {
+  model: string;
+  contents: any;
+  config?: any;
+}): Promise<{ text: string }> {
+  const model = params.model;
+
+  // ── Gemini path ──
+  if (isGeminiModel(model)) {
+    const response = await generateContentWithRetry(params);
+    return { text: response.text || '' };
+  }
+
+  // ── OpenAI-compatible path ──
+  const provider = getProviderForModel(model);
+  if (!provider) {
+    throw new Error(`Unknown AI model "${model}". No provider configured for this model.`);
+  }
+
+  const apiKey = getApiKeyForProvider(provider);
+  if (!apiKey) {
+    throw new Error(`API key not configured for ${provider.name}. Set ${provider.apiKeyEnv} in your .env file.`);
+  }
+
+  // Convert Gemini-style contents to OpenAI messages format
+  let messages: { role: string; content: string }[] = [];
+  if (typeof params.contents === 'string') {
+    messages = [{ role: 'user', content: params.contents }];
+  } else if (Array.isArray(params.contents)) {
+    messages = params.contents.map((c: any) => ({
+      role: c.role || 'user',
+      content: typeof c.content === 'string' ? c.content
+        : c.parts ? c.parts.map((p: any) => p.text || '').join('\n')
+        : typeof c === 'string' ? c : JSON.stringify(c),
+    }));
+  } else if (params.contents?.parts) {
+    // Gemini SDK format: { parts: [{ text: "..." }] }
+    messages = [{ role: 'user', content: params.contents.parts.map((p: any) => p.text || '').join('\n') }];
+  } else {
+    messages = [{ role: 'user', content: JSON.stringify(params.contents) }];
+  }
+
+  // Determine response format from config
+  let responseFormat: { type: string } | undefined;
+  if (params.config?.responseMimeType === 'application/json') {
+    responseFormat = { type: 'json_object' };
+  }
+
+  const maxRetries = 2;
+  let delay = 1000;
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const text = provider.name === 'OpenRouter'
+        ? await openrouterChat({
+            apiKey,
+            model,
+            messages,
+            temperature: params.config?.temperature ?? 0.7,
+            topP: params.config?.topP,
+            maxTokens: params.config?.maxOutputTokens ?? 8192,
+            responseFormat,
+          })
+        : await openaiCompatChat({
+            baseUrl: provider.baseUrl,
+            apiKey,
+            model,
+            messages,
+            temperature: params.config?.temperature ?? 0.7,
+            topP: params.config?.topP,
+            maxTokens: params.config?.maxOutputTokens ?? 8192,
+            responseFormat,
+          });
+      return { text };
+    } catch (err: any) {
+      lastError = err;
+      const isQuotaError =
+        err.statusCode === 429 ||
+        (err.message && (err.message.includes('429') || err.message.includes('rate') || err.message.includes('quota') || err.message.includes('limit')));
+
+      if (isQuotaError && attempt < maxRetries) {
+        console.warn(`[AI] ${provider.name} rate limit hit for ${model} (attempt ${attempt + 1}). Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        delay *= 2;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+// Validate/sanitize a model name. Strips "models/" prefix, maps deprecated Gemini
+// models to current defaults, and passes through any non-Gemini model as-is.
 function getValidModel(modelName: string | undefined): string {
   let model = modelName || "gemini-3.5-flash";
-  // Strip "models/" if present
   model = model.replace(/^models\//, "");
-  // If it's a deprecated/prohibited model, map it to gemini-3.5-flash
-  if (
-    model.includes("gemini-2.0-flash") ||
-    model.includes("gemini-1.5") ||
-    model === "gemini-pro"
-  ) {
+  if (model.includes("gemini-2.0-flash") || model.includes("gemini-1.5") || model === "gemini-pro") {
     return "gemini-3.5-flash";
   }
   return model;
 }
 
+// Gemini-only retry wrapper (used by generateAIContent internally for Gemini models)
 async function generateContentWithRetry(params: {
   model: string;
   contents: any;
@@ -70,7 +385,7 @@ async function generateContentWithRetry(params: {
       });
     } catch (err: any) {
       attempt++;
-      const isQuotaError = 
+      const isQuotaError =
         err.status === "RESOURCE_EXHAUSTED" ||
         err.statusCode === 429 ||
         (err.message && (
@@ -93,18 +408,15 @@ async function generateContentWithRetry(params: {
           const hasModelsPrefix = currentModel.startsWith("models/");
           const fallbackBase = "gemini-3.1-flash-lite";
           const fallbackModel = hasModelsPrefix ? `models/${fallbackBase}` : fallbackBase;
-          
+
           if (currentModel !== fallbackModel) {
             console.warn(`[Gemini API] Switching fallback from ${currentModel} to ${fallbackModel}...`);
             currentModel = fallbackModel;
-            attempt = 0; // Reset attempts for fallback
+            attempt = 0;
             delay = 1000;
             continue;
           }
         }
-        // Quota exhausted on both the requested model and the fallback model. Tag the error
-        // so route handlers can surface a "switch your AI model" warning to the user instead
-        // of a silent/generic failure.
         err.isQuotaExceeded = true;
         err.quotaModel = params.model;
       }
@@ -198,7 +510,7 @@ async function startServer() {
           const lastActive = new Date(gamification.lastActiveDate);
           const todayDate = new Date(today);
           const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
           if (diffDays === 1) {
             gamification.currentStreak += 1;
           } else {
@@ -224,9 +536,8 @@ async function startServer() {
       const xpEarned = isOnTime ? 50 : 25;
       gamification.xp += xpEarned;
       
-      const nextLevelXP = gamification.level * 200;
       let levelUp = null;
-      if (gamification.xp >= nextLevelXP) {
+      while (gamification.xp >= gamification.level * 200) {
         gamification.level += 1;
         levelUp = gamification.level;
       }
@@ -256,6 +567,105 @@ async function startServer() {
       return { xpEarned, newBadges, levelUp };
     } catch(e) {
       console.error("Gamification error:", e);
+      return null;
+    }
+  }
+
+  // Derive quest progress from its linked tasks. Called from every completion path
+  // (session complete, direct task complete, subtask toggle) so quest progress never
+  // drifts out of sync with reality.
+  async function syncQuestProgress(userId: string, goalId: string) {
+    try {
+      const tasks = await Task.find({ userId, goalId });
+      if (tasks.length === 0) return null;
+      const completedCount = tasks.filter((t: any) => t.status === 'completed').length;
+      const progress = Math.round((completedCount / tasks.length) * 100);
+      const isCompleted = progress === 100;
+      const goal = await Goal.findOne({ _id: goalId, userId });
+      if (!goal) return null;
+      // Only update if something actually changed
+      if (goal.progress === progress && goal.completed === isCompleted) return { progress, completed: isCompleted };
+      const updateData: any = { progress };
+      if (isCompleted && !goal.completed) {
+        updateData.completed = true;
+        updateData.completedAt = goal.completedAt || new Date().toISOString();
+      } else if (!isCompleted) {
+        updateData.completed = false;
+        updateData.completedAt = null;
+      }
+      await Goal.findOneAndUpdate({ _id: goalId, userId }, { $set: updateData });
+      return { progress, completed: isCompleted };
+    } catch (e) {
+      console.error("syncQuestProgress error:", e);
+      return null;
+    }
+  }
+
+  // Determine the scheduling mode for a task based on its subtasks and quest membership.
+  // Must match the logic in generate-plan: only PACED_SUBTASKS when goal is type 'quest',
+  // and only when there are incomplete subtasks remaining.
+  async function getSchedulingMode(task: any): Promise<'WHOLE_TASK' | 'SAME_DAY_SUBTASKS' | 'PACED_SUBTASKS'> {
+    const incompleteSubtasks = (task.subtasks || []).filter((st: any) => !st.completed);
+    if (incompleteSubtasks.length === 0) return 'WHOLE_TASK';
+    if (task.goalId) {
+      const goal = await Goal.findOne({ _id: task.goalId, userId: task.userId });
+      if (goal?.type === 'quest') return 'PACED_SUBTASKS';
+    }
+    return 'SAME_DAY_SUBTASKS';
+  }
+
+  // Award XP for completing a session (smaller than task completion XP).
+  async function processGamificationOnSessionComplete(userId: string) {
+    try {
+      const user = await User.findOne({ _id: userId });
+      if (!user) return null;
+      let gamification = user.gamification || {
+        currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
+      };
+      const today = new Date().toISOString().split('T')[0];
+      if (gamification.lastActiveDate !== today) {
+        if (gamification.lastActiveDate) {
+          const lastActive = new Date(gamification.lastActiveDate);
+          const todayDate = new Date(today);
+          const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            gamification.currentStreak += 1;
+          } else {
+            gamification.currentStreak = 1;
+          }
+        } else {
+          gamification.currentStreak = 1;
+        }
+        gamification.lastActiveDate = today;
+      }
+      if (gamification.currentStreak > gamification.longestStreak) {
+        gamification.longestStreak = gamification.currentStreak;
+      }
+      // Small XP for session completion
+      const xpEarned = 10;
+      gamification.xp += xpEarned;
+      let levelUp = null;
+      while (gamification.xp >= gamification.level * 200) {
+        gamification.level += 1;
+        levelUp = gamification.level;
+      }
+      const newBadges: string[] = [];
+      const checkBadge = (id: string, condition: boolean) => {
+        if (condition && !gamification.earnedBadges.includes(id)) {
+          gamification.earnedBadges.push(id);
+          newBadges.push(id);
+        }
+      };
+      checkBadge('streak_3', gamification.currentStreak >= 3);
+      checkBadge('streak_7', gamification.currentStreak >= 7);
+      checkBadge('streak_30', gamification.currentStreak >= 30);
+      checkBadge('streak_100', gamification.currentStreak >= 100);
+      user.gamification = gamification;
+      await user.save();
+      return { xpEarned, newBadges, levelUp };
+    } catch (e) {
+      console.error("Session gamification error:", e);
       return null;
     }
   }
@@ -385,7 +795,7 @@ async function startServer() {
       const lastActive = new Date(gamification.lastActiveDate);
       const todayDate = new Date(today);
       const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       if (diffDays > 1) {
         gamification.currentStreak = 0;
       }
@@ -413,9 +823,22 @@ async function startServer() {
     }
   });
 
+  // Server-side price table — the client sends cost but we validate against this canonical map
+  // to prevent tampering. Costs are in XP.
+  const PERSONALITY_COSTS: Record<string, number> = {
+    default: 0,
+    drill_sergeant: 500,
+    zen_guide: 1000,
+    executive: 2000,
+  };
+
   app.post("/api/user/personalities/unlock", verifyToken, async (req: any, res: any) => {
     try {
-      const { personalityId, cost } = req.body;
+      const { personalityId } = req.body;
+      const cost = PERSONALITY_COSTS[personalityId];
+      if (cost === undefined) {
+        return res.status(400).json({ error: "Unknown personality" });
+      }
       const user = await User.findById(req.uid);
       if (!user) return res.status(404).json({ error: "User not found" });
 
@@ -608,6 +1031,193 @@ async function startServer() {
     }
   });
 
+  // --- Quest Trail Endpoint ---
+  // Returns completed sessions across all dates that reference tasks belonging to a
+  // given quest. This powers the "Quest Trail" timeline — a chronological breadcrumb
+  // of which subtasks got done on which days.
+  app.get("/api/plans/trail/:goalId", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { goalId } = req.params;
+
+      // Find all tasks linked to this quest
+      const tasks = await Task.find({ userId: req.uid, goalId });
+      const taskIds = new Set(tasks.map((t: any) => t._id.toString()));
+      const taskTitleMap = new Map(tasks.map((t: any) => [t._id.toString(), t.title]));
+
+      // Find all daily plans that have completed sessions referencing these tasks
+      const plans = await DailyPlanModel.find({ userId: req.uid });
+      const trail: any[] = [];
+
+      for (const plan of plans) {
+        for (const session of plan.sessions) {
+          if (session.completed && taskIds.has(session.taskId)) {
+            trail.push({
+              date: plan.date,
+              taskTitle: taskTitleMap.get(session.taskId) || session.taskTitle,
+              taskId: session.taskId,
+              sessionLabel: session.sessionLabel || session.taskTitle,
+              subtaskIds: session.subtaskIds || [],
+              startTime: session.startTime,
+              endTime: session.endTime
+            });
+          }
+        }
+      }
+
+      // Sort by date then start time for chronological order
+      trail.sort((a, b) => {
+        const dateCmp = a.date.localeCompare(b.date);
+        if (dateCmp !== 0) return dateCmp;
+        return a.startTime.localeCompare(b.startTime);
+      });
+
+      res.json(trail);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- Session Completion Endpoint ---
+  // Single source of truth for completing a timetable session. Handles subtask-level
+  // completion, task auto-completion, quest progress sync, and gamification — all
+  // server-side so the state is consistent regardless of which surface the user
+  // completes from.
+  app.post("/api/plans/:date/complete-session", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const { sessionIndex } = req.body;
+      if (sessionIndex === undefined || sessionIndex === null) {
+        return res.status(400).json({ error: "sessionIndex is required" });
+      }
+
+      const plan = await DailyPlanModel.findOne({ userId: req.uid, date: req.params.date });
+      if (!plan) return res.status(404).json({ error: "No plan found for this date" });
+      if (!Number.isInteger(sessionIndex) || sessionIndex < 0 || sessionIndex >= plan.sessions.length) {
+        return res.status(400).json({ error: "Invalid session index" });
+      }
+
+      const session = plan.sessions[sessionIndex];
+      const now = new Date().getTime();
+      const end = new Date(session.endTime).getTime();
+      const isPast = now > end;
+
+      // Enforce completion rules: must be started or past end time
+      if (!isPast && !session.started) {
+        return res.status(400).json({ error: "Session cannot be completed yet — must be started or past its end time" });
+      }
+
+      // Guard against double-completing the same session
+      if (session.completed) {
+        return res.status(400).json({ error: "Session already completed" });
+      }
+
+      // Mark session as completed
+      session.completed = true;
+      session.started = true;
+      await plan.save();
+
+      let taskUpdate = null;
+      let gamificationUpdates = null;
+      let questSync = null;
+      let sessionGamification = null;
+
+      // If this session references a real task, update its state
+      if (session.taskId) {
+        const task = await Task.findOne({ _id: session.taskId, userId: req.uid });
+        if (task) {
+          const schedulingMode = session.schedulingMode || await getSchedulingMode(task);
+          const coveredIds = new Set(session.subtaskIds || []);
+          const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+
+          if (hasSubtasks && coveredIds.size > 0 && schedulingMode !== 'WHOLE_TASK') {
+            // Subtask-level completion: mark only the covered subtasks
+            const updatedSubtasks = task.subtasks.map((st: any) =>
+              coveredIds.has(st.id) ? { ...st, completed: true } : st
+            );
+            const allSubtasksDone = updatedSubtasks.every((st: any) => st.completed);
+            const newStatus = allSubtasksDone ? 'completed' : 'in_progress';
+            const shouldAwardTaskGamification = allSubtasksDone && !task.hasBeenCompleted;
+
+            await Task.findOneAndUpdate(
+              { _id: task._id },
+              { $set: { subtasks: updatedSubtasks, status: newStatus, ...(shouldAwardTaskGamification ? { hasBeenCompleted: true, completedAt: task.completedAt || new Date().toISOString() } : {}) } }
+            );
+
+            taskUpdate = { id: task._id.toString(), status: newStatus, subtasks: updatedSubtasks };
+
+            // Award task-level gamification when task fully completes
+            if (shouldAwardTaskGamification) {
+              gamificationUpdates = await processGamificationOnTaskComplete(req.uid, task);
+            }
+
+            // Sync quest progress if task belongs to a quest
+            if (task.goalId) {
+              questSync = await syncQuestProgress(req.uid, task.goalId);
+              // Award quest completion XP if quest just completed
+              if (questSync?.completed) {
+                const questUser = await User.findOne({ _id: req.uid });
+                if (questUser) {
+                  let g = questUser.gamification || { currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: [] };
+                  g.xp += 100;
+                  while (g.xp >= g.level * 200) {
+                    g.level += 1;
+                  }
+                  if (!g.earnedBadges) g.earnedBadges = [];
+                  questUser.gamification = g;
+                  questUser.markModified('gamification');
+                  await questUser.save();
+                }
+              }
+            }
+          } else if (schedulingMode === 'WHOLE_TASK' || !hasSubtasks) {
+            // Whole-task completion
+            const shouldAwardGamification = !task.hasBeenCompleted;
+            await Task.findOneAndUpdate(
+              { _id: task._id },
+              { $set: { status: 'completed', hasBeenCompleted: true, completedAt: task.completedAt || new Date().toISOString() } }
+            );
+            taskUpdate = { id: task._id.toString(), status: 'completed' };
+            if (shouldAwardGamification) {
+              gamificationUpdates = await processGamificationOnTaskComplete(req.uid, task);
+            }
+            if (task.goalId) {
+              questSync = await syncQuestProgress(req.uid, task.goalId);
+              if (questSync?.completed) {
+                const questUser = await User.findOne({ _id: req.uid });
+                if (questUser) {
+                  let g = questUser.gamification || { currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: [] };
+                  g.xp += 100;
+                  while (g.xp >= g.level * 200) {
+                    g.level += 1;
+                  }
+                  if (!g.earnedBadges) g.earnedBadges = [];
+                  questUser.gamification = g;
+                  questUser.markModified('gamification');
+                  await questUser.save();
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Session-level gamification (small XP for completing any session)
+      sessionGamification = await processGamificationOnSessionComplete(req.uid);
+
+      const sessionObj = session.toObject ? session.toObject() : { ...session };
+      res.json({
+        session: sessionObj,
+        taskUpdate,
+        gamificationUpdates,
+        questSync,
+        sessionGamification
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/tasks", verifyToken, async (req: any, res: any) => {
     try {
       await connectDB();
@@ -652,6 +1262,11 @@ async function startServer() {
       const shouldAwardGamification = isNowCompleted && !existingTask.hasBeenCompleted;
       
       const updateData = { ...req.body };
+      // Prevent overwriting ownership or immutable fields
+      delete updateData.userId;
+      delete updateData._id;
+      delete updateData.createdAt;
+
       if (shouldAwardGamification) {
         updateData.hasBeenCompleted = true;
       }
@@ -659,6 +1274,10 @@ async function startServer() {
         updateData.completedAt = existingTask.completedAt || new Date().toISOString();
       } else if (req.body.status && req.body.status !== 'completed') {
         updateData.completedAt = null;
+        updateData.hasBeenCompleted = false;
+        if (existingTask.subtasks && existingTask.subtasks.length > 0) {
+          updateData.subtasks = existingTask.subtasks.map((st: any) => ({ ...st, completed: false }));
+        }
       }
 
       const updatedTask = await Task.findOneAndUpdate(
@@ -677,7 +1296,28 @@ async function startServer() {
         gamificationUpdates = await processGamificationOnTaskComplete(req.uid, obj);
       }
 
-      res.json({ ...obj, gamificationUpdates });
+      // Sync quest progress if this task belongs to a quest
+      let questSync = null;
+      if (existingTask.goalId) {
+        questSync = await syncQuestProgress(req.uid, existingTask.goalId);
+        // Award quest completion XP if quest just completed
+        if (questSync?.completed) {
+          const questUser = await User.findOne({ _id: req.uid });
+          if (questUser) {
+            let g = questUser.gamification || { currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: [] };
+            g.xp += 100;
+            while (g.xp >= g.level * 200) {
+              g.level += 1;
+            }
+            if (!g.earnedBadges) g.earnedBadges = [];
+            questUser.gamification = g;
+            questUser.markModified('gamification');
+            await questUser.save();
+          }
+        }
+      }
+
+      res.json({ ...obj, gamificationUpdates, questSync });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -703,7 +1343,7 @@ async function startServer() {
         const lastActive = new Date(goal.lastLogged);
         const todayDate = new Date(today);
         const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
-        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         if (diffDays > 1) {
           goal.streak = 0;
         }
@@ -753,6 +1393,9 @@ async function startServer() {
       if (!existingGoal) return res.status(404).json({ error: "Goal not found" });
 
       const updateData = { ...req.body };
+      delete updateData.userId;
+      delete updateData._id;
+      delete updateData.createdAt;
       if (req.body.completed === true) {
         updateData.completedAt = existingGoal.completedAt || new Date().toISOString();
       } else if (req.body.completed === false) {
@@ -965,52 +1608,77 @@ async function startServer() {
 
   app.get("/api/models", verifyToken, async (req: any, res: any) => {
     try {
-      const response = await ai.models.list();
-      let modelsList: any[] = [];
-      if (response && Array.isArray(response)) {
-        modelsList = response;
-      } else if (response && (response as any).models && Array.isArray((response as any).models)) {
-        modelsList = (response as any).models;
-      } else {
-        modelsList = Object.values(response || {});
+      const allModels: any[] = [];
+
+      for (const provider of AI_PROVIDERS) {
+        const hasKey = !!getApiKeyForProvider(provider);
+        for (const model of provider.models) {
+          allModels.push({
+            name: model.id,
+            displayName: model.displayName,
+            provider: provider.name,
+            available: hasKey,
+          });
+        }
       }
 
-      // Format and filter to gemini text models
-      let formattedList = modelsList
-        .map((m: any) => ({
-          name: m.name || m.model || "",
-          displayName: m.displayName || m.name?.split('/').pop() || m.name || ""
-        }))
-        .filter((m: any) => {
-          const name = (m.name || "").toLowerCase();
-          return name.includes("gemini") && 
-                 !name.includes("embed") &&
-                 !name.includes("gemini-2.0-flash") &&
-                 !name.includes("gemini-1.5") &&
-                 !name.includes("gemini-pro");
-        });
+      // Also try to fetch live Gemini models and merge
+      try {
+        const response = await ai.models.list();
+        let modelsList: any[] = [];
+        if (response && Array.isArray(response)) {
+          modelsList = response;
+        } else if (response && (response as any).models && Array.isArray((response as any).models)) {
+          modelsList = (response as any).models;
+        } else {
+          modelsList = Object.values(response || {});
+        }
 
-      // If list is empty or doesn't have the key models, merge or use curated fallback
-      if (formattedList.length === 0) {
-        formattedList = [
-          { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Default)" },
-          { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
-          { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
-        ];
+        const geminiModels = modelsList
+          .map((m: any) => ({
+            name: (m.name || m.model || "").replace(/^models\//, ""),
+            displayName: m.displayName || m.name?.split('/').pop() || m.name || "",
+            provider: 'Google Gemini',
+            available: !!process.env.GEMINI_API_KEY,
+          }))
+          .filter((m: any) => {
+            const name = (m.name || "").toLowerCase();
+            return name.includes("gemini") &&
+                   !name.includes("embed") &&
+                   !name.includes("gemini-2.0-flash") &&
+                   !name.includes("gemini-1.5") &&
+                   !name.includes("gemini-pro");
+          });
+
+        // Merge live Gemini models (replace curated ones if found)
+        if (geminiModels.length > 0) {
+          const curatedIds = new Set(geminiModels.map((m: any) => m.name));
+          const filtered = allModels.filter(m => !(m.provider === 'Google Gemini' && curatedIds.has(m.name)));
+          filtered.push(...geminiModels);
+          allModels.length = 0;
+          allModels.push(...filtered);
+        }
+      } catch {
+        // Gemini list failed — curated list already included
       }
 
-      res.json(formattedList);
+      res.json(allModels);
     } catch (err: any) {
       console.error("Error listing models:", err);
-      res.json([
-        { name: "models/gemini-3.5-flash", displayName: "Gemini 3.5 Flash (Default)" },
-        { name: "models/gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite" },
-        { name: "models/gemini-3.1-pro-preview", displayName: "Gemini 3.1 Pro (Preview)" }
-      ]);
+      // Return at least the curated list
+      const fallback = AI_PROVIDERS.flatMap(p =>
+        p.models.map(m => ({
+          name: m.id,
+          displayName: m.displayName,
+          provider: p.name,
+          available: !!getApiKeyForProvider(p),
+        }))
+      );
+      res.json(fallback);
     }
   });
   
-  app.get("/api/calendar/events", async (req: any, res: any) => {
+  app.get("/api/calendar/events", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1035,7 +1703,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/calendar/events", async (req: any, res: any) => {
+  app.post("/api/calendar/events", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1056,7 +1724,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/docs", async (req: any, res: any) => {
+  app.post("/api/docs", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1096,7 +1764,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/docs/generate-report", async (req: any, res: any) => {
+  app.post("/api/docs/generate-report", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1127,8 +1795,8 @@ async function startServer() {
         ]
         Valid headings: HEADING_1, HEADING_2, HEADING_3, NORMAL_TEXT. Ensure all paragraph breaks have \n. Do not include markdown like **.`;
         
-        const aiRes = await generateContentWithRetry({
-          model: 'gemini-3.5-flash',
+        const aiRes = await generateAIContent({
+          model: getValidModel(req.body.model),
           contents: prompt
         });
         let text = aiRes.text || "[]";
@@ -1206,7 +1874,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/presentations/generate", async (req: any, res: any) => {
+  app.post("/api/presentations/generate", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1260,7 +1928,6 @@ async function startServer() {
         }
       }
 
-      let slideIdCounter = 1;
 
       // Slide 2: Main Content Slide
       const slide2Id = `slide_content_${Date.now()}`;
@@ -1313,8 +1980,8 @@ async function startServer() {
         - Goals/Habits: ${JSON.stringify((goals || []).map((g:any) => g.title))}
         Keep it concise, plain text only, no markdown formatting like ** or ##, just use standard bullet points (-). Make it professional.`;
         
-        const aiRes = await generateContentWithRetry({
-          model: 'gemini-3.5-flash',
+        const aiRes = await generateAIContent({
+          model: getValidModel(req.body.model),
           contents: prompt
         });
         textContent = aiRes.text || "Summary generated successfully.";
@@ -1344,7 +2011,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/sheets", async (req: any, res: any) => {
+  app.post("/api/sheets", verifyToken, async (req: any, res: any) => {
     try {
       const accessToken = req.headers.authorization?.split(" ")[1];
       if (!accessToken) return res.status(401).send("No access token");
@@ -1791,7 +2458,7 @@ async function startServer() {
   // --- AI Planning Routes ---
   
   app.post("/api/generate-quest-steps", verifyToken, async (req: any, res: any) => {
-    const { title, description, targetDate, model } = req.body;
+    const { title = '', description = '', targetDate = '', model = '' } = req.body || {};
     try {
       const selectedModel = getValidModel(model);
       const prompt = `
@@ -1827,7 +2494,7 @@ async function startServer() {
         }
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -1906,7 +2573,7 @@ async function startServer() {
   });
 
   app.post("/api/analyze-task", verifyToken, async (req: any, res: any) => {
-    const { title, description, deadline, model } = req.body;
+    const { title = '', description = '', deadline = '', model = '' } = req.body || {};
     try {
       const selectedModel = getValidModel(model);
       const prompt = `
@@ -1928,7 +2595,7 @@ async function startServer() {
         Risk Score should be high if the deadline is very close and estimated hours is high.
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt
       });
@@ -1963,7 +2630,7 @@ async function startServer() {
   });
 
   app.post("/api/generate-subtasks", verifyToken, async (req: any, res: any) => {
-    const { title, description, model } = req.body;
+    const { title = '', description = '', model = '' } = req.body || {};
     try {
       const selectedModel = getValidModel(model);
       const prompt = `
@@ -1979,7 +2646,7 @@ async function startServer() {
         Keep each subtask description short, active, and highly clear (e.g., "Draft the database schema" or "Write unit tests for authentication").
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -2057,7 +2724,7 @@ async function startServer() {
         }
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt,
         config: {
@@ -2074,7 +2741,7 @@ async function startServer() {
       if (result.tasks && Array.isArray(result.tasks)) {
         for (const t of result.tasks) {
           const newTask = new Task({
-            userId: req.user.uid,
+            userId: req.uid,
             title: t.title,
             description: t.description || "",
             priority: t.priority || "medium",
@@ -2096,7 +2763,7 @@ async function startServer() {
   });
 
   app.post("/api/generate-plan", verifyToken, async (req: any, res: any) => {
-    const { tasks, date, model } = req.body;
+    const { tasks = [], date = '', model = '' } = req.body || {};
     try {
       await connectDB();
       const selectedModel = getValidModel(model);
@@ -2106,30 +2773,92 @@ async function startServer() {
         return res.status(400).json({ error: "No timetable found for today. Please go to Timetable and generate a daily routine first." });
       }
 
+      // --- Pacing feedback loop ---
+      // Check yesterday's PACED_SUBTASKS sessions. If any were not completed, carry
+      // those subtasks forward with a note so the AI bumps their priority today.
+      const yesterday = new Date(date);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const carryForward: { taskId: string; taskTitle: string; subtaskIds: string[] }[] = [];
+      if (yesterdayStr !== date) {
+        const yesterdayPlan = await DailyPlanModel.findOne({ userId: req.uid, date: yesterdayStr });
+        if (yesterdayPlan?.sessions) {
+          for (const s of yesterdayPlan.sessions) {
+            if (s.schedulingMode === 'PACED_SUBTASKS' && !s.completed && s.subtaskIds?.length) {
+              carryForward.push({ taskId: s.taskId, taskTitle: s.taskTitle, subtaskIds: s.subtaskIds });
+            }
+          }
+        }
+      }
+
+      // Quest membership decides HOW a task's subtasks get scheduled, so it has to be resolved
+      // server-side rather than left for the model to infer from raw task/goal ids:
+      //   - Task has no subtasks              -> WHOLE_TASK: schedule the task itself into one slot.
+      //   - Task has subtasks, no quest        -> SAME_DAY_SUBTASKS: it's a standalone task, so all
+      //     of its incomplete subtasks must be scheduled TODAY.
+      //   - Task has subtasks AND belongs to a
+      //     quest (goal.type === 'quest')       -> PACED_SUBTASKS: the quest runs over a long
+      //     period, so only schedule a small, reasonable slice of subtasks today — do NOT try to
+      //     cram the whole task into one day.
+      const goals = await Goal.find({ userId: req.uid });
+      const questGoalById = new Map<string, any>(
+        goals.filter((g: any) => g.type === 'quest').map((g: any) => [g._id.toString(), g])
+      );
+
+      const tasksForPrompt = (tasks || []).map((t: any) => {
+        const incompleteSubtasks = (t.subtasks || []).filter((st: any) => !st.completed);
+        const quest = t.goalId ? questGoalById.get(String(t.goalId)) : null;
+        const schedulingMode = incompleteSubtasks.length === 0
+          ? 'WHOLE_TASK'
+          : quest
+            ? 'PACED_SUBTASKS'
+            : 'SAME_DAY_SUBTASKS';
+
+        return {
+          id: t.id,
+          title: t.title,
+          deadline: t.deadline,
+          priority: t.priority,
+          estimatedHours: t.estimatedHours,
+          schedulingMode,
+          questTargetDate: quest ? quest.targetDate : undefined,
+          subtasks: incompleteSubtasks.map((st: any) => ({ id: st.id, title: st.title }))
+        };
+      });
+
       const prompt = `
         You are an autonomous AI planning assistant.
-        Your job is to schedule the user's pending tasks into their EXISTING daily timetable.
-        
-        Pending Tasks:
-        ${JSON.stringify(tasks, null, 2)}
+        Your job is to schedule the user's pending tasks into their EXISTING daily timetable, at SUBTASK granularity wherever a task has subtasks.
+        ${carryForward.length > 0 ? `
+        CARRY-FORWARD TASKS (HIGH PRIORITY — these were scheduled yesterday but not completed. They MUST be given slots today, before any other PACED_SUBTASKS work):
+        ${JSON.stringify(carryForward, null, 2)}
+        ` : ''}
+        Pending Tasks — each one is pre-tagged with a "schedulingMode" you MUST follow exactly:
+        ${JSON.stringify(tasksForPrompt, null, 2)}
         
         Current Timetable:
         ${JSON.stringify(currentPlan.sessions, null, 2)}
         
+        SCHEDULING MODE DEFINITIONS (mandatory — do not deviate from a task's assigned mode):
+        - "WHOLE_TASK": this task has no subtasks. Assign the task itself (not a subtask) to a single work slot, exactly like a normal task. Do not invent subtasks.
+        - "SAME_DAY_SUBTASKS": this is a standalone task (not part of a quest) that has subtasks. It must be fully finishable today — distribute ALL of its listed incomplete subtasks across as many work slots as needed today, sized by how long each subtask likely takes relative to the task's total estimatedHours.
+        - "PACED_SUBTASKS": this task belongs to a long-running quest (see its questTargetDate) made up of many tasks over a long period. Completing the whole task today is explicitly NOT the goal — completing ONE task per day across the quest's timeline is the goal. Schedule only a small, realistic slice of this task's subtasks today (typically just 1, or 2 only if it's a light day with many free work slots and few other tasks competing for them). Leave the rest of its subtasks unscheduled today so the quest's remaining tasks/subtasks can be paced out smoothly across the days remaining until questTargetDate — do not front-load or cram them.
+        
         CRITICAL RULES:
         0. THE TIMETABLE STRUCTURE IS FIXED AND IMMUTABLE. Do NOT change the number of sessions, their start times, or end times.
-        1. Identify slots in the timetable that are suitable for work (e.g., "Deep Work", "Focus", "Work Session", or generic activity blocks).
-        2. Assign pending tasks to these work slots. 
-        3. For a slot where a task is assigned, change the "taskTitle" to EXACTLY match the title of the assigned pending task, and set "taskId" to the task's id.
-        4. Do NOT modify the "taskTitle" of non-work slots (e.g., Lunch, Workout, Sleep, Routine). Leave them exactly as they are.
-        5. Return the full modified timetable in the exact same format.
+        1. Identify slots in the timetable suitable for work (e.g., "Deep Work", "Focus", "Work Session", or generic activity blocks). Leave non-work slots (Lunch, Workout, Sleep, general Routine) exactly as they are — do not touch their taskTitle/subtaskIds.
+        2. Never split one subtask across two slots. A single slot may cover exactly one subtask, or multiple small subtasks, depending on how much fits the slot's duration.
+        3. ALLOCATION PRIORITY when work slots are limited: (a) SAME_DAY_SUBTASKS tasks first, since they must fully complete today; (b) WHOLE_TASK tasks next, ordered by nearest deadline/highest priority; (c) PACED_SUBTASKS tasks last, spreading any remaining slots across different quest tasks rather than exhausting all slots on one quest task.
+        4. For every work slot you assign, set "taskId" to the parent task's id, "taskTitle" to EXACTLY the parent task's title (needed for progress tracking — do not alter it), and "subtaskIds" to an array of the subtask id(s) (from the list above) covered in that slot. For WHOLE_TASK assignments, set "subtaskIds" to an empty array.
+        5. Return the full modified timetable in the exact same format, including untouched non-work slots and any work slots that remain unassigned (leave their existing taskTitle/subtaskIds untouched if nothing new fits).
 
         Return a JSON response exactly in this format, no markdown formatting:
         {
           "sessions": [
             {
               "taskId": "<id or temp-task-id>",
-              "taskTitle": "<exact title of task, or original routine title>",
+              "taskTitle": "<exact title of parent task, or original routine title for non-work slots>",
+              "subtaskIds": ["<subtask id>", "..."],
               "startTime": "YYYY-MM-DDTHH:mm:ss.sss",
               "endTime": "YYYY-MM-DDTHH:mm:ss.sss"
             }
@@ -2137,7 +2866,7 @@ async function startServer() {
         }
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt
       });
@@ -2149,12 +2878,22 @@ async function startServer() {
       if (result.sessions && Array.isArray(result.sessions)) {
         const normalizedResult = normalizeSessions(result.sessions);
 
+        // Build a lookup of subtask id -> title (per task) so we can compose display labels
+        // from just the scheduled subtask name(s) — without trusting the AI to echo titles
+        // back verbatim.
+        const subtaskTitleById = new Map<string, string>();
+        for (const t of (tasks || [])) {
+          for (const st of (t.subtasks || [])) {
+            subtaskTitleById.set(st.id, st.title);
+          }
+        }
+
         // The AI is only supposed to slot tasks into the EXISTING, immutable timetable
         // (see prompt rule 0), but its response schema only carries taskId/taskTitle/
-        // startTime/endTime. Saving that verbatim would wipe every session's completed/
-        // started progress flags. Instead, merge just the taskId/taskTitle assignment
-        // back onto the existing session objects (matched by original start/end time),
-        // and keep every other existing field — including completed/started — intact.
+        // subtaskIds/startTime/endTime. Saving that verbatim would wipe every session's
+        // completed/started progress flags. Instead, merge just the assignment fields back
+        // onto the existing session objects (matched by original start/end time), and keep
+        // every other existing field — including completed/started — intact.
         const existingSessions = currentPlan.sessions || [];
         const mergedSessions = existingSessions.map((existing: any) => {
           const existingStart = new Date(existing.startTime).getTime();
@@ -2165,10 +2904,26 @@ async function startServer() {
             return start === existingStart && end === existingEnd;
           });
           if (!match) return existing;
+
+          const subtaskIds: string[] = Array.isArray(match.subtaskIds) ? match.subtaskIds.filter((id: any) => subtaskTitleById.has(id)) : [];
+          const subtaskTitles = subtaskIds.map((id) => subtaskTitleById.get(id)).filter(Boolean);
+          // Session display naming follows the deepest level actually scheduled — never
+          // concatenate parent + child names:
+          //   - a subtask (or several) is scheduled in this slot -> show just the subtask name(s)
+          //   - otherwise (WHOLE_TASK, whether the task belongs to a quest or is standalone)
+          //     -> fall back to the task's own title (handled by the UI via
+          //        `session.sessionLabel || session.taskTitle`), so no sessionLabel is set here.
+          const sessionLabel = subtaskTitles.length > 0
+            ? subtaskTitles.join(', ')
+            : undefined;
+
           return {
             ...existing,
             taskId: match.taskId,
-            taskTitle: match.taskTitle
+            taskTitle: match.taskTitle,
+            subtaskIds,
+            schedulingMode: tasksForPrompt.find((t: any) => t.id === match.taskId)?.schedulingMode || existing.schedulingMode,
+            ...(sessionLabel ? { sessionLabel } : { sessionLabel: undefined })
           };
         });
 
@@ -2249,7 +3004,7 @@ async function startServer() {
         - Include this plan and JSON block whenever the user wants to set, change, or update their timetable or daily routine structure.
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt
       });
@@ -2334,8 +3089,8 @@ async function startServer() {
   });
 
   app.post("/api/autonomous-pipeline", verifyToken, async (req: any, res: any) => {
-    const { eventName, eventDetail, tasks, model, dayDescription, localDateStr, localTimeStr } = req.body;
     const userId = req.uid;
+    const { eventName = '', eventDetail = '', tasks = [], model = '', dayDescription = '', localDateStr = '', localTimeStr = '' } = req.body || {};
     try {
       const selectedModel = getValidModel(model);
 
@@ -2395,7 +3150,7 @@ async function startServer() {
         IMPORTANT FORMATTING RULE: You MUST format all 'startTime' and 'endTime' strings as timezone-naive ISO strings using the user's local date/time directly with NO trailing 'Z' and NO offset like '+07:00'. For example, if you want a session to start at 07:30 AM on today's local date ${localDateStr || new Date().toISOString().split('T')[0]}, output exactly: "${localDateStr || new Date().toISOString().split('T')[0]}T07:30:00.000".
       `;
       
-      const response = await generateContentWithRetry({
+      const response = await generateAIContent({
         model: selectedModel,
         contents: prompt
       });
@@ -2472,12 +3227,15 @@ async function startServer() {
       const activeTasks = Array.isArray(tasks) ? tasks.filter((t: any) => t.status !== 'completed') : [];
       let currentHour = 9;
 
+      const padTime = (h: number) => String(Math.floor(h)).padStart(2, '0');
+      const padMin = (h: number) => (h % 1 === 0.5) ? '30' : '00';
+
       if (activeTasks.length > 0) {
         activeTasks.slice(0, 3).forEach((task: any) => {
           let startH = currentHour;
           let endH = currentHour + 2;
           
-          if (startH === 12) {
+          if (startH >= 12 && startH < 13) {
             fallbackSessions.push({
               startTime: `${baseDateStr}T12:00:00.000`,
               endTime: `${baseDateStr}T13:00:00.000`,
@@ -2489,18 +3247,19 @@ async function startServer() {
           }
 
           fallbackSessions.push({
-            startTime: `${baseDateStr}T${String(startH).padStart(2, '0')}:00:00.000`,
-            endTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:00:00.000`,
+            startTime: `${baseDateStr}T${padTime(startH)}:${padMin(startH)}:00.000`,
+            endTime: `${baseDateStr}T${padTime(endH)}:${padMin(endH)}:00.000`,
             taskTitle: `Deep Work Focus: ${task.title}`
           });
           
+          const bufferEndH = endH + 0.5;
           fallbackSessions.push({
-            startTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:00:00.000`,
-            endTime: `${baseDateStr}T${String(endH).padStart(2, '0')}:30:00.000`,
+            startTime: `${baseDateStr}T${padTime(endH)}:${padMin(endH)}:00.000`,
+            endTime: `${baseDateStr}T${padTime(bufferEndH)}:${padMin(bufferEndH)}:00.000`,
             taskTitle: "Biological Buffer & Cognitive Recharge Slot"
           });
 
-          currentHour = endH + 0.5;
+          currentHour = endH + 1;
         });
       } else {
         fallbackSessions.push({

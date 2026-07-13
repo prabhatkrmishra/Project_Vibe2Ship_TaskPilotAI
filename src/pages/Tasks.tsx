@@ -207,7 +207,7 @@ export function Tasks() {
     if (!user) return;
     try {
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
@@ -238,7 +238,7 @@ export function Tasks() {
     try {
       const deadlineString = new Date(`${format(date, 'yyyy-MM-dd')}T${time}`).toISOString();
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/analyze-task', {
         method: 'POST',
         headers: { 
@@ -370,6 +370,7 @@ export function Tasks() {
   };
 
   const deleteTask = async (task: Task) => {
+    if (!user) return;
     try {
       const token = await user?.getIdToken();
       const res = await fetch(`/api/tasks/${task.id}`, {
@@ -411,7 +412,7 @@ export function Tasks() {
     setIsGeneratingSubtasks(prev => ({ ...prev, [task.id]: true }));
     try {
       const token = await user.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/generate-subtasks', {
         method: 'POST',
         headers: {
@@ -468,6 +469,7 @@ export function Tasks() {
   };
 
   const handleAddManualSubtask = async (taskId: string, subtaskTitle: string) => {
+    if (!user) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const newSubtask = {
@@ -503,6 +505,7 @@ export function Tasks() {
   };
 
   const handleSaveSubtaskTitle = async (taskId: string, subtaskId: string) => {
+    if (!user) return;
     if (!editingSubtaskText.trim()) {
       setEditingSubtask(null);
       return;
@@ -536,6 +539,7 @@ export function Tasks() {
 
   const handleDeleteSubtask = async (taskId: string, subtaskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!user) return;
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
@@ -565,6 +569,7 @@ export function Tasks() {
   };
 
   const handleSaveTaskTitle = async (taskId: string) => {
+    if (!user) return;
     if (!editingTaskText.trim()) {
       setEditingTaskId(null);
       return;
@@ -589,6 +594,7 @@ export function Tasks() {
   };
 
   const toggleSubtask = async (taskId: string, subtaskId: string, tasksList: Task[]) => {
+    if (!user) return;
     const task = tasksList.find(t => t.id === taskId);
     if (!task) return;
     
@@ -652,6 +658,7 @@ export function Tasks() {
   };
 
   const toggleTaskComplete = async (task: Task) => {
+    if (!user) return;
     const isNowCompleted = task.status !== 'completed';
     const updatedSubtasks = (task.subtasks || []).map(s => ({ ...s, completed: isNowCompleted }));
     
@@ -669,6 +676,11 @@ export function Tasks() {
         })
       });
       
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Failed to update task (${res.status})`);
+      }
+
       const data = await res.json();
 
       if (isNowCompleted) {
@@ -727,6 +739,7 @@ export function Tasks() {
   };
 
   const rescueDeadline = async (taskId: string, currentDeadline: string) => {
+    if (!user) return;
     try {
       const token = await user?.getIdToken();
       const newDeadline = new Date(currentDeadline);
@@ -755,7 +768,7 @@ export function Tasks() {
     if (filter === 'high_risk') return (task.riskScore || 0) > 60 && task.status !== 'completed';
     if (filter === 'due_today') {
       const today = new Date().toISOString().split('T')[0];
-      return task.deadline.startsWith(today) && task.status !== 'completed';
+      return (task.deadline?.startsWith(today) ?? false) && task.status !== 'completed';
     }
     return true;
   });
@@ -992,7 +1005,7 @@ export function Tasks() {
                           {task.status !== 'completed' && (
                             <button
                               onClick={(e) => handleStartEditTask(task.id, task.title, e)}
-                              className="opacity-0 group-hover/task-title:opacity-100 transition-opacity text-[#8b949e] hover:text-indigo-400 p-1 rounded shrink-0"
+                              className="opacity-100 sm:opacity-0 sm:group-hover/task-title:opacity-100 transition-opacity text-[#8b949e] hover:text-indigo-400 p-1 rounded shrink-0"
                               title="Edit Task Title"
                             >
                               <Pencil className="w-3.5 h-3.5" />
@@ -1004,7 +1017,7 @@ export function Tasks() {
                       <p className="text-xs text-[#8b949e] line-clamp-2">{task.description}</p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => deleteTask(task)}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={() => deleteTask(task)}>
                     <Trash2 className="w-3 h-3" />
                   </Button>
                 </div>
@@ -1108,7 +1121,7 @@ export function Tasks() {
                               </div>
 
                               {!isEditing && (
-                                <div className="flex items-center gap-1.5 shrink-0 mt-0.5 opacity-0 group-hover/sub:opacity-100 transition-opacity">
+                                <div className="flex items-center gap-1.5 shrink-0 mt-0.5 opacity-100 sm:opacity-0 sm:group-hover/sub:opacity-100 transition-opacity">
                                   <button
                                     onClick={(e) => handleStartEditSubtask(task.id, sub.id, sub.title, e)}
                                     className="text-[#8b949e] hover:text-indigo-400 p-1 rounded transition-colors cursor-pointer"

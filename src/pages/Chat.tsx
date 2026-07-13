@@ -7,6 +7,7 @@ import { Send, Bot, Mic, Loader2, Sparkles, Plus, Trash2, History, Edit2, Check,
 import ReactMarkdown from 'react-markdown';
 import { showSuccess, showError, showWarning } from '../lib/toastTheme';
 import { Task } from '../types';
+import { safeJson } from '../lib/utils';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -14,17 +15,6 @@ interface Message {
   timestamp?: any;
   isError?: boolean;
 }
-
-const safeJson = async (res: Response) => {
-  const contentType = res.headers.get('content-type');
-  if (contentType && contentType.includes('text/html')) {
-    throw new Error('Server returned HTML (this can happen during authentication redirects or server startup). Please refresh or try again in a moment.');
-  }
-  if (!contentType || !contentType.includes('application/json')) {
-    throw new Error(`Expected JSON but received: ${contentType || 'none'}`);
-  }
-  return res.json();
-};
 
 export function Chat() {
   const { user } = useAuth();
@@ -46,6 +36,9 @@ export function Chat() {
   const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<Message[]>([]);
+  // Keep messagesRef in sync with messages state to avoid stale closures in handleSend
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
   
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -213,9 +206,9 @@ export function Chat() {
     scrollToBottom();
   }, [messages, isSending]);
   
-  const [models, setModelsList] = useState<{ name: string; displayName: string }[]>([]);
+  const [models, setModelsList] = useState<{ name: string; displayName: string; provider: string; available: boolean }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+    return localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -234,10 +227,12 @@ export function Chat() {
           const data = await safeJson(res);
           setModelsList(data);
           
-          // If the currently saved model is not in the list, but list has items, set to default or first
-          const exists = data.some((m: any) => m.name === selectedModel);
-          if (!exists && data.length > 0) {
-            const defaultModel = data.find((m: any) => m.name.includes('gemini-3.5-flash'))?.name || data[0].name;
+          // If the currently saved model is unavailable or missing, pick an available fallback
+          const isSelectedAvailable = data.some((m: any) => m.name === selectedModel && m.available);
+          if (!isSelectedAvailable && data.length > 0) {
+            const defaultModel = data.find((m: any) => m.available && m.name.includes('gemini-3.5-flash'))?.name
+              || data.find((m: any) => m.available)?.name
+              || selectedModel;
             setSelectedModel(defaultModel);
             localStorage.setItem('default_gemini_model', defaultModel);
           }
@@ -255,7 +250,8 @@ export function Chat() {
   const handleModelChange = (value: string) => {
     setSelectedModel(value);
     localStorage.setItem('default_gemini_model', value);
-    showSuccess(`Active AI Model changed to: ${value.split('/').pop()}`);
+    const displayName = models.find(m => m.name === value)?.displayName || value;
+    showSuccess(`Active AI Model changed to: ${displayName}`);
   };
 
   const fetchSessions = async (overrideActiveChatId?: string) => {
@@ -441,6 +437,12 @@ export function Chat() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
+
+    // Guard: don't send with an unavailable model
+    if (models.length > 0 && !models.some(m => m.name === selectedModel && m.available)) {
+      showError('Selected AI model is not available. Please pick a different model.');
+      return;
+    }
     
     const userMsg = input.trim();
     setInput('');
@@ -479,7 +481,7 @@ export function Chat() {
       }
       setMessages(prev => [...prev, savedUserMsg]);
 
-      const cleanMessages = messages.map(m => ({
+      const cleanMessages = messagesRef.current.map(m => ({
         role: m.role,
         content: m.content
       }));
@@ -639,6 +641,13 @@ export function Chat() {
 
   const handleExtractJournal = async () => {
     if (!input.trim() || !user) return;
+
+    // Guard: don't send with an unavailable model
+    if (models.length > 0 && !models.some(m => m.name === selectedModel && m.available)) {
+      showError('Selected AI model is not available. Please pick a different model.');
+      return;
+    }
+
     setIsSending(true);
 
     // Calculate new title if this is the first message
@@ -896,18 +905,40 @@ export function Chat() {
                   }}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc]">
+              <SelectContent className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] max-h-80 overflow-y-auto">
                 {isLoadingModels ? (
                   <div className="flex items-center justify-center p-4">
                     <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mr-2" />
                     <span className="text-xs text-slate-400">Querying brain nodes...</span>
                   </div>
                 ) : (
-                  models.map((model) => (
-                    <SelectItem key={model.name} value={model.name} className="focus:bg-indigo-600/20 focus:text-indigo-200">
-                      {model.displayName}
-                    </SelectItem>
-                  ))
+                  (() => {
+                    // Group models by provider
+                    const grouped = new Map<string, typeof models>();
+                    for (const m of models) {
+                      const provider = m.provider || 'Unknown';
+                      if (!grouped.has(provider)) grouped.set(provider, []);
+                      grouped.get(provider)!.push(m);
+                    }
+                    return Array.from(grouped.entries()).map(([provider, providerModels]) => (
+                      <div key={provider}>
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-500 bg-[#161b22] sticky top-0 z-10">
+                          {provider}
+                        </div>
+                        {providerModels.map((model) => (
+                          <SelectItem
+                            key={model.name}
+                            value={model.name}
+                            disabled={!model.available}
+                            className="focus:bg-indigo-600/20 focus:text-indigo-200"
+                          >
+                            <span className={!model.available ? 'opacity-40' : ''}>{model.displayName}</span>
+                            {!model.available && <span className="ml-1.5 text-[9px] text-slate-500">(set key in .env)</span>}
+                          </SelectItem>
+                        ))}
+                      </div>
+                    ));
+                  })()
                 )}
               </SelectContent>
             </Select>

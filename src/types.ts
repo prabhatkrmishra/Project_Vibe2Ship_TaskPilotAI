@@ -24,15 +24,26 @@ export interface Task {
   resources?: string[];
   goalId?: string | null;
   completedAt?: string;
+  hasBeenCompleted?: boolean;
 }
 
 export interface ScheduledSession {
   taskId: string;
-  taskTitle: string;
+  taskTitle: string;  // parent task title — kept stable for matching against Task.title elsewhere
   startTime: string; // ISO datetime
   endTime: string;   // ISO datetime
   completed?: boolean;
   started?: boolean;
+  // Subtask-level scheduling: which specific subtask(s) of the parent task this session
+  // covers, and a display label showing just the deepest scheduled level's name — the
+  // subtask name(s) alone (e.g. "Subtask A, Subtask B") when subtasks are scheduled, with
+  // no parent task/quest name concatenated in. When absent, the UI falls back to
+  // `taskTitle` (the task's own name, whether or not it belongs to a quest). Both fields
+  // are optional/absent for non-task routine slots (Lunch, Sleep, etc.) and for legacy
+  // sessions generated before subtask-aware scheduling existed.
+  subtaskIds?: string[];
+  sessionLabel?: string;
+  schedulingMode?: 'WHOLE_TASK' | 'SAME_DAY_SUBTASKS' | 'PACED_SUBTASKS';
 }
 
 export interface DailyPlan {
@@ -40,6 +51,7 @@ export interface DailyPlan {
   userId: string;
   date: string; // YYYY-MM-DD
   sessions: ScheduledSession[];
+  updatedAt?: string;
 }
 
 export interface UserProfile {
@@ -110,5 +122,5 @@ export interface Goal {
   steps?: GoalStep[];
   completed: boolean;
   completedAt?: string;
-  createdAt: any;
+  createdAt: string;
 }

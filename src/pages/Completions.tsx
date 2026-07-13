@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { Goal, Task } from '../types';
-import { Sparkles, CheckCircle2, Clock, ListTree, Award } from 'lucide-react';
+import { Sparkles, CheckCircle2, Clock, ListTree, Award, Route } from 'lucide-react';
+import { getDelayText, getGoalCompletionDate } from '../lib/utils';
 
 export function Completions() {
   const { user } = useAuth();
@@ -10,6 +11,7 @@ export function Completions() {
   const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
+  const [questTrails, setQuestTrails] = useState<Record<string, any[]>>({});
 
   const fetchGoalsAndTasks = async () => {
     if (!user) return;
@@ -43,34 +45,25 @@ export function Completions() {
     }
   }, [user]);
 
-  // Helper functions for completions delay tracking
-  const getDelayText = (deadlineStr?: string, completedAtStr?: string) => {
-    if (!deadlineStr) return null;
-    const deadline = new Date(deadlineStr);
-    const completedAt = completedAtStr ? new Date(completedAtStr) : new Date();
-    const diffTime = completedAt.getTime() - deadline.getTime();
-    if (diffTime <= 0) {
-      return { text: "On time", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
-    }
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays === 1) {
-      return { text: "1 day delay", color: "text-red-400 bg-red-500/10 border-red-500/20" };
-    }
-    return { text: `${diffDays} days delay`, color: "text-red-400 bg-red-500/10 border-red-500/20" };
-  };
-
-  const getGoalCompletionDate = (goal: Goal) => {
-    if (goal.completedAt) return goal.completedAt;
-    const qTasks = linkedTasks.filter(t => t.goalId === goal.id && t.status === 'completed');
-    const dates = qTasks.map(t => t.completedAt).filter(Boolean) as string[];
-    if (dates.length > 0) {
-      return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-    }
-    return undefined;
-  };
-
   const toggleGoalExpand = (goalId: string) => {
     setExpandedGoals(prev => ({ ...prev, [goalId]: !prev[goalId] }));
+    if (!expandedGoals[goalId] && !questTrails[goalId]) fetchQuestTrail(goalId);
+  };
+
+  const fetchQuestTrail = async (goalId: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/plans/trail/${goalId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const trail = await res.json();
+        setQuestTrails(prev => ({ ...prev, [goalId]: trail }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch quest trail:", err);
+    }
   };
 
   const completedQuests = goals.filter(g => g.type === 'quest' && g.completed);
@@ -160,7 +153,7 @@ export function Completions() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {completedQuests.map(quest => {
                       const questTasks = linkedTasks.filter(t => t.goalId === quest.id);
-                      const compDate = getGoalCompletionDate(quest);
+                      const compDate = getGoalCompletionDate(quest, linkedTasks);
                       const delay = getDelayText(quest.targetDate, compDate);
                       const isExpanded = expandedGoals[quest.id] !== undefined ? expandedGoals[quest.id] : false;
 
@@ -232,6 +225,30 @@ export function Completions() {
                                   <span>{new Date(compDate).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
                                 </div>
                               )}
+
+                              {questTrails[quest.id] && questTrails[quest.id].length > 0 && (
+                                <div className="pt-2">
+                                  <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                                    <Route className="w-3 h-3" /> Session Trail
+                                  </p>
+                                  <div className="space-y-0 relative">
+                                    <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-cyan-500/40 via-indigo-500/30 to-transparent"></div>
+                                    {questTrails[quest.id].map((entry: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-3 py-2 pl-0">
+                                        <div className="w-[15px] h-[15px] rounded-full bg-[#161b22] border-2 border-cyan-500/60 flex items-center justify-center shrink-0 mt-0.5 z-10">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
+                                          <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                                            {new Date(entry.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </motion.div>
                           ) : (
                             <div className="text-[10px] text-slate-500 italic text-center mt-1 border-t border-[#21262d]/40 pt-2 font-light">
@@ -278,6 +295,30 @@ export function Completions() {
                               );
                             })}
                           </div>
+
+                          {questTrails[quest.id] && questTrails[quest.id].length > 0 && (
+                            <div className="pt-2 border-t border-[#21262d]/50">
+                              <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                                <Route className="w-3 h-3" /> Session Trail
+                              </p>
+                              <div className="space-y-0 relative">
+                                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-cyan-500/40 via-indigo-500/30 to-transparent"></div>
+                                {questTrails[quest.id].map((entry: any, idx: number) => (
+                                  <div key={idx} className="flex items-start gap-3 py-2 pl-0">
+                                    <div className="w-[15px] h-[15px] rounded-full bg-[#161b22] border-2 border-cyan-500/60 flex items-center justify-center shrink-0 mt-0.5 z-10">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
+                                      <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                                        {new Date(entry.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

@@ -1,23 +1,16 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
-import { Task, DailyPlan } from '../types';
+import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
-import { Loader2, Calendar as CalendarIcon, Sparkles, Clock, CheckCircle2, Printer, Download, FileText, Pencil, Plus, Trash2, GripVertical, X, PlayCircle, AlertTriangle, Info, RefreshCw, CalendarCheck, MoreVertical } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Sparkles, Clock, CheckCircle2, Printer, Download, FileText, Pencil, Plus, Trash2, GripVertical, X, PlayCircle, AlertTriangle, Info, RefreshCw, CalendarCheck, MoreVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { createCalendarEvent } from '../lib/workspace';
 import { SessionToastCard, showSuccess, showError, showInfo, showWarning, showInfoToast } from '../lib/toastTheme';
+import { TaskSelectionModal } from '../components/TaskSelectionModal';
+import { useAIJobs } from '../lib/AIJobContext';
 
-const safeJson = async (res: Response) => {
-  const contentType = res.headers.get('content-type');
-  if (contentType && contentType.includes('text/html')) {
-    throw new Error('Server returned HTML. Please refresh or try again.');
-  }
-  if (!contentType || !contentType.includes('application/json')) {
-    throw new Error(`Expected JSON response but received ${contentType || 'none'}`);
-  }
-  return res.json();
-};
+import { safeJson } from '../lib/utils';
 
 // Every plain toast (info/success/error/warning) on this page renders through the shared
 // SessionToastCard shell from ../lib/toastTheme — the same dark-glass style originally
@@ -50,6 +43,7 @@ export function Timetable() {
   const { user, requestWorkspaceAccess } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -59,6 +53,14 @@ export function Timetable() {
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const { startJob, endJob, isJobRunning } = useAIJobs();
+  const isJobActive = isJobRunning('generate-plan');
+  // Native window.confirm() is unreliable inside sandboxed preview/embedded iframes (common in
+  // hosted dev environments) — it can silently return false or never render, making the "full
+  // replan" action look completely broken. We use an in-app modal instead so confirmation always
+  // works regardless of the surrounding frame/browser sandbox.
+  const [pendingReplan, setPendingReplan] = useState<{ customDesc?: string; tasksOverride?: Task[] } | null>(null);
 
   useEffect(() => {
     if (!actionsMenuOpen) return;
@@ -104,7 +106,11 @@ export function Timetable() {
 
   const handleStartEdit = (idx: number, session: any) => {
     setEditingIndex(idx);
-    setEditTitle(session.taskTitle);
+    // Prefill with whatever is actually displayed for this session (the subtask-level
+    // sessionLabel when present, otherwise the task title) so the edit box always matches
+    // what the user sees on the card, instead of silently reverting to the parent task's
+    // title on save.
+    setEditTitle(session.sessionLabel || session.taskTitle);
     setEditStartTime(isoToTimeStr(session.startTime));
     setEditEndTime(isoToTimeStr(session.endTime));
   };
@@ -181,7 +187,11 @@ export function Timetable() {
         taskId: updatedSessions[editingIndex].taskId || "",
         taskTitle: editTitle.trim(),
         startTime: startISO,
-        endTime: endISO
+        endTime: endISO,
+        // The user just typed the exact name they want shown, so clear any stale
+        // subtask-level sessionLabel — otherwise the card would keep showing the old
+        // label instead of the freshly edited title (since sessionLabel takes priority).
+        sessionLabel: undefined
       };
     }
 
@@ -247,6 +257,20 @@ export function Timetable() {
     setDragOverIdx(null);
   };
 
+  const handleMobileReorder = async (fromIdx: number, toIdx: number) => {
+    if (!plan || fromIdx < 0 || toIdx < 0 || fromIdx >= plan.sessions.length || toIdx >= plan.sessions.length) return;
+    const updatedSessions = [...plan.sessions];
+    const [removed] = updatedSessions.splice(fromIdx, 1);
+    updatedSessions.splice(toIdx, 0, removed);
+    const originalTimes = plan.sessions.map(s => ({ startTime: s.startTime, endTime: s.endTime }));
+    const finalSessions = updatedSessions.map((session, index) => ({
+      ...session,
+      startTime: originalTimes[index].startTime,
+      endTime: originalTimes[index].endTime
+    }));
+    await saveSessions(finalSessions, undefined, { successMessage: "Timetable reordered!" });
+  };
+
   const getLocalYYYYMMDD = (d = new Date()) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -265,20 +289,39 @@ export function Timetable() {
       .sort()
       .join('|');
 
+  // The reschedule baseline must reflect the task pool the CURRENTLY LOADED sessions were
+  // actually built from — not "whatever tasks exist right now". Deriving it from the raw
+  // current task list (as opposed to only the tasks the plan's sessions already account for)
+  // meant that any newly added task/quest got silently folded into the baseline on the next
+  // fetch, before the user ever clicked Reschedule — making the diff check trivially pass and
+  // showing "Nothing to reschedule" even though the new task had never been slotted in.
+  const computeAccountedSignature = (taskList: Task[], sessions?: { taskTitle: string }[]) => {
+    const sessionTitles = new Set((sessions || []).map(s => s.taskTitle));
+    return computeTaskSignature(taskList.filter(t => sessionTitles.has(t.title)));
+  };
+
   const fetchTimetableData = async () => {
     if (!user) return;
     try {
       const token = await user.getIdToken();
       const headers = { 'Authorization': `Bearer ${token}` };
 
-      const [resTasks, resPlan] = await Promise.all([
+      const [resTasks, resGoals, resPlan] = await Promise.all([
         fetch('/api/tasks', { headers }),
+        fetch('/api/goals', { headers }),
         fetch(`/api/plans/${today}`, { headers })
       ]);
 
+      if (resGoals.ok) {
+        const goalsData = await safeJson(resGoals) as Goal[];
+        setGoals(goalsData);
+      }
+
+      let planSessions: { taskTitle: string }[] | undefined;
       if (resPlan.ok) {
         const planData = await safeJson(resPlan);
         setPlan(planData);
+        planSessions = planData?.sessions;
       } else {
         setPlan(null);
       }
@@ -288,8 +331,10 @@ export function Timetable() {
         const pending = allTasks.filter(t => t.status === 'pending' || t.status === 'in_progress');
         setTasks(pending);
         setCompletedTasks(allTasks.filter(t => t.status === 'completed'));
-        // Baseline: assume the timetable we just loaded already reflects this task state.
-        lastRescheduleSignatureRef.current = computeTaskSignature(pending);
+        // Baseline: only the tasks the loaded plan's sessions actually account for — any
+        // pending task without a matching session (e.g. one just added) will correctly show
+        // up as a diff, enabling Reschedule instead of silently being absorbed into "no change".
+        lastRescheduleSignatureRef.current = computeAccountedSignature(pending, planSessions);
       }
     } catch (err) {
       console.error("Error loading timetable data:", err);
@@ -342,8 +387,9 @@ export function Timetable() {
       }
 
       let hasPlanForToday = false;
+      let planData: DailyPlan | null = null;
       if (resPlan.ok) {
-        const planData = await safeJson(resPlan);
+        planData = await safeJson(resPlan);
         hasPlanForToday = !!(planData && planData.sessions && planData.sessions.length > 0);
         setPlan(planData);
       } else {
@@ -361,7 +407,7 @@ export function Timetable() {
         );
         await regenerateFullTimetable(dayDescription || undefined, freshTasks);
       } else {
-        lastRescheduleSignatureRef.current = computeTaskSignature(freshTasks);
+        lastRescheduleSignatureRef.current = computeAccountedSignature(freshTasks, planData?.sessions);
       }
     } catch (err) {
       console.error("Error auto-refreshing timetable after midnight rollover:", err);
@@ -373,24 +419,23 @@ export function Timetable() {
   // (POST /api/generate-plan), which only slots tasks into the existing timetable and
   // preserves completed/started progress. This action discards that progress, so warn
   // the user before wiping a timetable that already has sessions marked started/done.
-  const regenerateFullTimetable = async (customDesc?: string, tasksOverride?: Task[]) => {
+  const regenerateFullTimetable = (customDesc?: string, tasksOverride?: Task[]) => {
     const hasProgress = !!plan?.sessions?.some((s: any) => s.completed || s.started);
     if (hasProgress) {
-      const confirmed = window.confirm(
-        "This will regenerate your entire timetable from scratch and will discard progress " +
-        "(completed/started sessions) on today's plan. If you only want to slot new tasks into " +
-        "your existing timetable without losing progress, use Dashboard's \"Assign Tasks to " +
-        "Timetable\" instead. Continue with a full replan?"
-      );
-      if (!confirmed) return;
+      // Defer to the in-app confirmation modal instead of window.confirm (see note above).
+      setPendingReplan({ customDesc, tasksOverride });
+      return;
     }
+    performRegenerateFullTimetable(customDesc, tasksOverride);
+  };
 
+  const performRegenerateFullTimetable = async (customDesc?: string, tasksOverride?: Task[]) => {
     setIsGenerating(true);
     const descToUse = customDesc !== undefined ? customDesc : dayDescription;
     const tasksToUse = tasksOverride !== undefined ? tasksOverride : tasks;
     try {
       const token = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
@@ -429,29 +474,31 @@ export function Timetable() {
   // timetable structure (via /api/generate-plan) without discarding completed/started
   // progress. If nothing about the pending task pool has changed since the last time sessions
   // were (re)generated, warn instead of making a pointless AI call.
-  const handleRescheduleRoutine = async () => {
+  const handleRescheduleRoutine = async (selectedTasks?: Task[]) => {
     if (!plan || !plan.sessions || plan.sessions.length === 0) {
       showInfoToast('amber', <AlertTriangle className="w-5 h-5" />, "No timetable yet", "Generate a timetable first before rescheduling sessions.");
       return;
     }
 
-    const currentSignature = computeTaskSignature(tasks);
+    const tasksToUse = selectedTasks || tasks;
+    const currentSignature = computeTaskSignature(tasksToUse);
     if (currentSignature === lastRescheduleSignatureRef.current) {
       showInfoToast('amber', <Info className="w-5 h-5" />, "Nothing to reschedule", "Nothing new to reschedule sessions — no task changes since the last update.");
       return;
     }
 
     setIsRescheduling(true);
+    startJob('generate-plan', 'Rescheduling routine');
     try {
       const token = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ date: today, tasks, model: selectedModel })
+        body: JSON.stringify({ date: today, tasks: tasksToUse, model: selectedModel })
       });
 
       if (!res.ok) {
@@ -467,6 +514,7 @@ export function Timetable() {
       showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Reschedule failed", error.message || "Failed to reschedule sessions.");
     } finally {
       setIsRescheduling(false);
+      endJob('generate-plan');
     }
   };
 
@@ -532,49 +580,65 @@ export function Timetable() {
   const handleMarkCompleted = async (index: number) => {
     if (!plan) return;
     const session = plan.sessions[index];
-    // A session that's being completed is, by definition, started/finished — set both flags
-    // together so the server's "only started/past sessions can complete" rule never contradicts
-    // the action the user just took (this was the cause of the tick silently reverting).
+
+    // Optimistic update: reflect the tick immediately
     let updatedSessions = [...plan.sessions];
     updatedSessions[index] = { ...session, completed: true, started: true };
-
-    // Optimistic update: reflect the tick immediately instead of waiting on the network
-    // round-trip, then reconcile with (or roll back to) whatever the server confirms.
     const previousPlan = plan;
     setPlan({ ...plan, sessions: updatedSessions });
-    await saveSessions(updatedSessions, previousPlan, { suppressSuccessToast: true });
 
-    toast.custom((t) => (
-      <SessionToastCard
-        accent="emerald"
-        icon={<CheckCircle2 className="w-5 h-5" />}
-        title="Session completed"
-        message={<><span className="text-emerald-300 font-semibold">"{session.taskTitle}"</span> is done. Nice work.</>}
-        primaryLabel="Got it"
-        onPrimary={() => toast.dismiss(t)}
-        onDismiss={() => toast.dismiss(t)}
-      />
-    ));
+    // Use the server-side completion endpoint — it handles subtask completion,
+    // task auto-completion, quest progress sync, and gamification in one call.
+    try {
+      const token = await user?.getIdToken();
+      const res = await fetch(`/api/plans/${today}/complete-session`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sessionIndex: index })
+      });
 
-    const matchingTask = session.taskId
-      ? tasks.find(t => t.id === session.taskId)
-      : tasks.find(t => t.title === session.taskTitle);
-    if (matchingTask) {
-       try {
-         const token = await user?.getIdToken();
-         await fetch(`/api/tasks/${matchingTask.id}`, {
-           method: 'PUT',
-           headers: {
-             'Authorization': `Bearer ${token}`,
-             'Content-Type': 'application/json'
-           },
-           body: JSON.stringify({ status: 'completed' })
-         });
-         setCompletedTasks(prev => [...prev, { ...matchingTask, status: 'completed' }]);
-         setTasks(prev => prev.filter(t => t.id !== matchingTask.id));
-       } catch(e) {
-         console.error(e);
-       }
+      if (!res.ok) {
+        // Roll back optimistic update
+        setPlan(previousPlan);
+        const err = await res.json().catch(() => ({ error: 'Failed to complete session' }));
+        toast.error(err.error || 'Failed to complete session');
+        return;
+      }
+
+      const data = await res.json();
+
+      // Show gamification toast
+      if (data.gamificationUpdates?.xpEarned) {
+        const { xpEarned, newBadges, levelUp } = data.gamificationUpdates;
+        let msg = `+${xpEarned} XP`;
+        if (levelUp) msg += ` — Level ${levelUp}!`;
+        if (newBadges?.length) msg += ` Badge${newBadges.length > 1 ? 's' : ''}: ${newBadges.join(', ')}`;
+        toast.success(msg);
+      }
+
+      // Show quest sync toast
+      if (data.questSync?.completed) {
+        toast.success('Quest completed! +100 XP');
+      }
+
+      // Show session gamification toast
+      if (data.sessionGamification?.xpEarned) {
+        // Only show if no task-level gamification was shown (avoid double toasts)
+        if (!data.gamificationUpdates?.xpEarned) {
+          toast.success(`+${data.sessionGamification.xpEarned} XP for session`);
+        }
+      }
+
+      // Re-fetch fresh data to stay in sync
+      fetchTimetableData();
+    } catch (e) {
+      // Roll back on network error
+      setPlan(previousPlan);
+      console.error(e);
+      toast.error('Network error — session not completed');
     }
   };
 
@@ -677,6 +741,7 @@ export function Timetable() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     showSuccess("Calendar file (.ics) downloaded! You can import this into Google Calendar or Apple Calendar.");
   };
 
@@ -754,6 +819,7 @@ export function Timetable() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     showSuccess("Word Document (.doc) downloaded! Perfect for offline reference or import into Google Docs.");
   };
 
@@ -980,11 +1046,11 @@ export function Timetable() {
                 {plan && (
                   <button
                     type="button"
-                    onClick={() => { setActionsMenuOpen(false); handleRescheduleRoutine(); }}
-                    disabled={isRescheduling || isGenerating}
+                    onClick={() => { setActionsMenuOpen(false); setShowRescheduleModal(true); }}
+                    disabled={isRescheduling || isGenerating || isJobActive}
                     className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isRescheduling ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
+                    {(isRescheduling || isJobActive) ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 shrink-0 text-cyan-400" />}
                     Reschedule Routine
                   </button>
                 )}
@@ -1182,14 +1248,10 @@ export function Timetable() {
                         const isActive = !!session.started && !isCompleted && now <= end;
                         const rawProgress = isTimeWindowActive ? ((now - start) / (end - start)) * 100 : (now < start ? 0 : 100);
                         const progress = isActive ? Math.min(100, Math.max(0, rawProgress)) : 0;
-                        // A session can be marked as finished once it has actually started AND is within
-                        // its final 10 minutes, or once its time window has fully elapsed (e.g. it was
-                        // missed). This stops the complete tick from appearing the instant a session is
-                        // started, while still allowing early/late completion once the session is winding
-                        // down or over.
-                        const TEN_MINUTES_MS = 10 * 60 * 1000;
-                        const isWithinFinalTenMinutes = end - now <= TEN_MINUTES_MS;
-                        const canMarkCompleted = isPast || (!!session.started && isWithinFinalTenMinutes);
+                        // A session can be marked as finished once it has actually started,
+                        // or once its time window has fully elapsed (e.g. it was missed).
+                        const isNotAttended = isPast && !isCompleted && !session.started;
+                        const canMarkCompleted = isActive || !!session.started;
                         
                         const riskColor = isCompleted 
                           ? 'bg-emerald-500' 
@@ -1216,11 +1278,13 @@ export function Timetable() {
                             >
                               {/* Timeline node */}
                               <div className={`absolute -left-[33px] top-6 w-4 h-4 rounded-full border-4 bg-[#0d1117] transition-all duration-300 ${
-                                isCompleted 
-                                  ? 'border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
-                                  : isActive 
-                                    ? 'border-indigo-500 animate-pulse' 
-                                    : 'border-slate-800'
+                                  isCompleted 
+                                    ? 'border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' 
+                                    : isActive 
+                                      ? 'border-indigo-500 animate-pulse' 
+                                      : isNotAttended
+                                        ? 'border-red-500/40'
+                                        : 'border-slate-800'
                               }`} />
 
                               <div 
@@ -1237,9 +1301,11 @@ export function Timetable() {
                                       ? 'bg-emerald-500/5 border-emerald-500/20 opacity-75' 
                                       : isActive
                                         ? 'bg-indigo-500/5 border-indigo-500/30 ring-1 ring-indigo-500/10'
-                                        : isPast 
-                                          ? 'bg-[#161b22] border-[#21262d] opacity-50' 
-                                          : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
+                                        : isNotAttended
+                                          ? 'bg-red-500/[0.03] border-red-500/20 opacity-50'
+                                          : isPast 
+                                            ? 'bg-[#161b22] border-[#21262d] opacity-50' 
+                                            : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
                                 }`}
                               >
                                 {/* Risk bar or active progress bar */}
@@ -1248,9 +1314,30 @@ export function Timetable() {
                                   <div className="absolute top-0 left-0 h-1 bg-cyan-400" style={{ width: `${progress}%` }}></div>
                                 )}
 
-                                {/* Drag Grip Handle */}
-                                <div className="text-slate-600 group-hover/card:text-slate-400 p-1 shrink-0 transition-colors cursor-grab active:cursor-grabbing hidden sm:block">
-                                  <GripVertical className="w-4 h-4" />
+                                {/* Drag Grip Handle (desktop) + Move Buttons (mobile) */}
+                                <div className="flex items-center gap-0.5 p-1 shrink-0 transition-colors">
+                                  <div className="text-slate-600 group-hover/card:text-slate-400 cursor-grab active:cursor-grabbing hidden sm:block">
+                                    <GripVertical className="w-4 h-4" />
+                                  </div>
+                                  {/* Mobile move buttons — visible only on small screens */}
+                                  <div className="flex flex-col sm:hidden gap-0.5">
+                                    <button
+                                      type="button"
+                                      disabled={i === 0}
+                                      onClick={(e) => { e.stopPropagation(); if (i > 0) handleMobileReorder(i, i - 1); }}
+                                      className="text-slate-500 disabled:text-slate-800 disabled:cursor-not-allowed hover:text-indigo-400 p-0.5 rounded transition-colors"
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={i === visibleSessions.length - 1}
+                                      onClick={(e) => { e.stopPropagation(); if (i < visibleSessions.length - 1) handleMobileReorder(i, i + 1); }}
+                                      className="text-slate-500 disabled:text-slate-800 disabled:cursor-not-allowed hover:text-indigo-400 p-0.5 rounded transition-colors"
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {/* Time block */}
@@ -1263,14 +1350,18 @@ export function Timetable() {
 
                                 {/* Task information */}
                                 <div className="flex-grow min-w-0">
-                                  <h4 className={`font-medium text-sm truncate ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
-                                    {session.taskTitle}
+                                  <h4 className={`font-medium text-sm break-words ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
+                                    {session.sessionLabel || session.taskTitle}
                                   </h4>
                                   <div className="flex items-center gap-2 mt-1">
                                     {isCompleted ? (
                                       <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-bold uppercase tracking-widest">
                                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
                                         Completed
+                                      </span>
+                                    ) : isNotAttended ? (
+                                      <span className="text-[10px] text-red-400/80 font-bold uppercase tracking-widest">
+                                        ○ NOT ATTENDED
                                       </span>
                                     ) : isActive ? (
                                       <span className="text-[10px] text-indigo-400 flex items-center gap-1.5 font-bold uppercase tracking-widest">
@@ -1286,38 +1377,42 @@ export function Timetable() {
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">
-                                        Scheduled Quests
+                                        Scheduled
                                       </span>
                                     )}
 
                                     {matchingTask && !isCompleted && (
                                       <>
                                         <span className="text-slate-700 text-xs">•</span>
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                                          matchingTask.priority === 'high' ? 'text-red-400' : 'text-slate-400'
+                                        <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded uppercase tracking-wider border ${
+                                          matchingTask.priority === 'high' ? 'bg-red-500/15 text-red-400 border-red-500/25' :
+                                          matchingTask.priority === 'medium' ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' :
+                                          'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
                                         }`}>
-                                          {matchingTask.priority} priority
+                                          {matchingTask.priority}
                                         </span>
                                       </>
                                     )}
                                   </div>
                                 </div>
 
-                                {/* Edit Button */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartEdit(i, session);
-                                  }}
-                                  className="opacity-0 group-hover/card:opacity-100 text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-transparent hover:border-[#30363d] transition-all ml-2 shrink-0 cursor-pointer hidden sm:block"
-                                  title="Edit Session"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
+                                {/* Edit Button — hidden for not-attended sessions */}
+                                {!isNotAttended && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartEdit(i, session);
+                                    }}
+                                    className="opacity-0 group-hover/card:opacity-100 text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-transparent hover:border-[#30363d] transition-all ml-2 shrink-0 cursor-pointer hidden sm:block"
+                                    title="Edit Session"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
 
-                                {/* Start Button */}
-                                {!isCompleted && !session.started && (
+                                {/* Start Button — hidden once the session's time window has ended */}
+                                {!isCompleted && !session.started && !isPast && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1353,16 +1448,19 @@ export function Timetable() {
                                     </svg>
                                   </div>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStartEdit(i, session);
-                                  }}
-                                  className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-[#21262d] transition-all mt-3 w-full text-xs font-bold uppercase tracking-wider sm:hidden flex items-center justify-center gap-1.5 cursor-pointer"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" /> Edit Session
-                                </button>
+                                {/* Mobile Edit Button — hidden for not-attended sessions */}
+                                {!isNotAttended && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartEdit(i, session);
+                                    }}
+                                    className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-[#21262d] transition-all mt-3 w-full text-xs font-bold uppercase tracking-wider sm:hidden flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" /> Edit Session
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -1377,7 +1475,7 @@ export function Timetable() {
                                     const nextStart = isoToTimeStr(visibleSessions[i+1].startTime);
                                     handleStartAdd(prevEnd, nextStart);
                                   }}
-                                  className="opacity-0 group-hover/divider:opacity-100 bg-[#0d1117] border border-[#30363d] hover:border-indigo-500 text-slate-400 hover:text-white rounded-full px-3 py-1 text-[10px] font-bold flex items-center gap-1 shadow-lg transition-all z-10 cursor-pointer"
+                                  className="opacity-100 sm:opacity-0 sm:group-hover/divider:opacity-100 bg-[#0d1117] border border-[#30363d] hover:border-indigo-500 text-slate-400 hover:text-white rounded-full px-3 py-1 text-[10px] font-bold flex items-center gap-1 shadow-lg transition-all z-10 cursor-pointer"
                                 >
                                   <Plus className="w-3 h-3 text-indigo-400" />
                                   Insert Session Here
@@ -1395,6 +1493,48 @@ export function Timetable() {
           </div>
         )}
       </motion.div>
+
+      {/* Full Replan Confirmation Modal — replaces window.confirm (unreliable in sandboxed frames) */}
+      {pendingReplan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[#0d1117] border border-amber-500/25 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-10 h-10 rounded-xl border border-amber-400/40 bg-amber-500/15 flex items-center justify-center text-amber-300">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Replan from scratch?</h3>
+                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                  This will regenerate your entire timetable and discard progress (completed/started sessions) on today's plan.
+                  If you only want to slot new tasks into your existing timetable without losing progress, use Dashboard's
+                  "Assign Tasks to Timetable" instead.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#21262d]">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPendingReplan(null)}
+                className="text-slate-400 hover:text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const { customDesc, tasksOverride } = pendingReplan;
+                  setPendingReplan(null);
+                  performRegenerateFullTimetable(customDesc, tasksOverride);
+                }}
+                className="bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Continue with Full Replan
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit / Add Session Dialog Modal */}
       {editingIndex !== null && (
@@ -1490,6 +1630,20 @@ export function Timetable() {
           </div>
         </div>
       )}
+
+      <TaskSelectionModal
+        open={showRescheduleModal}
+        onOpenChange={setShowRescheduleModal}
+        tasks={tasks}
+        goals={goals}
+        title="Reschedule Routine"
+        description="Select tasks to reschedule into your existing timetable by subtasks."
+        onConfirm={(selected) => {
+          setShowRescheduleModal(false);
+          handleRescheduleRoutine(selected);
+        }}
+        isGenerating={isRescheduling || isJobActive}
+      />
     </div>
   );
 }

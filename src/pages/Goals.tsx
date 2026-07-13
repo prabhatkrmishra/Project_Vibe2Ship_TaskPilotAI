@@ -7,9 +7,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane, Target } from 'lucide-react';
+import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane, Target, Route } from 'lucide-react';
 import { toast } from 'sonner';
 import { showSuccess, showError } from '../lib/toastTheme';
+import { getDelayText, getGoalCompletionDate } from '../lib/utils';
 
 export function Goals() {
   const { user } = useAuth();
@@ -93,43 +94,35 @@ export function Goals() {
   const [dismissedReminders, setDismissedReminders] = useState<Record<string, boolean>>({});
   const [expandedGoals, setExpandedGoals] = useState<Record<string, boolean>>({});
 
-  // Helper functions for completions delay tracking
-  const getDelayText = (deadlineStr?: string, completedAtStr?: string) => {
-    if (!deadlineStr) return null;
-    const deadline = new Date(deadlineStr);
-    const completedAt = completedAtStr ? new Date(completedAtStr) : new Date();
-    const diffTime = completedAt.getTime() - deadline.getTime();
-    if (diffTime <= 0) {
-      return { text: "On time", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
-    }
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays === 1) {
-      return { text: "1 day delay", color: "text-red-400 bg-red-500/10 border-red-500/20" };
-    }
-    return { text: `${diffDays} days delay`, color: "text-red-400 bg-red-500/10 border-red-500/20" };
-  };
-
-  const getGoalCompletionDate = (goal: Goal) => {
-    if (goal.completedAt) return goal.completedAt;
-    const qTasks = linkedTasks.filter(t => t.goalId === goal.id && t.status === 'completed');
-    const dates = qTasks.map(t => t.completedAt).filter(Boolean) as string[];
-    if (dates.length > 0) {
-      return dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-    }
-    return undefined;
-  };
-
   // Quest Manual Task & Editing State
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTaskText, setEditingTaskText] = useState('');
   const [newManualTaskTitles, setNewManualTaskTitles] = useState<Record<string, string>>({});
+  const [questTrails, setQuestTrails] = useState<Record<string, any[]>>({});
 
   const toggleGoalExpand = (goalId: string) => {
     setExpandedGoals(prev => ({ ...prev, [goalId]: !prev[goalId] }));
+    if (!expandedGoals[goalId]) fetchQuestTrail(goalId);
   };
 
   const tasksByGoal = (goalId: string) =>
     linkedTasks.filter(t => t.goalId === goalId).sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+
+  const fetchQuestTrail = async (goalId: string) => {
+    if (!user || questTrails[goalId]) return;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/plans/trail/${goalId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const trail = await res.json();
+        setQuestTrails(prev => ({ ...prev, [goalId]: trail }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch quest trail:", err);
+    }
+  };
 
   type Reminder = { id: string; goalId: string; tone: 'risk' | 'urgent' | 'nudge'; text: string };
 
@@ -269,6 +262,7 @@ export function Goals() {
   }, [user]);
 
   const syncQuestProgress = async (goalId: string, taskList: Task[]) => {
+    if (!user) return;
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
     const tasks = taskList.filter(t => t.goalId === goalId);
@@ -294,7 +288,7 @@ export function Goals() {
 
     try {
       const token = await user?.getIdToken();
-      await fetch(`/api/goals/${goalId}`, {
+      const res = await fetch(`/api/goals/${goalId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -302,10 +296,12 @@ export function Goals() {
         },
         body: JSON.stringify({ progress, completed: isCompleted })
       });
-      if (shouldShowCompletion) {
-        showBeautifulCompletion(goal.title, 'quest');
+      if (res.ok) {
+        if (shouldShowCompletion) {
+          showBeautifulCompletion(goal.title, 'quest');
+        }
+        fetchGoalsAndTasks();
       }
-      fetchGoalsAndTasks();
     } catch (error) {
       console.error('Failed to sync quest progress', error);
     }
@@ -346,7 +342,7 @@ export function Goals() {
       const goalRef = await resGoal.json();
 
       if (type === 'quest') {
-        const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+        const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
         const res = await fetch('/api/generate-quest-steps', {
           method: 'POST',
           headers: {
@@ -416,6 +412,7 @@ export function Goals() {
   };
 
   const updateProgress = async (goalId: string, increment: boolean) => {
+    if (!user) return;
     const goal = goals.find(g => g.id === goalId);
     if (!goal || goal.type !== 'habit') return;
 
@@ -423,7 +420,7 @@ export function Goals() {
       const token = await user?.getIdToken();
       let newStreak = goal.streak || 0;
       let newProgress = goal.progress;
-      const today = new Date().toISOString().split('T')[0];
+      const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
       if (increment) {
         newProgress += 1;
@@ -455,6 +452,7 @@ export function Goals() {
   };
 
   const deleteGoal = async (goal: Goal) => {
+    if (!user) return;
     try {
       const token = await user?.getIdToken();
       const deletedTasks = linkedTasks.filter(t => t.goalId === goal.id);
@@ -512,6 +510,7 @@ export function Goals() {
   };
 
   const toggleLinkedTask = async (taskId: string, currentStatus: string) => {
+    if (!user) return;
     try {
       const token = await user?.getIdToken();
       await fetch(`/api/tasks/${taskId}`, {
@@ -537,6 +536,7 @@ export function Goals() {
   };
 
   const handleSaveTaskTitle = async (taskId: string) => {
+    if (!user) return;
     if (!editingTaskText.trim()) {
       setEditingTaskId(null);
       return;
@@ -945,7 +945,7 @@ export function Goals() {
                     <p className="text-xs text-[#8b949e] line-clamp-2">{goal.description}</p>
                   )}
                 </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => { e.stopPropagation(); deleteGoal(goal); }}>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => { e.stopPropagation(); deleteGoal(goal); }}>
                   <Trash2 className="w-3 h-3" />
                 </Button>
               </div>
@@ -1100,6 +1100,38 @@ export function Goals() {
                         {isGeneratingTasks && <Sparkles className="w-3 h-3 text-cyan-400 animate-pulse shrink-0" />}
                         {isGeneratingTasks ? 'AI is planning your quest...' : 'No tasks generated yet.'}
                       </p>
+                    )}
+
+                    {questTrails[goal.id] && questTrails[goal.id].length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-[#21262d]/50">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                          className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Route className="w-3.5 h-3.5" /> Quest Trail <span className="text-cyan-400 font-mono">({questTrails[goal.id].length} sessions)</span>
+                          </span>
+                        </button>
+                        <div className="mt-2 space-y-0 relative">
+                          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-cyan-500/40 via-indigo-500/30 to-transparent"></div>
+                          {questTrails[goal.id].map((entry: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-3 py-2 pl-0">
+                              <div className="w-[15px] h-[15px] rounded-full bg-[#161b22] border-2 border-cyan-500/60 flex items-center justify-center shrink-0 mt-0.5 z-10">
+                                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
+                                <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                                  {new Date(entry.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
 
                     <div className="mt-3 pt-3 border-t border-[#21262d]/50">

@@ -8,17 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame, MessageSquare, Clock } from 'lucide-react';
 import { showSuccess, showError, showInfo } from '../lib/toastTheme';
 import { CircularProgress } from '../components/CircularProgress';
-
-const safeJson = async (res: Response) => {
-  const contentType = res.headers.get('content-type');
-  if (contentType && contentType.includes('text/html')) {
-    throw new Error('Server returned HTML (this can happen during authentication redirects or server startup). Please refresh or try again in a moment.');
-  }
-  if (!contentType || !contentType.includes('application/json')) {
-    throw new Error(`Expected JSON response but received ${contentType || 'none'}`);
-  }
-  return res.json();
-};
+import { ActiveSessionCard } from '../components/ActiveSessionCard';
+import { safeJson } from '../lib/utils';
+import { TaskSelectionModal } from '../components/TaskSelectionModal';
+import { useAIJobs } from '../lib/AIJobContext';
 
 export function Dashboard() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -30,8 +23,14 @@ export function Dashboard() {
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeBriefTab, setActiveBriefTab] = useState<'brief' | 'insight'>('brief');
+  const [showSelectionModal, setShowSelectionModal] = useState(false);
+  const { startJob, endJob, isJobRunning } = useAIJobs();
+  const isJobActive = isJobRunning('generate-plan');
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
 
   const fetchDashboardData = async () => {
     if (!user) return;
@@ -112,16 +111,18 @@ export function Dashboard() {
   // progress. It intentionally does NOT regenerate the day from scratch — that is a
   // different, more destructive action available from the Timetable page's "Force
   // Replan" button (POST /api/autonomous-pipeline). Keep these two contracts distinct.
-  const scheduleTasksIntoTimetable = async () => {
-    if (tasks.length === 0) {
+  const scheduleTasksIntoTimetable = async (selectedTasks: Task[]) => {
+    if (!user) return;
+    if (selectedTasks.length === 0) {
       showInfo("No pending tasks to plan.");
       return;
     }
-    
+
     setIsGenerating(true);
+    startJob('generate-plan', 'Scheduling tasks into timetable');
     try {
       const token = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: { 
@@ -130,7 +131,7 @@ export function Dashboard() {
         },
         body: JSON.stringify({ 
           date: today,
-          tasks: tasks,
+          tasks: selectedTasks,
           model: selectedModel
         })
       });
@@ -147,6 +148,7 @@ export function Dashboard() {
        showError(error.message || "Failed to generate plan");
     } finally {
       setIsGenerating(false);
+      endJob('generate-plan');
     }
   };
 
@@ -182,7 +184,7 @@ export function Dashboard() {
               </div>
               <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
                 <span className="text-xs font-bold text-indigo-400">LVL {user.gamification.level}</span>
-                <CircularProgress progress={(user.gamification.xp / (user.gamification.level * 200)) * 100} size={24} strokeWidth={3} color="stroke-indigo-500">
+                <CircularProgress progress={user.gamification.level > 0 ? Math.min(100, (user.gamification.xp / (user.gamification.level * 200)) * 100) : 0} size={24} strokeWidth={3} color="stroke-indigo-500">
                   <span className="text-[8px] font-bold text-indigo-400">XP</span>
                 </CircularProgress>
               </div>
@@ -288,12 +290,14 @@ export function Dashboard() {
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 flex-grow auto-rows-min">
-        {/* Main Plan Area - large block */}
+        {/* Main Plan Area - large block, plus the Active Session card stacked above it */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-8 lg:row-span-3 flex flex-col gap-4 h-full">
+        <ActiveSessionCard plan={plan} />
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="col-span-1 md:col-span-2 lg:col-span-8 lg:row-span-3 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group min-h-[400px] transition-all hover:border-[#30363d] shadow-lg"
+          className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group flex-1 min-h-[280px] transition-all hover:border-[#30363d] shadow-lg"
         >
           <div className="relative z-10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-6">
@@ -301,8 +305,8 @@ export function Dashboard() {
                 <span className="px-2 py-1 bg-indigo-500/20 text-indigo-400 text-[10px] font-bold rounded uppercase tracking-wider">Active Execution</span>
               </div>
               {tasks.length > 0 && (
-                <Button onClick={scheduleTasksIntoTimetable} disabled={isGenerating || loadingTasks} size="sm" className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg">
-                  {isGenerating ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <Sparkles className="w-3 h-3 mr-2" />}
+                <Button onClick={() => setShowSelectionModal(true)} disabled={isGenerating || isJobActive || loadingTasks} size="sm" className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg">
+                  {(isGenerating || isJobActive) ? <Loader2 className="w-3 h-3 mr-2 animate-spin" /> : <Sparkles className="w-3 h-3 mr-2" />}
                   {plan ? "Assign Tasks to Timetable" : "Auto-Schedule"}
                 </Button>
               )}
@@ -312,7 +316,7 @@ export function Dashboard() {
             <p className="text-slate-400 max-w-md mb-8">Your AI-optimized schedule based on deadlines and priorities.</p>
 
             <div className="flex-grow">
-              {!plan && !isGenerating && (
+              {!plan && !isGenerating && !isJobActive && (
                 tasks.length === 0 ? (
                   <div className="text-center py-12 px-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl">
                     <span className="inline-block p-3 rounded-full bg-indigo-500/10 text-indigo-400 mb-3">
@@ -327,13 +331,13 @@ export function Dashboard() {
                   </div>
                 )
               )}
-              {isGenerating && (
+              {(isGenerating || isJobActive) && (
                 <div className="text-center py-12 text-slate-500 flex flex-col items-center">
                   <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-500" />
                   <p className="text-sm">Synthesizing your execution plan...</p>
                 </div>
               )}
-              {plan && !isGenerating && (
+              {plan && !isGenerating && !isJobActive && (
                 <div className="space-y-3">
                   {(() => {
                     // Filter out sessions that do not correspond to any of our current tasks (pending or completed)
@@ -406,7 +410,7 @@ export function Dashboard() {
                           </div>
                           <div className="flex-grow">
                             <h4 className={`font-medium text-sm ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
-                              {session.taskTitle}
+                              {session.sessionLabel || session.taskTitle}
                             </h4>
                             {isCompleted ? (
                               <span className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1 font-bold uppercase tracking-widest">
@@ -433,7 +437,7 @@ export function Dashboard() {
             </div>
           </div>
         </motion.div>
-
+        </div>
 
         <motion.div 
           initial={{ opacity: 0, x: 20 }}
@@ -456,9 +460,13 @@ export function Dashboard() {
                    {tasks.slice(0, 4).map(t => (
                      <div key={t.id} className="flex items-center justify-between p-3 bg-white/10 rounded-2xl rounded-tr-none border border-indigo-400/30">
                        <span className="text-sm text-indigo-50 truncate pr-2">{t.title}</span>
-                       <span className={`text-[10px] font-bold uppercase tracking-widest ${t.priority === 'high' ? 'text-red-300' : 'text-indigo-300'}`}>
-                         {t.priority}
-                       </span>
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider border ${
+                          t.priority === 'high' ? 'bg-red-500/15 text-red-400 border-red-500/25' :
+                          t.priority === 'medium' ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' :
+                          'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
+                        }`}>
+                          {t.priority}
+                        </span>
                      </div>
                    ))}
                  </div>
@@ -582,6 +590,19 @@ export function Dashboard() {
         </motion.div>
       </div>
 
+      {/* Task Selection Modal */}
+      <TaskSelectionModal
+        open={showSelectionModal}
+        onOpenChange={setShowSelectionModal}
+        tasks={tasks}
+        goals={goals}
+        onConfirm={(selected) => {
+          setShowSelectionModal(false);
+          scheduleTasksIntoTimetable(selected);
+        }}
+        isGenerating={isGenerating || isJobActive}
+      />
+
       {/* Floating Chat Button leading to Mission Control Chat */}
       <motion.div 
         className="fixed bottom-6 right-6 z-50"
@@ -593,13 +614,13 @@ export function Dashboard() {
       >
         <Link 
           to="/chat" 
-          className="group flex items-center gap-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-5 py-3.5 rounded-full shadow-[0_0_20px_rgba(99,102,241,0.4)] hover:shadow-[0_0_30px_rgba(99,102,241,0.6)] border border-indigo-400/30 transition-all duration-300"
+          className="group flex items-center gap-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-4 py-3 sm:px-5 sm:py-3.5 rounded-full shadow-[0_0_20px_rgba(99,102,241,0.4)] hover:shadow-[0_0_30px_rgba(99,102,241,0.6)] border border-indigo-400/30 transition-all duration-300"
         >
           <div className="relative flex items-center justify-center">
             <span className="absolute inline-flex h-2.5 w-2.5 rounded-full bg-cyan-400 opacity-75 animate-ping"></span>
             <MessageSquare className="w-5 h-5 text-white relative z-10" />
           </div>
-          <span className="text-xs uppercase tracking-wider font-bold font-sans">Mission Control Chat</span>
+          <span className="text-xs uppercase tracking-wider font-bold font-sans hidden sm:inline">Mission Control Chat</span>
         </Link>
       </motion.div>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { AIJobProvider } from './lib/AIJobContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/button';
 import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud, CheckCircle2, Calendar } from 'lucide-react';
@@ -392,8 +393,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
+        <AIJobProvider>
+          <BrowserRouter>
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
@@ -460,6 +462,7 @@ export default function App() {
           <Analytics />
           <SpeedInsights />
         </BrowserRouter>
+        </AIJobProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

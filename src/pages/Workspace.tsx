@@ -89,7 +89,7 @@ export function Workspace() {
       }
       
       const idToken = await user?.getIdToken();
-      const selectedModel = localStorage.getItem('default_gemini_model') || 'models/gemini-3.1-flash-lite';
+      const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
       const res = await fetch('/api/autonomous-pipeline', {
         method: 'POST',
         headers: { 
