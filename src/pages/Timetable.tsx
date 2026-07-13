@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Loader2, Calendar as CalendarIcon, Sparkles, Clock, CheckCircle2, Printer, Download, FileText, Pencil, Plus, Trash2, GripVertical, X, PlayCircle, AlertTriangle, Info, RefreshCw, CalendarCheck, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { createCalendarEvent } from '../lib/workspace';
+import { SessionToastCard, showSuccess, showError, showInfo, showWarning, showInfoToast } from '../lib/toastTheme';
 
 const safeJson = async (res: Response) => {
   const contentType = res.headers.get('content-type');
@@ -18,128 +19,9 @@ const safeJson = async (res: Response) => {
   return res.json();
 };
 
-// Shared visual language for EVERY popup banner on this page. This is the original dark-glass
-// card style used for "Session already in progress": a soft gradient wash over a near-black
-// panel, a glowing icon halo, and a colored border — reused here for every toast (info, success,
-// error) instead of each action picking its own one-off look.
-type ToastAccent = 'amber' | 'cyan' | 'emerald' | 'indigo' | 'red';
-
-const TOAST_THEME: Record<ToastAccent, {
-  panel: string;
-  halo: string;
-  iconRing: string;
-  iconText: string;
-  primaryBtn: string;
-}> = {
-  amber: {
-    panel: 'from-amber-500/[0.08] via-[#12161d] to-[#0a0d12] border-amber-500/25',
-    halo: 'from-amber-400/40 to-amber-500/0',
-    iconRing: 'border-amber-400/40 bg-amber-500/15',
-    iconText: 'text-amber-300',
-    primaryBtn: 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25',
-  },
-  cyan: {
-    panel: 'from-cyan-500/[0.08] via-[#12161d] to-[#0a0d12] border-cyan-500/25',
-    halo: 'from-cyan-400/40 to-cyan-500/0',
-    iconRing: 'border-cyan-400/40 bg-cyan-500/15',
-    iconText: 'text-cyan-300',
-    primaryBtn: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25',
-  },
-  emerald: {
-    panel: 'from-emerald-500/[0.08] via-[#12161d] to-[#0a0d12] border-emerald-500/25',
-    halo: 'from-emerald-400/40 to-emerald-500/0',
-    iconRing: 'border-emerald-400/40 bg-emerald-500/15',
-    iconText: 'text-emerald-300',
-    primaryBtn: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25',
-  },
-  indigo: {
-    panel: 'from-indigo-500/[0.08] via-[#12161d] to-[#0a0d12] border-indigo-500/25',
-    halo: 'from-indigo-400/40 to-indigo-500/0',
-    iconRing: 'border-indigo-400/40 bg-indigo-500/15',
-    iconText: 'text-indigo-300',
-    primaryBtn: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25',
-  },
-  red: {
-    panel: 'from-red-500/[0.08] via-[#12161d] to-[#0a0d12] border-red-500/25',
-    halo: 'from-red-400/40 to-red-500/0',
-    iconRing: 'border-red-400/40 bg-red-500/15',
-    iconText: 'text-red-300',
-    primaryBtn: 'bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25',
-  },
-};
-
-const SessionToastCard = ({
-  accent,
-  icon,
-  title,
-  message,
-  meta,
-  primaryLabel,
-  onPrimary,
-  onDismiss,
-}: {
-  accent: ToastAccent;
-  icon: ReactNode;
-  title: string;
-  message: ReactNode;
-  meta?: ReactNode;
-  primaryLabel?: string;
-  onPrimary?: () => void;
-  onDismiss: () => void;
-}) => {
-  const theme = TOAST_THEME[accent];
-  return (
-    <div className={`relative flex items-start gap-3 w-full max-w-sm bg-gradient-to-br ${theme.panel} border rounded-2xl p-4 shadow-[0_12px_36px_rgba(0,0,0,0.55)] backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-      {/* Ambient glow orb — the one bit of color life instead of a flat dark panel */}
-      <div className={`pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-gradient-to-br ${theme.halo} blur-2xl opacity-70`} />
-
-      <div className={`relative shrink-0 w-10 h-10 rounded-xl border ${theme.iconRing} flex items-center justify-center ${theme.iconText}`}>
-        {icon}
-      </div>
-      <div className="relative flex-1 min-w-0">
-        <p className="text-sm font-bold text-white leading-tight">{title}</p>
-        <p className="text-xs text-slate-400 mt-1 leading-relaxed">{message}</p>
-        {meta && (
-          <div className="flex items-center gap-2 mt-2.5 text-[11px] text-slate-500 font-mono">
-            {meta}
-          </div>
-        )}
-        <div className="flex items-center gap-2 mt-3">
-          {primaryLabel && onPrimary && (
-            <button
-              onClick={onPrimary}
-              className={`text-[11px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${theme.primaryBtn}`}
-            >
-              {primaryLabel}
-            </button>
-          )}
-          <button
-            onClick={onDismiss}
-            className={`text-[11px] font-bold uppercase tracking-widest py-1.5 rounded-lg text-slate-500 hover:text-white transition-colors cursor-pointer ${
-              primaryLabel && onPrimary ? 'px-3' : '-ml-3 px-3'
-            }`}
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Small helpers so every plain toast.success()/toast.error() on this page is rendered through
-// the same SessionToastCard shell instead of sonner's default plain banner.
-const showInfoToast = (accent: ToastAccent, icon: ReactNode, title: string, message: ReactNode) => {
-  toast.custom((t) => (
-    <SessionToastCard
-      accent={accent}
-      icon={icon}
-      title={title}
-      message={message}
-      onDismiss={() => toast.dismiss(t)}
-    />
-  ));
-};
+// Every plain toast (info/success/error/warning) on this page renders through the shared
+// SessionToastCard shell from ../lib/toastTheme — the same dark-glass style originally
+// built for the "Session already in progress" banner below.
 
 const DAY_PRESETS = [
   { 
@@ -593,7 +475,7 @@ export function Timetable() {
   // already requested there) so no separate Google connection step is needed.
   const handleSyncCalendar = async () => {
     if (!plan || !plan.sessions || plan.sessions.length === 0) {
-      toast.error("No scheduled sessions to sync.");
+      showWarning("No scheduled sessions to sync.");
       return;
     }
 
@@ -718,7 +600,7 @@ export function Timetable() {
           accent="amber"
           icon={<PlayCircle className="w-5 h-5" />}
           title="Session already in progress"
-          message={<><span className="text-amber-300 font-semibold">"{activeTitle}"</span> is still running. Finish or stop it before starting another.</>}
+          message={<><span className="text-amber-300 font-semibold">"{activeTitle}"</span> is still running. Finish the current session before starting another.</>}
           primaryLabel="Jump to session"
           onPrimary={() => { jumpToSession(activeSessionIdx); toast.dismiss(t); }}
           onDismiss={() => toast.dismiss(t)}
@@ -760,7 +642,7 @@ export function Timetable() {
 
   const exportToICS = () => {
     if (!plan || plan.sessions.length === 0) {
-      toast.error("No scheduled sessions to export.");
+      showWarning("No scheduled sessions to export.");
       return;
     }
     const visibleSessions = plan.sessions;
@@ -795,12 +677,12 @@ export function Timetable() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Calendar file (.ics) downloaded! You can import this into Google Calendar or Apple Calendar.");
+    showSuccess("Calendar file (.ics) downloaded! You can import this into Google Calendar or Apple Calendar.");
   };
 
   const exportToDoc = () => {
     if (!plan || plan.sessions.length === 0) {
-      toast.error("No scheduled sessions to export.");
+      showWarning("No scheduled sessions to export.");
       return;
     }
     const visibleSessions = plan.sessions;
@@ -872,19 +754,19 @@ export function Timetable() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Word Document (.doc) downloaded! Perfect for offline reference or import into Google Docs.");
+    showSuccess("Word Document (.doc) downloaded! Perfect for offline reference or import into Google Docs.");
   };
 
   const printTimetable = () => {
     if (!plan || plan.sessions.length === 0) {
-      toast.error("No scheduled sessions to print.");
+      showWarning("No scheduled sessions to print.");
       return;
     }
     const visibleSessions = plan.sessions;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      toast.error("Pop-up blocker is preventing the printable view from opening. Please allow popups for this site.");
+      showError("Pop-up blocker is preventing the printable view from opening. Please allow popups for this site.");
       return;
     }
 

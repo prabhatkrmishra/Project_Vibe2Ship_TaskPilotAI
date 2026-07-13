@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { toast } from 'sonner';
+import { showSuccess, showError } from '../lib/toastTheme';
 import { 
   User as UserIcon, 
   Mail, 
@@ -85,7 +85,7 @@ export function Profile() {
   const handleDefaultModelChange = (value: string) => {
     setDefaultModel(value);
     localStorage.setItem('default_gemini_model', value);
-    toast.success(`Default AI Model updated to: ${value.split('/').pop()}`);
+    showSuccess(`Default AI Model updated to: ${value.split('/').pop()}`);
     setIsModelModalOpen(false);
   };
 
@@ -106,7 +106,7 @@ export function Profile() {
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error('Name cannot be empty');
+      showError('Name cannot be empty');
       return;
     }
 
@@ -128,9 +128,9 @@ export function Profile() {
       }
 
       updateUser({ name: data.name, address: data.address });
-      toast.success('Profile updated successfully!');
+      showSuccess('Profile updated successfully!');
     } catch (err: any) {
-      toast.error(err.message || 'An error occurred while updating profile');
+      showError(err.message || 'An error occurred while updating profile');
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -139,17 +139,17 @@ export function Profile() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || !retypeNewPassword) {
-      toast.error('Please fill in all password fields');
+      showError('Please fill in all password fields');
       return;
     }
 
     if (newPassword !== retypeNewPassword) {
-      toast.error('New passwords do not match');
+      showError('New passwords do not match');
       return;
     }
 
     if (newPassword.length < 6) {
-      toast.error('New password must be at least 6 characters long');
+      showError('New password must be at least 6 characters long');
       return;
     }
 
@@ -170,12 +170,12 @@ export function Profile() {
         throw new Error(data.error || 'Failed to change password');
       }
 
-      toast.success('Password changed successfully!');
+      showSuccess('Password changed successfully!');
       setCurrentPassword('');
       setNewPassword('');
       setRetypeNewPassword('');
     } catch (err: any) {
-      toast.error(err.message || 'An error occurred while changing password');
+      showError(err.message || 'An error occurred while changing password');
     } finally {
       setIsChangingPassword(false);
     }
@@ -273,10 +273,10 @@ export function Profile() {
                 onClick={async () => {
                   try {
                     await logout();
-                    toast.success("Logged out successfully");
+                    showSuccess("Logged out successfully");
                     navigate("/login");
                   } catch (err: any) {
-                    toast.error("Failed to log out");
+                    showError("Failed to log out");
                   }
                 }}
                 className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-rose-600/10 hover:bg-rose-600 border border-rose-500/20 hover:border-rose-500 text-rose-400 hover:text-white font-medium text-sm transition-all"
@@ -616,9 +616,9 @@ export function Profile() {
                       if (!res.ok) throw new Error((await res.json()).error);
                       const data = await res.json();
                       updateUser({ gamification: data.gamification });
-                      toast.success(`Unlocked ${personality.name}!`);
+                      showSuccess(`Unlocked ${personality.name}!`);
                     } catch (err: any) {
-                      toast.error(err.message || 'Failed to unlock');
+                      showError(err.message || 'Failed to unlock');
                     }
                   };
 
@@ -633,9 +633,9 @@ export function Profile() {
                       if (!res.ok) throw new Error((await res.json()).error);
                       const data = await res.json();
                       updateUser({ gamification: data.gamification });
-                      toast.success(`Active personality changed to ${personality.name}!`);
+                      showSuccess(`Active personality changed to ${personality.name}!`);
                     } catch (err: any) {
-                      toast.error(err.message || 'Failed to set active personality');
+                      showError(err.message || 'Failed to set active personality');
                     }
                   };
 

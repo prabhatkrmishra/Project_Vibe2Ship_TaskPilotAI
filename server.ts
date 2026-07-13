@@ -102,6 +102,11 @@ async function generateContentWithRetry(params: {
             continue;
           }
         }
+        // Quota exhausted on both the requested model and the fallback model. Tag the error
+        // so route handlers can surface a "switch your AI model" warning to the user instead
+        // of a silent/generic failure.
+        err.isQuotaExceeded = true;
+        err.quotaModel = params.model;
       }
       throw err;
     }
@@ -2319,7 +2324,12 @@ async function startServer() {
         // Safe failover
       }
 
-      res.json({ text: fallbackText, planUpdated: false });
+      res.json({
+        text: fallbackText,
+        planUpdated: false,
+        quotaExceeded: !!err?.isQuotaExceeded,
+        quotaModel: err?.quotaModel,
+      });
     }
   });
 

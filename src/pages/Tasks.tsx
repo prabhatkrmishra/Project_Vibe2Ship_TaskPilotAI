@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { Plus, Clock, Rocket, CheckCircle2, Circle, CalendarIcon, Trash2, Sparkles, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { showSuccess, showError } from '../lib/toastTheme';
 
 export function Tasks() {
   const { user, refreshGamification } = useAuth();
@@ -229,7 +230,7 @@ export function Tasks() {
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !user || !date || !time) {
-      toast.error("Please fill in all required fields.");
+      showError("Please fill in all required fields.");
       return;
     }
     
@@ -314,7 +315,7 @@ export function Tasks() {
         }
       }
 
-      toast.success("Task analyzed and created successfully!");
+      showSuccess("Task analyzed and created successfully!");
       setIsDialogOpen(false);
       setTitle('');
       setDescription('');
@@ -328,7 +329,7 @@ export function Tasks() {
       triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, savedTask]);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to create task");
+      showError("Failed to create task");
     } finally {
       setIsAnalyzing(false);
     }
@@ -377,7 +378,7 @@ export function Tasks() {
       });
       if (!res.ok) throw new Error();
 
-      toast.success("Task deleted", {
+      showSuccess("Task deleted", {
         action: {
           label: "Undo",
           onClick: async () => {
@@ -390,10 +391,10 @@ export function Tasks() {
                 },
                 body: JSON.stringify(task)
               });
-              toast.success("Task restored");
+              showSuccess("Task restored");
               fetchTasksAndGoals();
             } catch (error) {
-              toast.error("Failed to restore task");
+              showError("Failed to restore task");
             }
           }
         },
@@ -401,7 +402,7 @@ export function Tasks() {
       });
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to delete task");
+      showError("Failed to delete task");
     }
   };
 
@@ -449,18 +450,18 @@ export function Tasks() {
         });
 
         if (data.isFallback) {
-          toast.success(`Generated ${newSubtasks.length} structured subtasks for you!`);
+          showSuccess(`Generated ${newSubtasks.length} structured subtasks for you!`);
         } else {
-          toast.success(`Generated ${newSubtasks.length} subtasks with AI!`);
+          showSuccess(`Generated ${newSubtasks.length} subtasks with AI!`);
         }
         setExpandedTasks(prev => ({ ...prev, [task.id]: true }));
         fetchTasksAndGoals();
       } else {
-        toast.error("Could not generate subtasks. Please try again.");
+        showError("Could not generate subtasks. Please try again.");
       }
     } catch (error) {
       console.error(error);
-      toast.error("Failed to generate subtasks. Quota limit may have been reached.");
+      showError("Failed to generate subtasks. Quota limit may have been reached.");
     } finally {
       setIsGeneratingSubtasks(prev => ({ ...prev, [task.id]: false }));
     }
@@ -488,10 +489,10 @@ export function Tasks() {
           status: 'in_progress'
         })
       });
-      toast.success("Subtask added!");
+      showSuccess("Subtask added!");
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to add subtask");
+      showError("Failed to add subtask");
     }
   };
 
@@ -524,10 +525,10 @@ export function Tasks() {
         },
         body: JSON.stringify({ subtasks: updatedSubtasks })
       });
-      toast.success("Subtask updated!");
+      showSuccess("Subtask updated!");
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to update subtask");
+      showError("Failed to update subtask");
     } finally {
       setEditingSubtask(null);
     }
@@ -550,10 +551,10 @@ export function Tasks() {
         },
         body: JSON.stringify({ subtasks: updatedSubtasks })
       });
-      toast.success("Subtask deleted!");
+      showSuccess("Subtask deleted!");
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to delete subtask");
+      showError("Failed to delete subtask");
     }
   };
 
@@ -578,10 +579,10 @@ export function Tasks() {
         },
         body: JSON.stringify({ title: editingTaskText.trim() })
       });
-      toast.success("Task updated!");
+      showSuccess("Task updated!");
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to update task");
+      showError("Failed to update task");
     } finally {
       setEditingTaskId(null);
     }
@@ -612,7 +613,7 @@ export function Tasks() {
       });
 
       if (isAllCompleted) {
-        toast.success("Task completed!");
+        showSuccess("Task completed!");
         triggerAutonomousPipeline("Task Completed", `Completed task: ${task.title}`, tasksList.filter(t => t.id !== taskId));
       } else {
         const subtaskTitle = task.subtasks.find(s => s.id === subtaskId)?.title;
@@ -640,13 +641,13 @@ export function Tasks() {
             })
           });
           if (!alreadyLoggedToday) {
-            toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
+            showSuccess(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
           }
         }
       }
       fetchTasksAndGoals();
     } catch (error) {
-       toast.error("Failed to update subtask");
+       showError("Failed to update subtask");
     }
   };
 
@@ -671,18 +672,18 @@ export function Tasks() {
       const data = await res.json();
 
       if (isNowCompleted) {
-        toast.success("Task completed!");
+        showSuccess("Task completed!");
         if (data.gamificationUpdates) {
           const { xpEarned, newBadges, levelUp } = data.gamificationUpdates;
           if (xpEarned > 0) {
-            toast.success(`+${xpEarned} XP Earned!`, { duration: 3000, icon: '🌟' });
+            showSuccess(`+${xpEarned} XP Earned!`, { duration: 3000 });
           }
           if (levelUp) {
-            toast.success(`Level Up! You reached Level ${levelUp}!`, { duration: 6000, icon: '📈' });
+            showSuccess(`Level Up! You reached Level ${levelUp}!`, { duration: 6000 });
           }
           if (newBadges && newBadges.length > 0) {
             newBadges.forEach((bId: string) => {
-              toast.success(`Achievement Unlocked! ${bId}`, { duration: 6000, icon: '🏆' });
+              showSuccess(`Achievement Unlocked! ${bId}`, { duration: 6000 });
             });
           }
           if (refreshGamification) refreshGamification();
@@ -690,7 +691,7 @@ export function Tasks() {
         
         triggerAutonomousPipeline("Task Completed", `Completed task: ${task.title}`, tasks.filter(t => t.id !== task.id));
       } else {
-        toast.success("Task marked active");
+        showSuccess("Task marked active");
         triggerAutonomousPipeline("Task Reactivated", `Reactivated task: ${task.title}`, [...tasks, { ...task, status: 'pending' }]);
       }
 
@@ -715,13 +716,13 @@ export function Tasks() {
             })
           });
           if (!alreadyLoggedToday) {
-            toast.success(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
+            showSuccess(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
           }
         }
       }
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to update task status");
+      showError("Failed to update task status");
     }
   };
 
@@ -739,10 +740,10 @@ export function Tasks() {
         },
         body: JSON.stringify({ deadline: newDeadline.toISOString() })
       });
-      toast.success("Deadline automatically rescued (+1 Day)!");
+      showSuccess("Deadline automatically rescued (+1 Day)!");
       fetchTasksAndGoals();
     } catch (error) {
-      toast.error("Failed to rescue deadline");
+      showError("Failed to rescue deadline");
     }
   };
 
@@ -783,7 +784,7 @@ export function Tasks() {
                     className="bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white"
                     onClick={() => {
                       if (!('webkitSpeechRecognition' in window)) {
-                        toast.error("Speech recognition is not supported in this browser.");
+                        showError("Speech recognition is not supported in this browser.");
                         return;
                       }
                       const recognition = new (window as any).webkitSpeechRecognition();
@@ -791,9 +792,9 @@ export function Tasks() {
                       recognition.onerror = (err: any) => {
                         console.error('Speech recognition error:', err.error);
                         if (err.error === 'network') {
-                          toast.error("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
+                          showError("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
                         } else {
-                          toast.error(`Speech recognition error: ${err.error}`);
+                          showError(`Speech recognition error: ${err.error}`);
                         }
                       };
                       recognition.start();

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { showSuccess, showError } from './toastTheme';
 
 export interface CustomUser {
   uid: string;
@@ -119,9 +119,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (taskpilotToken && googleUser) {
           localStorage.setItem('taskpilot_jwt', taskpilotToken);
           setUser(makeUserObject(googleUser, taskpilotToken));
-          toast.success("Successfully logged in with Google!");
+          showSuccess("Successfully logged in with Google!");
         } else {
-          toast.success("Workspace access authorized.");
+          showSuccess("Workspace access authorized.");
         }
       }
     };
@@ -136,7 +136,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { googleClientId } = await res.json();
 
       if (!googleClientId) {
-        toast.error("Google Client ID is not configured on the server.");
+        showError("Google Client ID is not configured on the server.");
         return null;
       }
 
@@ -155,7 +155,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           ux_mode: "popup",
           callback: async (response: any) => {
             if (response.error) {
-              toast.error("Google Sign-In failed or was cancelled.");
+              showError("Google Sign-In failed or was cancelled.");
               resolve(null);
               return;
             }
@@ -182,13 +182,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 if (taskpilotToken && googleUser) {
                   localStorage.setItem("taskpilot_jwt", taskpilotToken);
                   setUser(makeUserObject(googleUser, taskpilotToken));
-                  toast.success("Successfully logged in with Google!");
+                  showSuccess("Successfully logged in with Google!");
                 } else {
-                  toast.success("Workspace access authorized.");
+                  showSuccess("Workspace access authorized.");
                 }
                 resolve(accessToken);
               } catch (err: any) {
-                toast.error("Failed to exchange code: " + err.message);
+                showError("Failed to exchange code: " + err.message);
                 resolve(null);
               }
             } else {
@@ -200,7 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         client.requestCode();
       });
     } catch (error: any) {
-      toast.error("Failed to start Google Sign-In.");
+      showError("Failed to start Google Sign-In.");
       console.warn("Login start failed:", error);
       return null;
     }
@@ -222,7 +222,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       localStorage.setItem('taskpilot_jwt', data.token);
       setUser(makeUserObject(data.user, data.token));
-      toast.success("Successfully logged in!");
+      showSuccess("Successfully logged in!");
     } catch (error: any) {
       throw error;
     } finally {
@@ -246,7 +246,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       localStorage.setItem('taskpilot_jwt', data.token);
       setUser(makeUserObject(data.user, data.token));
-      toast.success("Account created successfully!");
+      showSuccess("Account created successfully!");
     } catch (error: any) {
       throw error;
     } finally {
@@ -269,9 +269,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       localStorage.setItem('taskpilot_jwt', data.token);
       setUser(makeUserObject(data.user, data.token));
-      toast.success("Welcome! Logged in as Guest.");
+      showSuccess("Welcome! Logged in as Guest.");
     } catch (error: any) {
-      toast.error(error.message || "Failed to sign in as guest.");
+      showError(error.message || "Failed to sign in as guest.");
     } finally {
       setLoading(false);
     }
@@ -292,7 +292,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem('workspace_access_token');
       cachedAccessToken = null;
       setUser(null);
-      toast.success("Logged out successfully");
+      showSuccess("Logged out successfully");
     } catch (error) {
       console.warn("Logout failed:", error);
     }

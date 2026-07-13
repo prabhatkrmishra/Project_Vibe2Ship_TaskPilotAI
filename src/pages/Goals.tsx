@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane, Target } from 'lucide-react';
 import { toast } from 'sonner';
+import { showSuccess, showError } from '../lib/toastTheme';
 
 export function Goals() {
   const { user } = useAuth();
@@ -389,15 +390,15 @@ export function Goals() {
                 })
               });
             }
-            toast.success(`Quest created with ${generatedTasks.length} scheduled task(s)!`);
+            showSuccess(`Quest created with ${generatedTasks.length} scheduled task(s)!`);
           } else {
-            toast.error("AI couldn't generate tasks. You can add them manually from Mission Board.");
+            showError("AI couldn't generate tasks. You can add them manually from Mission Board.");
           }
         } else {
-          toast.error("Failed to generate tasks with AI. You can add them manually from Mission Board.");
+          showError("Failed to generate tasks with AI. You can add them manually from Mission Board.");
         }
       } else {
-        toast.success("Habit created successfully!");
+        showSuccess("Habit created successfully!");
       }
 
       setIsDialogOpen(false);
@@ -408,7 +409,7 @@ export function Goals() {
       fetchGoalsAndTasks();
     } catch (error) {
       console.error(error);
-      toast.error("Failed to create goal");
+      showError("Failed to create goal");
     } finally {
       setIsCreating(false);
     }
@@ -446,10 +447,10 @@ export function Goals() {
         })
       });
 
-      toast.success(increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
+      showSuccess(increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
       fetchGoalsAndTasks();
     } catch (error) {
-      toast.error("Failed to update progress");
+      showError("Failed to update progress");
     }
   };
 
@@ -467,7 +468,7 @@ export function Goals() {
 
       const labelType = goal.type === 'quest' ? 'Quest' : 'Habit';
 
-      toast.success(`${labelType} deleted`, {
+      showSuccess(`${labelType} deleted`, {
         action: {
           label: "Undo",
           onClick: async () => {
@@ -494,10 +495,10 @@ export function Goals() {
                 }
               }
 
-              toast.success(`${labelType} restored`);
+              showSuccess(`${labelType} restored`);
               fetchGoalsAndTasks();
             } catch (e) {
-              toast.error(`Failed to restore ${labelType.toLowerCase()}`);
+              showError(`Failed to restore ${labelType.toLowerCase()}`);
             }
           }
         },
@@ -506,7 +507,7 @@ export function Goals() {
 
       fetchGoalsAndTasks();
     } catch (error) {
-      toast.error(`Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
+      showError(`Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
     }
   };
 
@@ -525,7 +526,7 @@ export function Goals() {
       });
       fetchGoalsAndTasks();
     } catch (error) {
-      toast.error("Failed to update task");
+      showError("Failed to update task");
     }
   };
 
@@ -552,10 +553,10 @@ export function Goals() {
           title: editingTaskText.trim()
         })
       });
-      toast.success("Task updated!");
+      showSuccess("Task updated!");
       fetchGoalsAndTasks();
     } catch (error) {
-      toast.error("Failed to update task");
+      showError("Failed to update task");
     } finally {
       setEditingTaskId(null);
     }
@@ -587,11 +588,11 @@ export function Goals() {
           createdAt: new Date().toISOString()
         })
       });
-      toast.success("Task added to Quest!");
+      showSuccess("Task added to Quest!");
       setNewManualTaskTitles(prev => ({ ...prev, [goalId]: '' }));
       fetchGoalsAndTasks();
     } catch (error) {
-      toast.error("Failed to add task");
+      showError("Failed to add task");
     }
   };
 
@@ -745,7 +746,7 @@ export function Goals() {
                       className="bg-slate-900 border-slate-800 text-slate-400 hover:text-white px-4 rounded-xl h-11"
                       onClick={() => {
                         if (!('webkitSpeechRecognition' in window)) {
-                          toast.error("Speech recognition is not supported in this browser.");
+                          showError("Speech recognition is not supported in this browser.");
                           return;
                         }
                         const recognition = new (window as any).webkitSpeechRecognition();
@@ -753,9 +754,9 @@ export function Goals() {
                         recognition.onerror = (err: any) => {
                           console.error('Speech recognition error:', err.error);
                           if (err.error === 'network') {
-                            toast.error("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
+                            showError("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
                           } else {
-                            toast.error(`Speech recognition error: ${err.error}`);
+                            showError(`Speech recognition error: ${err.error}`);
                           }
                         };
                         recognition.start();

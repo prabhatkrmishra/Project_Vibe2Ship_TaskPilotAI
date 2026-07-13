@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
+import { showSuccess, showError } from '../lib/toastTheme';
 
 export function Workspace() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -105,10 +106,10 @@ export function Workspace() {
       });
 
       toast.dismiss();
-      toast.success(`Calendar synced! ${pushedCount > 0 ? '(' + pushedCount + ' tasks pushed)' : ''}`);
+      showSuccess(`Calendar synced! ${pushedCount > 0 ? '(' + pushedCount + ' tasks pushed)' : ''}`);
     } catch (e: any) {
       toast.dismiss();
-      toast.error(e.message || "Failed to sync calendar.");
+      showError(e.message || "Failed to sync calendar.");
     }
   };
 
@@ -130,10 +131,10 @@ export function Workspace() {
       };
       await generateGoogleDocReport(token, reportData);
       toast.dismiss();
-      toast.success("Saved to Google Drive!");
+      showSuccess("Saved to Google Drive!");
     } catch (e) {
       toast.dismiss();
-      toast.error("Failed to generate report.");
+      showError("Failed to generate report.");
     }
   };
 
@@ -154,10 +155,10 @@ export function Workspace() {
       ];
       await createGoogleSheet(token, `TaskPilot AI Analytics - ${new Date().toLocaleDateString()}`, data);
       toast.dismiss();
-      toast.success("Spreadsheet created in Google Drive!");
+      showSuccess("Spreadsheet created in Google Drive!");
     } catch (e) {
       toast.dismiss();
-      toast.error("Failed to create spreadsheet.");
+      showError("Failed to create spreadsheet.");
     }
   };
 
@@ -179,10 +180,10 @@ export function Workspace() {
       };
       await generatePresentation(token, reportData);
       toast.dismiss();
-      toast.success("Slides created in Google Drive!");
+      showSuccess("Slides created in Google Drive!");
     } catch (e: any) {
       toast.dismiss();
-      toast.error(e.message || "Failed to create presentation.");
+      showError(e.message || "Failed to create presentation.");
     }
   };
 

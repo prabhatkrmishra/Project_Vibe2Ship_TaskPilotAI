@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Send, Bot, Mic, Loader2, Sparkles, Plus, Trash2, History, Edit2, Check, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { toast } from 'sonner';
+import { showSuccess, showError, showWarning } from '../lib/toastTheme';
 import { Task } from '../types';
 
 interface Message {
@@ -106,7 +106,7 @@ export function Chat() {
     }
 
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      toast.error("Speech recognition is not supported in this browser.");
+      showError("Speech recognition is not supported in this browser.");
       return;
     }
 
@@ -174,7 +174,7 @@ export function Chat() {
           isError: true,
           timestamp: new Date().toISOString()
         }]);
-        toast.error(errorDesc);
+        showError(errorDesc);
       };
 
       recognition.onend = () => {
@@ -184,7 +184,7 @@ export function Chat() {
       recognition.start();
     } catch (err) {
       console.error("Microphone access error:", err);
-      toast.error("Could not access microphone for visualization.");
+      showError("Could not access microphone for visualization.");
     }
   };
 
@@ -255,7 +255,7 @@ export function Chat() {
   const handleModelChange = (value: string) => {
     setSelectedModel(value);
     localStorage.setItem('default_gemini_model', value);
-    toast.success(`Active AI Model changed to: ${value.split('/').pop()}`);
+    showSuccess(`Active AI Model changed to: ${value.split('/').pop()}`);
   };
 
   const fetchSessions = async (overrideActiveChatId?: string) => {
@@ -343,7 +343,7 @@ export function Chat() {
     setActiveChatTitle('New Chat');
     setMessages([]);
     localStorage.setItem('active_chat_id', newId);
-    toast.success("Started a new conversation session");
+    showSuccess("Started a new conversation session");
     
     // Add to sessions list provisionally so it shows in the dropdown
     setSessions(prev => [
@@ -362,7 +362,7 @@ export function Chat() {
       setActiveChatTitle(chatId === 'default' ? 'Default Chat' : 'New Chat');
     }
     setIsRenaming(false); // cancel renaming if we switch chats
-    toast.success("Switched conversation session");
+    showSuccess("Switched conversation session");
   };
 
   const startRenameMode = () => {
@@ -373,7 +373,7 @@ export function Chat() {
   const handleRenameSession = async () => {
     const trimmed = renameTitleInput.trim();
     if (!trimmed) {
-      toast.error("Title cannot be empty");
+      showError("Title cannot be empty");
       return;
     }
     if (!user) return;
@@ -389,16 +389,16 @@ export function Chat() {
         body: JSON.stringify({ title: trimmed })
       });
       if (res.ok) {
-        toast.success("Chat renamed successfully");
+        showSuccess("Chat renamed successfully");
         setActiveChatTitle(trimmed);
         setIsRenaming(false);
         fetchSessions(activeChatId);
       } else {
-        toast.error("Failed to rename chat session");
+        showError("Failed to rename chat session");
       }
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred while renaming chat session");
+      showError("An error occurred while renaming chat session");
     } finally {
       setIsUpdatingTitle(false);
     }
@@ -416,7 +416,7 @@ export function Chat() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
-        toast.success("Conversation deleted successfully");
+        showSuccess("Conversation deleted successfully");
         // If we deleted the active chat, switch to default or another
         if (activeChatId === chatId) {
           const nextSession = sessions.find(s => s.chatId !== chatId);
@@ -428,11 +428,11 @@ export function Chat() {
           fetchSessions(activeChatId);
         }
       } else {
-        toast.error("Failed to delete session");
+        showError("Failed to delete session");
       }
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred while deleting session");
+      showError("An error occurred while deleting session");
     } finally {
       setIsDeletingSession(null);
     }
@@ -566,17 +566,30 @@ export function Chat() {
         const savedErrorMsg = errorMsgRes.ok ? await errorMsgRes.json() : { role: 'assistant' as const, content: `⚠️ **Service Error**: ${friendlyError}` };
         setMessages(prev => [...prev, { ...savedErrorMsg, isError: true }]);
         fetchSessions(activeChatId);
-        toast.error(friendlyError);
+        showError(friendlyError);
         return;
       }
       
       const data = await res.json();
       
       if (data.planUpdated) {
-        toast.success("📅 Custom timetable updated on your Command Center!", {
+        showSuccess("📅 Custom timetable updated on your Command Center!", {
           duration: 6000,
           description: "Your daily execution plan has been updated according to your instructions."
         });
+      }
+
+      if (data.quotaExceeded) {
+        const exhaustedModel = (data.quotaModel || selectedModel || '').split('/').pop();
+        const fallbackCandidate = models.find((m) => m.name !== selectedModel)?.name;
+        showWarning(
+          exhaustedModel
+            ? `"${exhaustedModel}" has hit its API quota limit. Switch to a different AI brain to keep going without interruptions.`
+            : `Your current AI model has hit its API quota limit. Switch to a different AI brain to keep going without interruptions.`,
+          fallbackCandidate
+            ? { action: { label: 'Switch AI Model', onClick: () => handleModelChange(fallbackCandidate) } }
+            : undefined
+        );
       }
       
       // Add assistant message to DB
@@ -618,7 +631,7 @@ export function Chat() {
       } catch (err) {
         console.error("Double failure during error logging:", err);
       }
-      toast.error(fallbackError);
+      showError(fallbackError);
     } finally {
       setIsSending(false);
     }
@@ -690,11 +703,11 @@ export function Chat() {
       
       setMessages(prev => [...prev, savedAssistantMsg]);
       fetchSessions(activeChatId);
-      toast.success(`Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
+      showSuccess(`Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
       
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || 'Error processing audio journal.');
+      showError(err.message || 'Error processing audio journal.');
     } finally {
       setIsSending(false);
     }

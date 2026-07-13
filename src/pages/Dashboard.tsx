@@ -6,7 +6,7 @@ import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame, MessageSquare, Clock } from 'lucide-react';
-import { toast } from 'sonner';
+import { showSuccess, showError, showInfo } from '../lib/toastTheme';
 import { CircularProgress } from '../components/CircularProgress';
 
 const safeJson = async (res: Response) => {
@@ -114,7 +114,7 @@ export function Dashboard() {
   // Replan" button (POST /api/autonomous-pipeline). Keep these two contracts distinct.
   const scheduleTasksIntoTimetable = async () => {
     if (tasks.length === 0) {
-      toast.info("No pending tasks to plan.");
+      showInfo("No pending tasks to plan.");
       return;
     }
     
@@ -140,11 +140,11 @@ export function Dashboard() {
         throw new Error(errData.error || "Failed to generate schedule.");
       }
 
-      toast.success("AI is recalculating your optimal schedule...");
+      showSuccess("AI is recalculating your optimal schedule...");
       await fetchDashboardData();
     } catch (error: any) {
        console.error(error);
-       toast.error(error.message || "Failed to generate plan");
+       showError(error.message || "Failed to generate plan");
     } finally {
       setIsGenerating(false);
     }
