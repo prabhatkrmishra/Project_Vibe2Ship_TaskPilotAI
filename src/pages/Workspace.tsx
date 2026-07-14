@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { Task, Goal } from '../types';
@@ -37,30 +37,49 @@ export function Workspace() {
   const [googleEmail, setGoogleEmail] = useState<string | null>(null);
   const [connectingGoogle, setConnectingGoogle] = useState(false);
 
+  const verifyInFlightRef = useRef(false);
+  const verifyAbortRef = useRef<AbortController | null>(null);
+
   const verifyGoogleAuth = async () => {
+    if (verifyInFlightRef.current) return;
+    verifyInFlightRef.current = true;
+
     const token = getAccessToken();
     if (!token) {
       setGoogleAuthStatus('disconnected');
       setGoogleEmail(null);
+      verifyInFlightRef.current = false;
       return;
     }
     try {
-      const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(token)}`);
+      verifyAbortRef.current?.abort();
+      const ac = new AbortController();
+      verifyAbortRef.current = ac;
+      const timer = setTimeout(() => ac.abort(), 5000);
+
+      const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(token)}`, { signal: ac.signal });
+      clearTimeout(timer);
       if (!res.ok) throw new Error('Token invalid or expired');
       const info = await res.json();
       setGoogleEmail(info.email || null);
       setGoogleAuthStatus('connected');
-    } catch {
-      // Stale/expired/revoked token — clear it so requestWorkspaceAccess()
-      // triggers a fresh OAuth grant instead of silently reusing a dead one.
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        setGoogleAuthStatus('disconnected');
+        setGoogleEmail(null);
+        return;
+      }
       disconnectWorkspaceAccess();
       setGoogleAuthStatus('disconnected');
       setGoogleEmail(null);
+    } finally {
+      verifyInFlightRef.current = false;
     }
   };
 
   useEffect(() => {
     verifyGoogleAuth();
+    return () => { verifyAbortRef.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
