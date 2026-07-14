@@ -513,7 +513,7 @@ async function startServer() {
   // Cloud Run terminates TLS at its load balancer and forwards plain HTTP
   // internally, setting X-Forwarded-Proto. Without this, req.protocol would
   // always report "http", breaking the origin allowlist check below.
-  app.set('trust proxy', true);
+  app.set('trust proxy', 1);
   const PORT = 3000;
 
   app.use(express.json());
