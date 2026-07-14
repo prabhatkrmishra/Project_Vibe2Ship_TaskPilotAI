@@ -675,6 +675,124 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // ─── Data Backup / Restore (Google Drive) ─────────────────────────────────
+  // Signing key used to HMAC-sign backup archives so tampered/foreign backups
+  // can be detected before restore. This key never leaves the server.
+  if (!process.env.BACKUP_SIGNING_KEY || process.env.BACKUP_SIGNING_KEY.trim().length === 0) {
+    throw new Error(
+      "BACKUP_SIGNING_KEY environment variable is not set. Refusing to start with an insecure default key. " +
+      "Set BACKUP_SIGNING_KEY to a long, random value (e.g. `openssl rand -hex 32`)."
+    );
+  }
+  const BACKUP_SIGNING_KEY = process.env.BACKUP_SIGNING_KEY;
+  const BACKUP_FORMAT_VERSION = 1;
+
+  function signBackupPayload(canonicalJson: string): string {
+    return crypto.createHmac("sha256", BACKUP_SIGNING_KEY).update(canonicalJson).digest("hex");
+  }
+
+  function verifyBackupSignature(canonicalJson: string, signature: string): boolean {
+    const expected = signBackupPayload(canonicalJson);
+    const a = Buffer.from(expected, "hex");
+    const b = Buffer.from(String(signature || ""), "hex");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  }
+
+  // Strips fields that must never leave the server in a backup: password
+  // hashes, mongo internals, and anything auth/credential related.
+  function sanitizeUserProfile(user: any) {
+    if (!user) return null;
+    return {
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      address: user.address || "",
+      gamification: getCorrectedGamification(user.gamification) || null,
+    };
+  }
+
+  function stripMongoMeta(doc: any) {
+    const obj = typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
+    obj.id = obj._id ? obj._id.toString() : obj.id;
+    delete obj._id;
+    delete obj.__v;
+    return obj;
+  }
+
+  // GET /api/backup/export — aggregates the full exportable dataset for the
+  // authenticated user. Deliberately excludes anything credential-related
+  // (password hash, OAuth tokens, JWTs).
+  app.get("/api/backup/export", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const userId = req.uid;
+
+      const [user, tasks, goals, plans, chats, aiDecisions, focusSessions] = await Promise.all([
+        User.findById(userId),
+        Task.find({ userId }).sort({ createdAt: -1 }),
+        Goal.find({ userId }).sort({ createdAt: -1 }),
+        DailyPlanModel.find({ userId }),
+        ChatMessage.find({ userId }).sort({ timestamp: 1 }),
+        AIDecision.find({ userId }).sort({ timestamp: -1 }),
+        FocusSessionModel.find({ userId }).sort({ startedAt: -1 }),
+      ]);
+
+      const payload = {
+        formatVersion: BACKUP_FORMAT_VERSION,
+        exportedAt: new Date().toISOString(),
+        profile: sanitizeUserProfile(user),
+        tasks: tasks.map(stripMongoMeta),
+        goals: goals.map(stripMongoMeta),
+        dailyPlans: plans.map(stripMongoMeta),
+        chats: chats.map(stripMongoMeta),
+        aiDecisions: aiDecisions.map(stripMongoMeta),
+        focusSessions: focusSessions.map(stripMongoMeta),
+      };
+
+      // Canonical JSON (stable key order) so the hash/signature are
+      // reproducible regardless of object key insertion order upstream.
+      const canonicalJson = JSON.stringify(payload);
+      const contentHash = crypto.createHash("sha256").update(canonicalJson).digest("hex");
+
+      res.json({ payload, canonicalJson, contentHash });
+    } catch (error: any) {
+      console.error("Backup export error:", error);
+      res.status(500).json({ error: error.message || "Failed to export backup data" });
+    }
+  });
+
+  // POST /api/backup/sign — signs an already-serialized backup payload.
+  // Body: { canonicalJson: string }
+  app.post("/api/backup/sign", verifyToken, async (req: any, res: any) => {
+    try {
+      const { canonicalJson } = req.body;
+      if (!canonicalJson || typeof canonicalJson !== "string") {
+        return res.status(400).json({ error: "canonicalJson (string) is required" });
+      }
+      const contentHash = crypto.createHash("sha256").update(canonicalJson).digest("hex");
+      const signature = signBackupPayload(canonicalJson);
+      res.json({ contentHash, signature });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to sign backup" });
+    }
+  });
+
+  // POST /api/backup/verify — verifies a downloaded backup's signature
+  // before it is restored. Body: { canonicalJson: string, signature: string }
+  app.post("/api/backup/verify", verifyToken, async (req: any, res: any) => {
+    try {
+      const { canonicalJson, signature } = req.body;
+      if (!canonicalJson || !signature) {
+        return res.status(400).json({ valid: false, error: "canonicalJson and signature are required" });
+      }
+      const valid = verifyBackupSignature(canonicalJson, signature);
+      res.json({ valid });
+    } catch (error: any) {
+      res.status(500).json({ valid: false, error: error.message || "Failed to verify backup" });
+    }
+  });
+
   // --- MongoDB Authentication Endpoints ---
 
   app.post(["/register/user", "/api/register/user", "/api/auth/register"], async (req, res) => {

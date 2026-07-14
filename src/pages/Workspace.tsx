@@ -10,6 +10,8 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import PageHeader from '../components/PageHeader';
 import { showSuccess, showError } from '../lib/toastTheme';
+import { BackupErrorBanner } from '../components/BackupErrorBanner';
+import { TamperedBackupError } from '../lib/google-workspace';
 
 export function Workspace() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -20,6 +22,7 @@ export function Workspace() {
 
   const [isSlidesDialogOpen, setIsSlidesDialogOpen] = useState(false);
   const [slidesType, setSlidesType] = useState('project-dashboard');
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -245,15 +248,22 @@ export function Workspace() {
       token = await requestWorkspaceAccess();
     }
     if (!token) return;
+    setBackupError(null);
     try {
-      toast.loading("Backing up database to Drive...");
-      const { exportToDrive } = await import('../lib/google-workspace');
-      await exportToDrive({ tasks, completedTasks, goals });
+      toast.loading("Backing up your data to Drive...");
+      const { exportFullBackupToDrive } = await import('../lib/google-workspace');
+      const idToken = await user?.getIdToken();
+      if (!idToken) throw new Error("Not signed in.");
+      const result = await exportFullBackupToDrive(token, idToken);
       toast.dismiss();
-      showSuccess("Database backed up to Google Drive!");
+      if (result.skipped) {
+        showSuccess("Already up to date — no changes since your last backup.");
+      } else {
+        showSuccess("Full backup have been saved to your Google Drive!");
+      }
     } catch (e: any) {
       toast.dismiss();
-      showError(e.message || "Failed to backup database.");
+      showError(e.message || "Failed to backup data.");
     }
   };
 
@@ -269,6 +279,7 @@ export function Workspace() {
       return;
     }
 
+    setBackupError(null);
     toast.loading("Opening Picker...");
     (window as any).gapi.load('picker', { callback: () => {
       toast.dismiss();
@@ -283,38 +294,27 @@ export function Workspace() {
           if (data.action === (window as any).google.picker.Action.PICKED) {
             const file = data.docs[0];
             try {
-              toast.loading("Restoring backup...");
-              const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              if (!res.ok) throw new Error("Failed to download file");
-              const backupData = await res.json();
-              
-              const jwt = localStorage.getItem("taskpilot_jwt");
-              const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${jwt}` };
-              
-              if (backupData.tasks) {
-                for (const t of backupData.tasks) {
-                  await fetch('/api/tasks', { method: 'POST', headers, body: JSON.stringify(t) });
-                }
-              }
-              if (backupData.completedTasks) {
-                for (const t of backupData.completedTasks) {
-                  await fetch('/api/tasks', { method: 'POST', headers, body: JSON.stringify(t) });
-                }
-              }
-              if (backupData.goals) {
-                for (const g of backupData.goals) {
-                  await fetch('/api/goals', { method: 'POST', headers, body: JSON.stringify(g) });
-                }
-              }
-              
+              toast.loading("Verifying backup signature...");
+              const { downloadAndVerifyBackup, restoreBackupPayload } = await import('../lib/google-workspace');
+              const idToken = await user?.getIdToken();
+              if (!idToken) throw new Error("Not signed in.");
+
+              const payload = await downloadAndVerifyBackup(token as string, idToken, file.id);
+
               toast.dismiss();
-              showSuccess(`Restored data from ${file.name}`);
+              toast.loading("Restoring backup...");
+              const { tasksAdded, goalsAdded } = await restoreBackupPayload(idToken, payload);
+
+              toast.dismiss();
+              showSuccess(`Restored ${tasksAdded} task(s) and ${goalsAdded} goal(s) from ${file.name}`);
               setTimeout(() => window.location.reload(), 1500);
             } catch (e: any) {
               toast.dismiss();
-              showError("Failed to restore backup: " + e.message);
+              if (e instanceof TamperedBackupError) {
+                setBackupError(e.message);
+              } else {
+                showError("Failed to restore backup: " + e.message);
+              }
             }
           }
         })
@@ -341,147 +341,172 @@ export function Workspace() {
           description="Connect your TaskPilot data seamlessly with Google Workspace. Push schedules, export analytics, and generate beautiful presentations from your active tasks and goals."
         />
 
-        {/* Action Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+        {backupError && (
+          <BackupErrorBanner message={backupError} onDismiss={() => setBackupError(null)} />
+        )}
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <CalendarIcon className="h-6 w-6 text-indigo-400" />
+        {/* Sync */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 px-1">Sync</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <CalendarIcon className="h-6 w-6 text-indigo-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Sync Google Calendar</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Push your pending tasks and intelligent AI schedules directly into your Google Calendar. Never miss a deadline with automated time-blocking.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Sync Google Calendar</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Push your pending tasks and intelligent AI schedules directly into your Google Calendar. Never miss a deadline with automated time-blocking.
-                </p>
+                <Button onClick={handleSyncCalendar} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl h-11 group-hover:shadow-lg group-hover:shadow-indigo-600/20 transition-all font-semibold">
+                  Start Sync <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleSyncCalendar} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl h-11 group-hover:shadow-lg group-hover:shadow-indigo-600/20 transition-all font-semibold">
-                Start Sync <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <FileText className="h-6 w-6 text-blue-400" />
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <CheckCircle className="h-6 w-6 text-blue-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export to Google Tasks</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Export all your active tasks into your default Google Tasks list to keep everything tracked in one place.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Daily Report</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Generate a beautifully formatted Google Doc containing your daily progress, active tasks, and goal summaries. Perfect for EOD reporting.
-                </p>
+                <Button onClick={handleSyncTasks} className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Sync Tasks <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleExportDocs} className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Generate Report (Docs) <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <Table className="h-6 w-6 text-emerald-400" />
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-orange-500/50 hover:shadow-lg hover:shadow-orange-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <CheckCircle className="h-6 w-6 text-orange-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Import from Google Tasks</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Import tasks from your Google Tasks list into TaskPilot for unified management.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Analytics</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Dump your task metrics, effort estimations, and AI risk scores into Google Sheets for deep data analysis and pivot tables.
-                </p>
+                <Button onClick={handleImportTasks} className="w-full bg-[#161b22] border border-[#21262d] hover:border-orange-500/30 hover:bg-orange-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Import Tasks <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleExportSheets} className="w-full bg-[#161b22] border border-[#21262d] hover:border-emerald-500/30 hover:bg-emerald-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Generate Spreadsheet <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.4 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <Presentation className="h-6 w-6 text-amber-400" />
+          </div>
+        </section>
+
+        {/* Generate */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 px-1">Generate</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <FileText className="h-6 w-6 text-blue-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Daily Report</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Generate a beautifully formatted Google Doc containing your daily progress, active tasks, and goal summaries. Perfect for EOD reporting.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Create Presentation</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Let AI automatically draft a Google Slides presentation from your workspace data. Ideal for standups, sprint planning, or team reviews.
-                </p>
+                <Button onClick={handleExportDocs} className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Generate Report (Docs) <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={() => setIsSlidesDialogOpen(true)} className="w-full bg-[#161b22] border border-[#21262d] hover:border-amber-500/30 hover:bg-amber-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Configure Slides <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.35 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <CheckCircle className="h-6 w-6 text-blue-400" />
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <Table className="h-6 w-6 text-emerald-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Analytics</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Dump your task metrics, effort estimations, and AI risk scores into Google Sheets for deep data analysis and pivot tables.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export to Google Tasks</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Export all your active tasks into your default Google Tasks list to keep everything tracked in one place.
-                </p>
+                <Button onClick={handleExportSheets} className="w-full bg-[#161b22] border border-[#21262d] hover:border-emerald-500/30 hover:bg-emerald-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Generate Spreadsheet <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleSyncTasks} className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Sync Tasks <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.355 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-orange-500/50 hover:shadow-lg hover:shadow-orange-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <CheckCircle className="h-6 w-6 text-orange-400" />
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <Presentation className="h-6 w-6 text-amber-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Create Presentation</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Let AI automatically draft a Google Slides presentation from your workspace data. Ideal for standups, sprint planning, or team reviews.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Import from Google Tasks</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Import tasks from your Google Tasks list into TaskPilot for unified management.
-                </p>
+                <Button onClick={() => setIsSlidesDialogOpen(true)} className="w-full bg-[#161b22] border border-[#21262d] hover:border-amber-500/30 hover:bg-amber-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Configure Slides <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleImportTasks} className="w-full bg-[#161b22] border border-[#21262d] hover:border-orange-500/30 hover:bg-orange-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Import Tasks <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.357 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-teal-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <FileText className="h-6 w-6 text-teal-400" />
+          </div>
+        </section>
+
+        {/* Backup & Restore */}
+        <section className="space-y-4 border-t border-[#21262d] pt-8">
+          <div className="px-1">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">Backup &amp; Restore</h2>
+            <p className="text-xs text-slate-500 mt-1">Signed, compressed backups of your data (never your login credentials).</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-teal-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <FileText className="h-6 w-6 text-teal-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Backup Data to Drive</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Export all your data (tasks, goals, plans, chats, focus sessions & profile — never your password or tokens) into a signed, compressed backup on Google Drive.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Backup DB to Drive</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Export all your data (tasks, completed tasks, goals) into a JSON backup file in Google Drive.
-                </p>
+                <Button onClick={handleBackupDB} className="w-full bg-[#161b22] border border-[#21262d] hover:border-teal-500/30 hover:bg-teal-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Backup to Drive <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handleBackupDB} className="w-full bg-[#161b22] border border-[#21262d] hover:border-teal-500/30 hover:bg-teal-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Backup to Drive <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.36 }} className="group">
-            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 flex flex-col justify-between">
-              <div>
-                <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
-                  <FileText className="h-6 w-6 text-purple-400" />
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }} className="group">
+              <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 flex flex-col justify-between">
+                <div>
+                  <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
+                    <FileText className="h-6 w-6 text-purple-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Restore Data from Drive</h3>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Select a backup archive from Google Drive. Its signature is verified before anything is restored — tampered files are rejected.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Restore DB from Drive</h3>
-                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-                  Select a database backup JSON file from Google Drive to restore your tasks and goals.
-                </p>
+                <Button onClick={handlePickFile} className="w-full bg-[#161b22] border border-[#21262d] hover:border-purple-500/30 hover:bg-purple-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                  Open Picker <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
               </div>
-              <Button onClick={handlePickFile} className="w-full bg-[#161b22] border border-[#21262d] hover:border-purple-500/30 hover:bg-purple-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
-                Open Picker <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
-          </motion.div>
+            </motion.div>
 
-
-        </div>
+          </div>
+        </section>
 
       <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
         <DialogContent className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">

@@ -33,6 +33,7 @@
     "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "express-session": "^1.19.0",
+    "fflate": "^0.8.3",
     "framer-motion": "^12.42.0",
     "google-auth-library": "^10.9.0",
     "googleapis": "^173.0.0",

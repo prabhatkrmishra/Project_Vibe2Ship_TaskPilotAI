@@ -1,3 +1,5 @@
+import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
+
 export interface Task {
   id: string;
   title: string;
@@ -5,6 +7,220 @@ export interface Task {
   priority: 'high' | 'medium' | 'low';
   status: 'pending' | 'in_progress' | 'completed';
   dueDate?: Date;
+}
+
+// ─── Full Data Backup (signed, compressed, deduped) ───────────────────────
+// Backs up everything except login credentials (password, JWT, OAuth tokens).
+// The archive is a .zip containing:
+//   data.json      — canonical JSON payload (tasks, goals, plans, chats, etc.)
+//   signature.sig  — { contentHash, signature, formatVersion } signed server-side
+// The signing key itself never reaches the client; signing/verification are
+// proxied through authenticated /api/backup/* endpoints.
+
+const BACKUP_FILE_PREFIX = 'TaskPilot_Backup_';
+const BACKUP_MIME_TYPE = 'application/zip';
+
+export class TamperedBackupError extends Error {
+  constructor(message = 'Tampered backup — cannot restore.') {
+    super(message);
+    this.name = 'TamperedBackupError';
+  }
+}
+
+const authedJson = async (url: string, idToken: string, init?: RequestInit) => {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed: ${res.statusText}`);
+  }
+  return res.json();
+};
+
+/** Fetches the full exportable dataset for the current user from the server. */
+async function fetchBackupPayload(idToken: string): Promise<{ payload: any; canonicalJson: string; contentHash: string }> {
+  return authedJson('/api/backup/export', idToken, { method: 'GET' });
+}
+
+/** Asks the server to sign a canonical JSON payload (server holds the signing key). */
+async function signBackupPayload(idToken: string, canonicalJson: string): Promise<{ contentHash: string; signature: string }> {
+  return authedJson('/api/backup/sign', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ canonicalJson }),
+  });
+}
+
+/** Asks the server to verify a canonical JSON payload against its claimed signature. */
+async function verifyBackupPayload(idToken: string, canonicalJson: string, signature: string): Promise<boolean> {
+  const result = await authedJson('/api/backup/verify', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ canonicalJson, signature }),
+  });
+  return !!result.valid;
+}
+
+/** Builds a signed, compressed backup archive (Uint8Array of zip bytes). */
+function buildSignedZip(canonicalJson: string, signature: string, contentHash: string, formatVersion: number): Uint8Array {
+  const manifest = JSON.stringify({ contentHash, signature, formatVersion });
+  return zipSync(
+    {
+      'data.json': strToU8(canonicalJson),
+      'signature.sig': strToU8(manifest),
+    },
+    { level: 6 }
+  );
+}
+
+/** Looks up existing TaskPilot backups in Drive, most recent first. */
+async function listExistingBackups(driveToken: string): Promise<Array<{ id: string; name: string; appProperties?: Record<string, string> }>> {
+  const q = encodeURIComponent(`name contains '${BACKUP_FILE_PREFIX}' and trashed = false and mimeType = '${BACKUP_MIME_TYPE}'`);
+  const fields = encodeURIComponent('files(id,name,appProperties,createdTime)');
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=createdTime desc&pageSize=10`,
+    { headers: { Authorization: `Bearer ${driveToken}` } }
+  );
+  if (!res.ok) return []; // Non-fatal: fall through and just upload a fresh backup.
+  const data = await res.json();
+  return data.files || [];
+}
+
+/**
+ * Exports the user's full dataset (everything except login credentials) as a
+ * signed, zip-compressed backup to Google Drive. Skips the upload entirely
+ * if the content is identical to the most recent existing backup, so
+ * repeated clicks don't pile up duplicate files.
+ */
+export async function exportFullBackupToDrive(
+  driveToken: string,
+  idToken: string
+): Promise<{ skipped: boolean; fileId?: string; fileName?: string }> {
+  const { canonicalJson, contentHash, payload } = await fetchBackupPayload(idToken);
+  const formatVersion = payload?.formatVersion ?? 1;
+
+  const existing = await listExistingBackups(driveToken);
+  const latest = existing[0];
+  if (latest?.appProperties?.contentHash === contentHash) {
+    return { skipped: true };
+  }
+
+  const { signature } = await signBackupPayload(idToken, canonicalJson);
+  const zipBytes = buildSignedZip(canonicalJson, signature, contentHash, formatVersion);
+
+  const fileName = `${BACKUP_FILE_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+  const metadata = {
+    name: fileName,
+    mimeType: BACKUP_MIME_TYPE,
+    appProperties: { contentHash, signature, formatVersion: String(formatVersion) },
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', new Blob([zipBytes], { type: BACKUP_MIME_TYPE }));
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${driveToken}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Drive Error: ${err.error?.message || res.statusText}`);
+  }
+  const created = await res.json();
+  return { skipped: false, fileId: created.id, fileName: created.name };
+}
+
+/**
+ * Downloads a backup zip from Drive, unpacks it, and verifies its signature
+ * server-side. Throws TamperedBackupError if the signature doesn't match
+ * (file was modified or wasn't produced by this server), so callers can
+ * show a dedicated "tampered backup" banner instead of a generic error.
+ */
+export async function downloadAndVerifyBackup(driveToken: string, idToken: string, fileId: string): Promise<any> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${driveToken}` },
+  });
+  if (!res.ok) throw new Error('Failed to download backup file from Drive');
+  const zipBytes = new Uint8Array(await res.arrayBuffer());
+
+  let unzipped: Record<string, Uint8Array>;
+  try {
+    unzipped = unzipSync(zipBytes);
+  } catch {
+    // Not a valid zip at all — treat as tampered/corrupted, same user-facing outcome.
+    throw new TamperedBackupError();
+  }
+
+  const dataEntry = unzipped['data.json'];
+  const sigEntry = unzipped['signature.sig'];
+  if (!dataEntry || !sigEntry) {
+    throw new TamperedBackupError();
+  }
+
+  const canonicalJson = strFromU8(dataEntry);
+  let manifest: { signature?: string; contentHash?: string };
+  try {
+    manifest = JSON.parse(strFromU8(sigEntry));
+  } catch {
+    throw new TamperedBackupError();
+  }
+  if (!manifest.signature) throw new TamperedBackupError();
+
+  // Extra integrity check: the recomputed hash of the extracted JSON must
+  // match the hash recorded at sign time before we even ask the server to
+  // verify the HMAC.
+  if (manifest.contentHash) {
+    const digest = await crypto.subtle.digest('SHA-256', strToU8(canonicalJson));
+    const recomputedHash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (recomputedHash !== manifest.contentHash) {
+      throw new TamperedBackupError();
+    }
+  }
+
+  const valid = await verifyBackupPayload(idToken, canonicalJson, manifest.signature);
+  if (!valid) throw new TamperedBackupError();
+
+  return JSON.parse(canonicalJson);
+}
+
+/**
+ * Restores a verified backup payload into the app's database, skipping
+ * records that already exist (matched by id) so repeated restores don't
+ * create duplicates.
+ */
+export async function restoreBackupPayload(idToken: string, payload: any): Promise<{ tasksAdded: number; goalsAdded: number }> {
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` };
+
+  const [existingTasksRes, existingGoalsRes] = await Promise.all([
+    fetch('/api/tasks', { headers }),
+    fetch('/api/goals', { headers }),
+  ]);
+  const existingTaskIds = new Set(existingTasksRes.ok ? (await existingTasksRes.json()).map((t: any) => t.id) : []);
+  const existingGoalIds = new Set(existingGoalsRes.ok ? (await existingGoalsRes.json()).map((g: any) => g.id) : []);
+
+  let tasksAdded = 0;
+  const allTasks = [...(payload.tasks || [])];
+  for (const t of allTasks) {
+    if (t.id && existingTaskIds.has(t.id)) continue;
+    const res = await fetch('/api/tasks', { method: 'POST', headers, body: JSON.stringify(t) });
+    if (res.ok) tasksAdded++;
+  }
+
+  let goalsAdded = 0;
+  for (const g of payload.goals || []) {
+    if (g.id && existingGoalIds.has(g.id)) continue;
+    const res = await fetch('/api/goals', { method: 'POST', headers, body: JSON.stringify(g) });
+    if (res.ok) goalsAdded++;
+  }
+
+  return { tasksAdded, goalsAdded };
 }
 
 const getHeaders = async () => {
