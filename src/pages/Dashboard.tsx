@@ -5,13 +5,16 @@ import { useAuth } from '../lib/AuthContext';
 import { Task, DailyPlan, Goal } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame, MessageSquare, Clock } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, Sparkles, Target, Flame, MessageSquare, Clock, Headphones, LayoutDashboard } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { showSuccess, showError, showInfo } from '../lib/toastTheme';
 import { CircularProgress } from '../components/CircularProgress';
 import { ActiveSessionCard } from '../components/ActiveSessionCard';
 import { safeJson } from '../lib/utils';
 import { TaskSelectionModal } from '../components/TaskSelectionModal';
 import { useAIJobs } from '../lib/AIJobContext';
+import { HabitQuickLog } from '../components/HabitQuickLog';
+import { useHabitReminders } from '../lib/HabitReminderContext';
 
 export function Dashboard() {
   const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
@@ -24,8 +27,9 @@ export function Dashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeBriefTab, setActiveBriefTab] = useState<'brief' | 'insight'>('brief');
   const [showSelectionModal, setShowSelectionModal] = useState(false);
-  const { startJob, endJob, isJobRunning } = useAIJobs();
+  const { startJob, endJob, isJobRunning, planVersion, bumpPlanVersion } = useAIJobs();
   const isJobActive = isJobRunning('generate-plan');
+  const { setHabits } = useHabitReminders();
 
   const today = (() => {
     const d = new Date();
@@ -104,7 +108,12 @@ export function Dashboard() {
     if (user) {
       fetchDashboardData();
     }
-  }, [user]);
+  }, [user, planVersion]);
+
+  // Feed goals to the global habit reminder context
+  useEffect(() => {
+    setHabits(goals);
+  }, [goals, setHabits]);
 
   // NOTE: This calls /api/generate-plan, which only assigns pending tasks into the
   // EXISTING timetable's work slots and preserves each session's completed/started
@@ -169,34 +178,44 @@ export function Dashboard() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
-      <header className="flex items-center justify-between mb-2 px-2">
-        <div>
-          <h1 className="text-3xl font-light text-white leading-tight">{greeting}, <br/><span className="font-semibold italic text-indigo-300">{user?.name?.split(' ')[0] || 'User'}</span></h1>
-        </div>
-        <div className="flex items-center gap-4">
-          
-          {/* Gamification Streak & Level */}
-          {user?.gamification && (
-            <div className="hidden sm:flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
-                <Flame className={`w-4 h-4 ${user.gamification.currentStreak > 0 ? 'text-orange-500' : 'text-slate-500'}`} />
-                <span className="text-xs font-bold text-white">{user.gamification.currentStreak} Day Streak</span>
+      <PageHeader
+        icon={LayoutDashboard}
+        badge="Command Center"
+        color="indigo"
+        title={`${greeting},`}
+        titleAccent={user?.name?.split(' ')[0] || 'User'}
+        description="Your AI-powered mission control — plans, progress, and insights at a glance."
+        actions={
+          <>
+            {/* Gamification Streak & Level */}
+            {user?.gamification && (
+              <div className="hidden sm:flex items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
+                  <Flame className={`w-3.5 h-3.5 ${user.gamification.currentStreak > 0 ? 'text-orange-500' : 'text-slate-500'}`} />
+                  <span className="text-xs font-bold text-white">{user.gamification.currentStreak}<span className="font-normal text-slate-500 ml-0.5">d Streak</span></span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
+                  <span className="text-xs font-bold text-indigo-400">LV{user.gamification.level}</span>
+                  <CircularProgress progress={user.gamification.level > 0 ? Math.min(100, (user.gamification.xp / (user.gamification.level * 200)) * 100) : 0} size={20} strokeWidth={2.5} color="stroke-indigo-500">
+                    <span className="text-[7px] font-bold text-indigo-400">XP</span>
+                  </CircularProgress>
+                </div>
+                {(user.gamification as any).focusStreak > 0 && (
+                  <div className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
+                    <Headphones className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-xs font-bold text-violet-300">{(user.gamification as any).focusStreak}<span className="font-normal text-slate-500 ml-0.5">d Focus</span></span>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2 bg-[#161b22] border border-[#30363d] px-3 py-1.5 rounded-full">
-                <span className="text-xs font-bold text-indigo-400">LVL {user.gamification.level}</span>
-                <CircularProgress progress={user.gamification.level > 0 ? Math.min(100, (user.gamification.xp / (user.gamification.level * 200)) * 100) : 0} size={24} strokeWidth={3} color="stroke-indigo-500">
-                  <span className="text-[8px] font-bold text-indigo-400">XP</span>
-                </CircularProgress>
-              </div>
-            </div>
-          )}
+            )}
 
-          <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            <span className="hidden sm:inline text-xs font-semibold text-emerald-400 uppercase tracking-tighter">AI Core Active</span>
-          </div>
-        </div>
-      </header>
+            <div className="px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="hidden sm:inline text-[10px] font-bold text-emerald-400 uppercase tracking-wider">AI Core</span>
+            </div>
+          </>
+        }
+      />
       
       {/* AI Daily Brief & Insights Unified Tabbed Card */}
       <motion.div 
@@ -601,6 +620,16 @@ export function Dashboard() {
           scheduleTasksIntoTimetable(selected);
         }}
         isGenerating={isGenerating || isJobActive}
+      />
+
+      {/* Habit Quick-Log Widget — stacks above the chat button */}
+      <HabitQuickLog
+        goals={goals}
+        onLogged={async (goalId) => {
+          // Re-fetch goals to reflect the updated streak/lastLogged
+          await fetchDashboardData();
+          bumpPlanVersion();
+        }}
       />
 
       {/* Floating Chat Button leading to Mission Control Chat */}

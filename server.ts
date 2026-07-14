@@ -12,7 +12,7 @@ import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { OpenRouter } from "@openrouter/sdk";
 import { google } from "googleapis";
-import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc } from "./src/db/mongodb.js";
+import { connectDB, User as UserSrc, Goal as GoalSrc, Task as TaskSrc, ChatMessage as ChatMessageSrc, AIDecision as AIDecisionSrc, DailyPlanModel as DailyPlanModelSrc, FocusSession as FocusSessionSrc } from "./src/db/mongodb.js";
 
 const User = UserSrc as any;
 const Goal = GoalSrc as any;
@@ -20,6 +20,7 @@ const Task = TaskSrc as any;
 const ChatMessage = ChatMessageSrc as any;
 const AIDecision = AIDecisionSrc as any;
 const DailyPlanModel = DailyPlanModelSrc as any;
+const FocusSessionModel = FocusSessionSrc as any;
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
   throw new Error(
@@ -1349,6 +1350,19 @@ async function startServer() {
         }
       }
     }
+    // Time-based habit: auto-break streak if past scheduled time +5 min and not logged today
+    if (goal.type === 'habit' && goal.scheduledTime && goal.lastLogged) {
+      const today = new Date().toISOString().split('T')[0];
+      if (goal.lastLogged !== today) {
+        const [schedH, schedM] = goal.scheduledTime.split(':').map(Number);
+        const now = new Date();
+        const scheduledMinutes = schedH * 60 + schedM;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        if (currentMinutes > scheduledMinutes + 5) {
+          goal.streak = 0;
+        }
+      }
+    }
     return goal;
   }
 
@@ -1680,7 +1694,7 @@ async function startServer() {
   
   app.get("/api/calendar/events", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const oauth2Client = new google.auth.OAuth2();
@@ -1705,7 +1719,7 @@ async function startServer() {
 
   app.post("/api/calendar/events", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const oauth2Client = new google.auth.OAuth2();
@@ -1726,7 +1740,7 @@ async function startServer() {
 
   app.post("/api/docs", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const { title, content } = req.body;
@@ -1766,7 +1780,7 @@ async function startServer() {
 
   app.post("/api/docs/generate-report", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const { title, tasks, completedTasks, goals } = req.body;
@@ -1876,7 +1890,7 @@ async function startServer() {
 
   app.post("/api/presentations/generate", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const { type, tasks, completedTasks, goals } = req.body;
@@ -2013,7 +2027,7 @@ async function startServer() {
 
   app.post("/api/sheets", verifyToken, async (req: any, res: any) => {
     try {
-      const accessToken = req.headers.authorization?.split(" ")[1];
+      const accessToken = req.headers["x-workspace-token"];
       if (!accessToken) return res.status(401).send("No access token");
       
       const { title, data } = req.body;
@@ -3329,6 +3343,289 @@ async function startServer() {
         decision: fallbackDecision,
         plan: { sessions: fallbackSessions }
       });
+    }
+  });
+
+  // ─── Focus Zone Endpoints ──────────────────────────────────────────────────
+
+  // POST /api/focus-sessions — log a completed focus session
+  app.post("/api/focus-sessions", verifyToken, async (req: any, res: any) => {
+    try {
+      const userId = req.uid;
+      const { method, taskTitle, taskId, startedAt, endedAt, plannedDuration, actualDuration, breaks, qualityRating, note, completed } = req.body;
+
+      // Input validation
+      if (!['pomodoro', 'flowtime', '52-17', 'ultradian', 'custom'].includes(method)) {
+        return res.status(400).json({ error: "Invalid focus method" });
+      }
+      if (!startedAt || !endedAt) {
+        return res.status(400).json({ error: "startedAt and endedAt are required" });
+      }
+      if (typeof actualDuration !== 'number' || actualDuration <= 0) {
+        return res.status(400).json({ error: "actualDuration must be a positive number" });
+      }
+      if (actualDuration > 43200) { // 12 hours max
+        return res.status(400).json({ error: "actualDuration exceeds maximum (12 hours)" });
+      }
+      if (qualityRating != null && (qualityRating < 1 || qualityRating > 5)) {
+        return res.status(400).json({ error: "qualityRating must be between 1 and 5" });
+      }
+
+      const sessionDoc = await FocusSessionModel.create({
+        userId, method, taskTitle, taskId, startedAt, endedAt,
+        plannedDuration: plannedDuration || 0, actualDuration,
+        breaks: breaks || 0, qualityRating, note, completed: completed !== false
+      });
+
+      // Normalize Mongoose document
+      const sessionObj = sessionDoc.toObject();
+      sessionObj.id = sessionObj._id.toString();
+      delete sessionObj._id;
+      delete sessionObj.__v;
+
+      // ── Gamification ──────────────────────────────────────────────────────────
+      const user = await User.findById(userId);
+      if (user) {
+        const gamification = user.gamification || {};
+
+        // XP: base 15 + duration bonus + quality bonus + method bonus
+        const durationMins = Math.round(actualDuration / 60);
+        let xpEarned = 15;
+        // Duration bonus: +1 per 10 minutes of focus
+        xpEarned += Math.floor(durationMins / 10);
+        // Quality bonus: +5 if rated 4+
+        if (qualityRating && qualityRating >= 4) xpEarned += 5;
+        // Method bonus: harder methods earn more
+        const methodBonus: Record<string, number> = { ultradian: 5, '52-17': 3, pomodoro: 0, flowtime: 2, custom: 1 };
+        xpEarned += methodBonus[method] || 0;
+        // Streak multiplier: +10% per streak day (max +50%)
+        const streakMultiplier = 1 + Math.min((gamification.focusStreak || 0) * 0.1, 0.5);
+        xpEarned = Math.round(xpEarned * streakMultiplier);
+
+        gamification.xp = (gamification.xp || 0) + xpEarned;
+        gamification.totalFocusMinutes = (gamification.totalFocusMinutes || 0) + durationMins;
+        gamification.focusSessionsCompleted = (gamification.focusSessionsCompleted || 0) + 1;
+
+        // Focus streak: use DEDICATED focusLastActiveDate (not shared lastActiveDate)
+        const today = new Date().toISOString().slice(0, 10);
+        const focusLastActive = gamification.focusLastActiveDate;
+        if (focusLastActive) {
+          const lastDate = new Date(focusLastActive + "T00:00:00Z");
+          const todayDate = new Date(today + "T00:00:00Z");
+          const diffTime = Math.abs(todayDate.getTime() - lastDate.getTime());
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            gamification.focusStreak = (gamification.focusStreak || 0) + 1;
+          } else if (diffDays > 1) {
+            gamification.focusStreak = 1;
+          }
+          // same day: no change to streak
+        } else {
+          gamification.focusStreak = 1;
+        }
+        gamification.focusLastActiveDate = today;
+        if ((gamification.focusStreak || 0) > (gamification.longestFocusStreak || 0)) {
+          gamification.longestFocusStreak = gamification.focusStreak;
+        }
+
+        // Level-up check
+        let levelUp = null;
+        while (gamification.xp >= (gamification.level || 1) * 200) {
+          gamification.level = (gamification.level || 1) + 1;
+          levelUp = gamification.level;
+        }
+
+        // Focus badges
+        const newBadges: string[] = [];
+        const checkBadge = (id: string, condition: boolean) => {
+          if (condition && !(gamification.earnedBadges || []).includes(id)) {
+            gamification.earnedBadges = gamification.earnedBadges || [];
+            gamification.earnedBadges.push(id);
+            newBadges.push(id);
+          }
+        };
+        checkBadge('focus_3', (gamification.focusStreak || 0) >= 3);
+        checkBadge('focus_7', (gamification.focusStreak || 0) >= 7);
+        checkBadge('focus_30', (gamification.focusStreak || 0) >= 30);
+        checkBadge('focus_100', (gamification.focusStreak || 0) >= 100);
+        // Session count badges
+        checkBadge('focus_10_sessions', (gamification.focusSessionsCompleted || 0) >= 10);
+        checkBadge('focus_50_sessions', (gamification.focusSessionsCompleted || 0) >= 50);
+        checkBadge('focus_100_sessions', (gamification.focusSessionsCompleted || 0) >= 100);
+        // Total time badges
+        checkBadge('focus_10_hours', (gamification.totalFocusMinutes || 0) >= 600);
+        checkBadge('focus_100_hours', (gamification.totalFocusMinutes || 0) >= 6000);
+
+        user.gamification = gamification;
+        await user.save();
+
+        return res.json({
+          session: sessionObj,
+          gamification: { xpEarned, newBadges, levelUp, focusStreak: gamification.focusStreak }
+        });
+      }
+
+      res.json({ session: sessionObj, gamification: null });
+    } catch (e: any) {
+      console.error("Focus session save error:", e);
+      res.status(500).json({ error: e.message || "Failed to save focus session" });
+    }
+  });
+
+  // GET /api/focus-sessions — fetch focus history with optional filters
+  app.get("/api/focus-sessions", verifyToken, async (req: any, res: any) => {
+    try {
+      const userId = req.uid;
+      const { from, to, method, limit: limitStr } = req.query;
+      const filter: any = { userId };
+      if (method) filter.method = method;
+      if (from || to) {
+        filter.startedAt = {};
+        if (from) filter.startedAt.$gte = new Date(from);
+        if (to) filter.startedAt.$lte = new Date(to);
+      }
+      const rawSessions = await FocusSessionModel.find(filter)
+        .sort({ startedAt: -1 })
+        .limit(parseInt(limitStr) || 100);
+      // Normalize Mongoose documents
+      const sessions = rawSessions.map((s: any) => {
+        const obj = s.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json({ sessions });
+    } catch (e: any) {
+      console.error("Focus sessions fetch error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch focus sessions" });
+    }
+  });
+
+  // GET /api/focus-sessions/stats — aggregated focus statistics
+  app.get("/api/focus-sessions/stats", verifyToken, async (req: any, res: any) => {
+    try {
+      const userId = req.uid;
+      const now = new Date();
+      // Use local date for today
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Week start: Monday (handles Sunday correctly)
+      const weekStart = new Date(now);
+      const dayOfWeek = now.getDay(); // 0=Sun
+      const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      weekStart.setDate(now.getDate() - daysSinceMonday);
+      weekStart.setHours(0, 0, 0, 0);
+
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      // Limit query to last 365 days for performance
+      const yearAgo = new Date(now);
+      yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+      const allSessions = await FocusSessionModel.find({ userId, startedAt: { $gte: yearAgo } }).sort({ startedAt: -1 });
+
+      let todayMinutes = 0, todaySessions = 0;
+      let weekMinutes = 0, weekSessions = 0;
+      let monthMinutes = 0, monthSessions = 0;
+      // Initialize all method keys
+      const byMethod: Record<string, number> = { pomodoro: 0, flowtime: 0, '52-17': 0, ultradian: 0, custom: 0 };
+      const heatmap: Record<string, number> = {};
+      const dailyWeek: Record<string, number> = {};
+
+      for (const s of allSessions) {
+        const mins = Math.round((s.actualDuration || 0) / 60);
+        const sDate = new Date(s.startedAt);
+        // Use local date string for consistent comparison
+        const sDay = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, '0')}-${String(sDate.getDate()).padStart(2, '0')}`;
+
+        // Method breakdown
+        if (byMethod.hasOwnProperty(s.method)) {
+          byMethod[s.method] += mins;
+        } else {
+          byMethod[s.method] = mins;
+        }
+
+        // Heatmap (all-time)
+        heatmap[sDay] = (heatmap[sDay] || 0) + mins;
+
+        // Today
+        if (sDay === todayStr) {
+          todayMinutes += mins;
+          todaySessions += 1;
+        }
+        // This week
+        if (sDate >= weekStart) {
+          weekMinutes += mins;
+          weekSessions += 1;
+          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const dayLabel = dayNames[sDate.getDay()];
+          dailyWeek[dayLabel] = (dailyWeek[dayLabel] || 0) + mins;
+        }
+        // This month
+        if (sDate >= monthStart) {
+          monthMinutes += mins;
+          monthSessions += 1;
+        }
+      }
+
+      // Focus streak from gamification (uses dedicated focusLastActiveDate)
+      const user = await User.findById(userId);
+      const focusStreak = user?.gamification?.focusStreak || 0;
+      const longestFocusStreak = user?.gamification?.longestFocusStreak || 0;
+      const totalFocusMinutes = user?.gamification?.totalFocusMinutes || 0;
+      const totalFocusSessions = user?.gamification?.focusSessionsCompleted || 0;
+
+      res.json({
+        todayMinutes, todaySessions,
+        weekMinutes, weekSessions,
+        monthMinutes, monthSessions,
+        focusStreak, longestFocusStreak,
+        totalFocusMinutes, totalFocusSessions,
+        byMethod, heatmap, dailyWeek
+      });
+    } catch (e: any) {
+      console.error("Focus stats error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch focus stats" });
+    }
+  });
+
+  // GET /api/focus-sessions/heatmap — monthly heatmap data
+  app.get("/api/focus-sessions/heatmap", verifyToken, async (req: any, res: any) => {
+    try {
+      const userId = req.uid;
+      const { month } = req.query;
+      const now = new Date();
+      const targetMonth = month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      // Validate month format
+      if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
+        return res.status(400).json({ error: "Invalid month format. Use YYYY-MM." });
+      }
+
+      const [year, mon] = targetMonth.split('-').map(Number);
+      if (isNaN(year) || isNaN(mon) || mon < 1 || mon > 12) {
+        return res.status(400).json({ error: "Invalid month values." });
+      }
+
+      const monthStart = new Date(Date.UTC(year, mon - 1, 1, 0, 0, 0, 0));
+      const monthEnd = new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999));
+
+      const sessions = await FocusSessionModel.find({
+        userId,
+        startedAt: { $gte: monthStart, $lte: monthEnd }
+      });
+
+      const heatmap: Record<string, number> = {};
+      for (const s of sessions) {
+        const d = new Date(s.startedAt);
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        heatmap[day] = (heatmap[day] || 0) + Math.round((s.actualDuration || 0) / 60);
+      }
+
+      res.json({ month: targetMonth, heatmap });
+    } catch (e: any) {
+      console.error("Focus heatmap error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch heatmap" });
     }
   });
 

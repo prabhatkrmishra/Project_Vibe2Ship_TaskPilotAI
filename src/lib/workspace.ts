@@ -1,6 +1,6 @@
 export const fetchCalendarEvents = async (accessToken: string, timeMin: string, timeMax: string) => {
   const res = await fetch(`/api/calendar/events?timeMin=${timeMin}&timeMax=${timeMax}`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
+    headers: { Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken }
   });
   if (!res.ok) throw new Error("Failed to fetch calendar events");
   return res.json();
@@ -14,7 +14,7 @@ export const createCalendarEvent = async (accessToken: string, event: { summary:
   const res = await fetch('/api/calendar/events', {
     method: 'POST',
     headers: { 
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -32,7 +32,7 @@ export const createGoogleDoc = async (accessToken: string, title: string, conten
   const res = await fetch('/api/docs', {
     method: 'POST',
     headers: { 
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ title, content })
@@ -45,7 +45,7 @@ export const generateGoogleDocReport = async (accessToken: string, reportData: a
   const res = await fetch('/api/docs/generate-report', {
     method: 'POST',
     headers: { 
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(reportData)
@@ -58,7 +58,7 @@ export const generatePresentation = async (accessToken: string, reportData: any)
   const res = await fetch('/api/presentations/generate', {
     method: 'POST',
     headers: { 
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(reportData)
@@ -71,7 +71,7 @@ export const createGoogleSheet = async (accessToken: string, title: string, data
   const res = await fetch('/api/sheets', {
     method: 'POST',
     headers: { 
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${localStorage.getItem("taskpilot_jwt")}`, "x-workspace-token": accessToken,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ title, data })

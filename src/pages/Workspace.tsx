@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
+import PageHeader from '../components/PageHeader';
 import { showSuccess, showError } from '../lib/toastTheme';
 
 export function Workspace() {
@@ -187,27 +188,75 @@ export function Workspace() {
     }
   };
 
+
+  const handleSyncTasks = async () => {
+    let token = getAccessToken();
+    if (!token) {
+      token = await requestWorkspaceAccess();
+    }
+    if (!token) return;
+    try {
+      toast.loading("Syncing to Google Tasks...");
+      const { exportToTasks } = await import('../lib/google-workspace');
+      await exportToTasks([...tasks, ...completedTasks]);
+      toast.dismiss();
+      showSuccess("Tasks synced to Google Tasks!");
+    } catch (e: any) {
+      toast.dismiss();
+      showError(e.message || "Failed to sync tasks.");
+    }
+  };
+
+  const handlePickFile = async () => {
+    let token = getAccessToken();
+    if (!token) {
+      token = await requestWorkspaceAccess();
+    }
+    if (!token) return;
+
+    if (!(window as any).gapi) {
+      showError("Google API not loaded yet. Try again.");
+      return;
+    }
+
+    toast.loading("Opening Picker...");
+    (window as any).gapi.load('picker', { callback: () => {
+      toast.dismiss();
+      const pickerOrigin = window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0 
+        ? window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1]
+        : window.location.origin;
+
+      const picker = new (window as any).google.picker.PickerBuilder()
+        .addView((window as any).google.picker.ViewId.DOCS)
+        .setOAuthToken(token)
+        .setCallback((data: any) => {
+          if (data.action === (window as any).google.picker.Action.PICKED) {
+            const file = data.docs[0];
+            showSuccess(`Picked: ${file.name}`);
+          }
+        })
+        .setOrigin(pickerOrigin)
+        .build();
+      picker.setVisible(true);
+    }});
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-[#030712] p-6 lg:p-10 text-slate-200 custom-scrollbar relative">
       {/* Dynamic Background Blur */}
       <div className="absolute top-0 inset-x-0 h-[300px] bg-gradient-to-b from-indigo-900/20 to-transparent pointer-events-none z-0"></div>
 
-      <div className="max-w-5xl mx-auto space-y-8 relative z-10">
+      <div className="max-w-6xl mx-auto space-y-8 relative z-10">
         
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-            <h2 className="text-sm font-bold text-emerald-400 tracking-widest uppercase mb-1 font-mono flex items-center gap-2">
-              <Cloud className="h-4 w-4" /> Cloud Operations
-            </h2>
-            <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-[#f0f6fc]">
-              Workspace Actions
-            </h1>
-            <p className="text-slate-400 mt-3 text-sm max-w-xl">
-              Connect your TaskPilot data seamlessly with Google Workspace. Push schedules, export analytics, and generate beautiful presentations from your active tasks and goals.
-            </p>
-          </motion.div>
-        </div>
+        <PageHeader
+          icon={Cloud}
+          badge="Cloud Operations"
+          color="amber"
+          title="Workspace"
+          titleAccent="Actions"
+          description="Connect your TaskPilot data seamlessly with Google Workspace. Push schedules, export analytics, and generate beautiful presentations from your active tasks and goals."
+        />
 
         {/* Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
@@ -248,6 +297,7 @@ export function Workspace() {
             </div>
           </motion.div>
 
+          
           {/* Export Sheets */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="group">
             <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 flex flex-col justify-between">
@@ -265,6 +315,43 @@ export function Workspace() {
               </Button>
             </div>
           </motion.div>
+
+          {/* Sync Tasks */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.35 }} className="group">
+            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+              <div>
+                <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
+                  <CheckCircle className="h-6 w-6 text-blue-400" />
+                </div>
+                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Sync Google Tasks</h3>
+                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                  Export all your active tasks into your default Google Tasks list to keep everything tracked in one place.
+                </p>
+              </div>
+              <Button onClick={handleSyncTasks} className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                Sync Tasks <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </div>
+          </motion.div>
+
+          {/* Google Picker */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.36 }} className="group">
+            <div className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 flex flex-col justify-between">
+              <div>
+                <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
+                  <FileText className="h-6 w-6 text-purple-400" />
+                </div>
+                <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Pick Google Drive File</h3>
+                <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                  Open Google Picker to select a file from your Drive directly in TaskPilot.
+                </p>
+              </div>
+              <Button onClick={handlePickFile} className="w-full bg-[#161b22] border border-[#21262d] hover:border-purple-500/30 hover:bg-purple-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                Open Picker <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            </div>
+          </motion.div>
+
 
           {/* Generate Slides */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.4 }} className="group">

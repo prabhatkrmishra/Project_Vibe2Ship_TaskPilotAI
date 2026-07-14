@@ -11,7 +11,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Calendar } from '../components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
-import { Plus, Clock, Rocket, CheckCircle2, Circle, CalendarIcon, Trash2, Sparkles, Pencil } from 'lucide-react';
+import { Plus, Clock, Rocket, CheckCircle2, Circle, CalendarIcon, Trash2, Sparkles, Pencil, CheckSquare } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { showSuccess, showError } from '../lib/toastTheme';
@@ -775,9 +776,14 @@ export function Tasks() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
-      <header className="flex flex-col gap-4 mb-2 px-2">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Your <br/><span className="font-semibold italic text-indigo-400">Commitments</span></h1>
+      <PageHeader
+        icon={CheckSquare}
+        badge="Mission Board"
+        color="emerald"
+        title="Your"
+        titleAccent="Commitments"
+        description="Track, plan, and complete your tasks with AI-assisted scheduling."
+        actions={
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg px-4 py-2 inline-flex items-center justify-center card-lift">
               <Plus className="mr-2 h-4 w-4" /> New Task
@@ -924,9 +930,9 @@ export function Tasks() {
               </Button>
             </form>
           </DialogContent>
-        </Dialog>
-        </div>
-      </header>
+          </Dialog>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2 px-2">

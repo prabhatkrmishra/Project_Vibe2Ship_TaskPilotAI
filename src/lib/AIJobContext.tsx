@@ -11,6 +11,8 @@ interface AIJobContextValue {
   startJob: (id: string, label: string) => void;
   endJob: (id: string) => void;
   isJobRunning: (id: string) => boolean;
+  planVersion: number;
+  bumpPlanVersion: () => void;
 }
 
 const AIJobContext = createContext<AIJobContextValue | null>(null);
@@ -18,6 +20,7 @@ const AIJobContext = createContext<AIJobContextValue | null>(null);
 export function AIJobProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<AIJob[]>([]);
   const jobsRef = useRef<AIJob[]>([]);
+  const [planVersion, setPlanVersion] = useState(0);
 
   const startJob = useCallback((id: string, label: string) => {
     const job: AIJob = { id, label, startedAt: Date.now() };
@@ -34,8 +37,12 @@ export function AIJobProvider({ children }: { children: ReactNode }) {
     return jobsRef.current.some(j => j.id === id);
   }, []);
 
+  const bumpPlanVersion = useCallback(() => {
+    setPlanVersion(v => v + 1);
+  }, []);
+
   return (
-    <AIJobContext.Provider value={{ jobs, startJob, endJob, isJobRunning }}>
+    <AIJobContext.Provider value={{ jobs, startJob, endJob, isJobRunning, planVersion, bumpPlanVersion }}>
       {children}
     </AIJobContext.Provider>
   );

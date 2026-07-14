@@ -67,7 +67,13 @@ const UserSchema = new mongoose.Schema({
     onTimeTasksCompleted: { type: Number, default: 0 },
     earnedBadges: { type: [String], default: [] },
     unlockedPersonalities: { type: [String], default: ['default'] },
-    activePersonality: { type: String, default: 'default' }
+    activePersonality: { type: String, default: 'default' },
+    // Focus Zone gamification
+    focusStreak: { type: Number, default: 0 },
+    longestFocusStreak: { type: Number, default: 0 },
+    totalFocusMinutes: { type: Number, default: 0 },
+    focusSessionsCompleted: { type: Number, default: 0 },
+    focusLastActiveDate: { type: String, default: null } // YYYY-MM-DD — dedicated for focus streak
   },
 
   createdAt: { type: Date, default: Date.now }
@@ -89,6 +95,7 @@ const GoalSchema = new mongoose.Schema({
   progress: { type: Number, default: 0 },
   streak: { type: Number, default: 0 },
   lastLogged: { type: String },
+  scheduledTime: { type: String },
   completed: { type: Boolean, default: false },
   completedAt: { type: String },
   steps: { type: [GoalStepSchema], default: [] },
@@ -159,6 +166,24 @@ const DailyPlanSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// 7. FocusSession Schema
+const FocusSessionSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  method: { type: String, enum: ['pomodoro', 'flowtime', '52-17', 'ultradian', 'custom'], required: true },
+  taskTitle: { type: String },
+  taskId: { type: String },
+  startedAt: { type: Date, required: true },
+  endedAt: { type: Date, required: true },
+  plannedDuration: { type: Number, default: 0 }, // seconds
+  actualDuration: { type: Number, required: true }, // seconds
+  breaks: { type: Number, default: 0 },
+  qualityRating: { type: Number, min: 1, max: 5 },
+  note: { type: String },
+  completed: { type: Boolean, default: false }
+}, { timestamps: true });
+
+FocusSessionSchema.index({ userId: 1, startedAt: -1 });
+
 // Helper to handle compilation with hot reloading/re-importing
 export const User = mongoose.models.User || mongoose.model('User', UserSchema);
 export const Goal = mongoose.models.Goal || mongoose.model('Goal', GoalSchema);
@@ -166,3 +191,4 @@ export const Task = mongoose.models.Task || mongoose.model('Task', TaskSchema);
 export const ChatMessage = mongoose.models.ChatMessage || mongoose.model('ChatMessage', ChatMessageSchema);
 export const AIDecision = mongoose.models.AIDecision || mongoose.model('AIDecision', AIDecisionSchema);
 export const DailyPlanModel = mongoose.models.DailyPlan || mongoose.model('DailyPlan', DailyPlanSchema);
+export const FocusSession = mongoose.models.FocusSession || mongoose.model('FocusSession', FocusSessionSchema);

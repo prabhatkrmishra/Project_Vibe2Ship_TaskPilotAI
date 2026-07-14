@@ -8,6 +8,7 @@ import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Flame, CheckCircle2, Circle, Plus, Trash2, Sparkles, Bell, X, Clock, ListTree, Pencil, Plane, Target, Route } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
 import { showSuccess, showError } from '../lib/toastTheme';
 import { getDelayText, getGoalCompletionDate } from '../lib/utils';
@@ -25,6 +26,7 @@ export function Goals() {
   const [description, setDescription] = useState('');
   const [type, setType] = useState<'habit' | 'quest'>('habit');
   const [targetDate, setTargetDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const [timetableSessions, setTimetableSessions] = useState<any[]>([]);
@@ -331,6 +333,7 @@ export function Goals() {
           description,
           type,
           targetDate: type === 'quest' ? targetDate : null,
+          scheduledTime: type === 'habit' && scheduledTime ? scheduledTime : null,
           progress: 0,
           streak: type === 'habit' ? 0 : null,
           completed: false,
@@ -401,6 +404,7 @@ export function Goals() {
       setTitle('');
       setDescription('');
       setTargetDate('');
+      setScheduledTime('');
       setType('habit');
       fetchGoalsAndTasks();
     } catch (error) {
@@ -602,7 +606,7 @@ export function Goals() {
   });
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
       <AnimatePresence>
         {isCreating && type === 'quest' && (
           <motion.div
@@ -689,11 +693,15 @@ export function Goals() {
         )}
       </AnimatePresence>
 
-      <header className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Quests <br/><span className="font-semibold italic text-cyan-400">& Habits</span></h1>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <PageHeader
+        icon={Target}
+        badge="Quest & Habit"
+        color="cyan"
+        title="Track Your"
+        titleAccent="Progress"
+        description="Build consistent routines and chase down long-term goals with AI planning."
+        actions={
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger render={
             <Button className="bg-white text-emerald-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-50 transition-colors shadow-lg px-4 card-lift">
               <Plus className="mr-2 h-4 w-4" /> New Objective
@@ -770,6 +778,23 @@ export function Goals() {
                   <Label className="text-slate-400">Description <span className="text-slate-600 text-xs">(Optional)</span></Label>
                   <Input className="bg-slate-900 border-slate-800 text-white rounded-xl h-11" value={description} onChange={e => setDescription(e.target.value)} placeholder="Why is this important?" />
                 </div>
+                {type === 'habit' && (
+                  <div className="space-y-2">
+                    <Label className="text-slate-400">Scheduled Time <span className="text-slate-600 text-xs">(Optional)</span></Label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Clock className="h-4 w-4 text-slate-500 group-hover:text-indigo-500 transition-colors" />
+                      </div>
+                      <Input
+                        type="time"
+                        className="bg-slate-900 border-slate-800 text-slate-200 rounded-xl h-11 pl-10 pr-4 [color-scheme:dark] focus-visible:ring-indigo-500/50 hover:bg-slate-800/80 hover:border-indigo-500/30 transition-all w-full"
+                        value={scheduledTime}
+                        onChange={e => setScheduledTime(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-600">Set a time for daily reminders. Leave empty for anytime habits.</p>
+                  </div>
+                )}
                 {type === 'quest' && (
                   <div className="space-y-2">
                     <Label className="text-slate-400">Target Deadline</Label>
@@ -806,8 +831,9 @@ export function Goals() {
               </Button>
             </form>
           </DialogContent>
-        </Dialog>
-      </header>
+          </Dialog>
+        }
+      />
 
       {reminders.length > 0 && (
         <div className="space-y-2">

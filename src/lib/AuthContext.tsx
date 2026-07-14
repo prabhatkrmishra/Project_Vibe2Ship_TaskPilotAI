@@ -151,7 +151,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return new Promise<string | null>((resolve) => {
         const client = (window as any).google.accounts.oauth2.initCodeClient({
           client_id: googleClientId,
-          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/presentations https://www.googleapis.com/auth/tasks.readonly",
+          scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/presentations https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/tasks.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly",
           ux_mode: "popup",
           callback: async (response: any) => {
             if (response.error) {

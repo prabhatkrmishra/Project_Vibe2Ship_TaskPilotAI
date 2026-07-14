@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext';
 import { Goal, Task } from '../types';
 import { Sparkles, CheckCircle2, Clock, ListTree, Award, Route } from 'lucide-react';
 import { getDelayText, getGoalCompletionDate } from '../lib/utils';
+import PageHeader from '../components/PageHeader';
 
 export function Completions() {
   const { user } = useAuth();
@@ -73,19 +74,15 @@ export function Completions() {
   const hasCompletions = completedQuests.length > 0 || activeQuestsWithCompletions.length > 0 || standaloneCompletedTasks.length > 0;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6 select-none bg-[#030712]">
-      <header className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">
-            Completions & <br/>
-            <span className="font-semibold italic text-emerald-400">Achievements</span>
-          </h1>
-          <p className="text-xs text-[#8b949e] mt-1">Review, inspect, and celebrate your finished missions and task progressions.</p>
-        </div>
-        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/5">
-          <Award className="w-6 h-6" />
-        </div>
-      </header>
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 select-none bg-[#030712] w-full">
+      <PageHeader
+        icon={Award}
+        badge="Completions"
+        color="emerald"
+        title="Your"
+        titleAccent="Achievements"
+        description="Review, inspect, and celebrate your finished missions and task progressions."
+      />
 
       {loading ? (
         <div className="text-center text-[#8b949e] py-12">Loading completions board...</div>

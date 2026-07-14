@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AIJobProvider } from './lib/AIJobContext';
+import { HabitReminderProvider } from './lib/HabitReminderContext';
+import { HabitReminderBanner } from './components/HabitReminderBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Button } from './components/ui/button';
-import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud, CheckCircle2, Calendar } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, MessageSquare, LogOut, Loader2, Menu, X, Target, Cloud, CheckCircle2, Calendar, Headphones } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Dashboard } from './pages/Dashboard';
 import { Timetable } from './pages/Timetable';
@@ -17,6 +19,7 @@ import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import { TermsOfService } from './pages/TermsOfService';
 import { Home } from './pages/Home';
 import { Profile } from './pages/Profile';
+import Focus from './pages/Focus';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './components/ui/sonner';
 import { Analytics } from '@vercel/analytics/react';
@@ -50,14 +53,17 @@ function SidebarContent({ user, location, logout, onClose }: { user: any, locati
         <Link to="/dashboard" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/dashboard' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <LayoutDashboard className="h-4 w-4 text-indigo-400" /> Command Center
         </Link>
+        <Link to="/timetable" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/timetable' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
+          <Calendar className="h-4 w-4 text-pink-400" /> Timetable
+        </Link>
         <Link to="/tasks" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/tasks' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <CheckSquare className="h-4 w-4 text-emerald-400" /> Mission Board
         </Link>
         <Link to="/goals" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/goals' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <Target className="h-4 w-4 text-cyan-400" /> Quest & Habit
         </Link>
-        <Link to="/timetable" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/timetable' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
-          <Calendar className="h-4 w-4 text-pink-400" /> Timetable
+        <Link to="/focus" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/focus' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
+          <Headphones className="h-4 w-4 text-violet-400" /> Focus Zone
         </Link>
         <Link to="/completions" onClick={onClose} className={`flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-900 transition-colors text-slate-300 ${location.pathname === '/completions' ? 'bg-indigo-500/10 border-l-2 border-indigo-500 pl-[10px]' : 'border-l-2 border-transparent pl-[10px]'}`}>
           <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Completions
@@ -395,7 +401,9 @@ export default function App() {
       <AuthProvider>
         <AIJobProvider>
           <BrowserRouter>
-            <Routes>
+            <HabitReminderProvider>
+              <HabitReminderBanner />
+              <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
@@ -435,6 +443,13 @@ export default function App() {
                 </Layout>
               </ProtectedRoute>
             } />
+            <Route path="/focus" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Focus />
+                </Layout>
+              </ProtectedRoute>
+            } />
             <Route path="/workspace" element={
               <ProtectedRoute>
                 <Layout>
@@ -458,6 +473,7 @@ export default function App() {
             } />
             <Route path="*" element={<NotFound />} />
           </Routes>
+            </HabitReminderProvider>
           <Toaster />
           <Analytics />
           <SpeedInsights />

@@ -3,7 +3,8 @@ import { useAuth } from '../lib/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Send, Bot, Mic, Loader2, Sparkles, Plus, Trash2, History, Edit2, Check, X } from 'lucide-react';
+import { Send, Bot, Mic, Loader2, Sparkles, Plus, Trash2, History, Edit2, Check, X, MessageSquare } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import ReactMarkdown from 'react-markdown';
 import { showSuccess, showError, showWarning } from '../lib/toastTheme';
 import { Task } from '../types';
@@ -723,7 +724,7 @@ export function Chat() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto h-full flex flex-col w-full animate-fade-in relative">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto h-full flex flex-col w-full animate-fade-in relative">
       {isRecording && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d1117]/80 backdrop-blur-md">
           <div className="bg-[#161b22] border border-red-500/30 p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.15)] flex flex-col items-center gap-6 w-[90%] max-w-md animate-fade-in relative overflow-hidden">
@@ -756,10 +757,14 @@ export function Chat() {
       )}
 
       <div className="mb-6 flex flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-light text-[#f0f6fc] leading-tight">Pilot <br/><span className="font-semibold italic text-indigo-400">Intelligence</span></h1>
-          <p className="text-[#8b949e] mt-2">Ask for schedule adjustments, task breakdowns, or productivity advice.</p>
-        </div>
+        <PageHeader
+          icon={MessageSquare}
+          badge="Mission Control"
+          color="violet"
+          title="Pilot"
+          titleAccent="Intelligence"
+          description="Ask for schedule adjustments, task breakdowns, or productivity advice."
+        />
         
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 w-full">
           {/* Left group: New Chat & Chat History */}

@@ -11,6 +11,7 @@ import { TaskSelectionModal } from '../components/TaskSelectionModal';
 import { useAIJobs } from '../lib/AIJobContext';
 
 import { safeJson } from '../lib/utils';
+import PageHeader from '../components/PageHeader';
 
 // Every plain toast (info/success/error/warning) on this page renders through the shared
 // SessionToastCard shell from ../lib/toastTheme — the same dark-glass style originally
@@ -54,7 +55,8 @@ export function Timetable() {
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
-  const { startJob, endJob, isJobRunning } = useAIJobs();
+  const [rescheduleBanner, setRescheduleBanner] = useState<'idle' | 'in-progress' | 'success' | 'error'>('idle');
+  const { startJob, endJob, isJobRunning, bumpPlanVersion } = useAIJobs();
   const isJobActive = isJobRunning('generate-plan');
   // Native window.confirm() is unreliable inside sandboxed preview/embedded iframes (common in
   // hosted dev environments) — it can silently return false or never render, making the "full
@@ -460,6 +462,7 @@ export function Timetable() {
 
       showInfoToast('cyan', <Sparkles className="w-5 h-5" />, "Timetable regenerated", "Gemini has customized your daily timetable!");
       await fetchTimetableData();
+      bumpPlanVersion();
       lastRescheduleSignatureRef.current = computeTaskSignature(tasksToUse);
       setShowConfig(false);
     } catch (error: any) {
@@ -488,6 +491,7 @@ export function Timetable() {
     }
 
     setIsRescheduling(true);
+    setRescheduleBanner('in-progress');
     startJob('generate-plan', 'Rescheduling routine');
     try {
       const token = await user?.getIdToken();
@@ -506,11 +510,15 @@ export function Timetable() {
         throw new Error(errData.error || "Failed to reschedule sessions.");
       }
 
-      showInfoToast('cyan', <Sparkles className="w-5 h-5" />, "Routine rescheduled", "Sessions have been updated to reflect your latest tasks.");
+      setRescheduleBanner('success');
       lastRescheduleSignatureRef.current = currentSignature;
       await fetchTimetableData();
+      bumpPlanVersion();
+      setTimeout(() => setRescheduleBanner('idle'), 5000);
     } catch (error: any) {
       console.error(error);
+      setRescheduleBanner('error');
+      setTimeout(() => setRescheduleBanner('idle'), 5000);
       showInfoToast('red', <AlertTriangle className="w-5 h-5" />, "Reschedule failed", error.message || "Failed to reschedule sessions.");
     } finally {
       setIsRescheduling(false);
@@ -634,6 +642,7 @@ export function Timetable() {
 
       // Re-fetch fresh data to stay in sync
       fetchTimetableData();
+      bumpPlanVersion();
     } catch (e) {
       // Roll back on network error
       setPlan(previousPlan);
@@ -769,6 +778,7 @@ export function Timetable() {
           .status { font-size: 9pt; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
           .status-completed { color: #16a34a; }
           .status-scheduled { color: #4f46e5; }
+          .status-notattended { color: #dc2626; }
           .footer { margin-top: 50px; font-size: 9pt; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 15px; }
         </style>
       </head>
@@ -788,8 +798,10 @@ export function Timetable() {
 
     visibleSessions.forEach(session => {
       const isCompleted = session.completed || (!!session.taskId && completedTasks.some(t => t.id === session.taskId));
-      const statusText = isCompleted ? "Completed" : "Scheduled";
-      const statusClass = isCompleted ? "status-completed" : "status-scheduled";
+      const isSessPast = new Date() > new Date(session.endTime);
+      const isNotAttended = isSessPast && !isCompleted && !session.started;
+      const statusText = isCompleted ? "Completed" : isNotAttended ? "Not Attended" : "Scheduled";
+      const statusClass = isCompleted ? "status-completed" : isNotAttended ? "status-notattended" : "status-scheduled";
       
       html += `
             <tr>
@@ -840,15 +852,17 @@ export function Timetable() {
     let itemsHtml = '';
     visibleSessions.forEach(session => {
       const isCompleted = session.completed || (!!session.taskId && completedTasks.some(t => t.id === session.taskId));
+      const isSessPast = new Date() > new Date(session.endTime);
+      const isNotAttended = isSessPast && !isCompleted && !session.started;
       itemsHtml += `
-        <div class="item ${isCompleted ? 'completed' : ''}">
+        <div class="item ${isCompleted ? 'completed' : ''} ${isNotAttended ? 'notattended' : ''}">
           <div class="time-block">
             <div class="time">${formatTime(session.startTime)}</div>
             <div class="time-end">${formatTime(session.endTime)}</div>
           </div>
           <div class="info">
             <div class="title">${session.taskTitle}</div>
-            <div class="status">${isCompleted ? '✓ Completed' : '○ Scheduled'}</div>
+            <div class="status">${isCompleted ? '✓ Completed' : isNotAttended ? '○ Not Attended' : '○ Scheduled'}</div>
           </div>
         </div>
       `;
@@ -902,6 +916,14 @@ export function Timetable() {
             .item.completed .title {
               text-decoration: line-through;
               color: #4a5568;
+            }
+            .item.notattended {
+              background-color: #fef2f2;
+              border-color: #fecaca;
+              opacity: 0.7;
+            }
+            .item.notattended .status {
+              color: #dc2626;
             }
             .time-block {
               width: 120px;
@@ -991,22 +1013,15 @@ export function Timetable() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-2">
-        <div>
-          <span className="text-[10px] uppercase tracking-widest font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
-            Temporal Engine Active
-          </span>
-          <h1 className="text-3xl font-light text-white leading-tight mt-2">
-            Daily <span className="font-semibold italic text-indigo-300">Timetable</span>
-          </h1>
-          <p className="text-sm text-slate-400 mt-1 flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-slate-500" />
-            {getLocalDateString()}
-          </p>
-        </div>
-
-        {!loading && (
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6 flex flex-col h-full overflow-y-auto w-full">
+      <PageHeader
+        icon={CalendarIcon}
+        badge="Daily Timetable"
+        color="pink"
+        title="Today's"
+        titleAccent="Schedule"
+        description={`Your AI-optimized session schedule for ${getLocalDateString()}.`}
+        actions={!loading ? (
           <div className="relative self-start sm:self-center" ref={actionsMenuRef}>
             <Button
               onClick={() => setActionsMenuOpen(!actionsMenuOpen)}
@@ -1057,8 +1072,38 @@ export function Timetable() {
               </div>
             )}
           </div>
-        )}
-      </header>
+        ) : null}
+      />
+
+      {rescheduleBanner !== 'idle' && (
+        <motion.div
+          initial={{ opacity: 0, y: -10, height: 0 }}
+          animate={{ opacity: 1, y: 0, height: 'auto' }}
+          exit={{ opacity: 0, y: -10, height: 0 }}
+          className={`mb-4 flex items-center gap-3 px-5 py-3 rounded-2xl border text-sm font-semibold transition-all duration-300 ${
+            rescheduleBanner === 'in-progress'
+              ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+              : rescheduleBanner === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-red-500/10 border-red-500/30 text-red-300'
+          }`}
+        >
+          {rescheduleBanner === 'in-progress' ? (
+            <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+          ) : rescheduleBanner === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+          )}
+          <span>
+            {rescheduleBanner === 'in-progress'
+              ? 'Rescheduling routine — AI is slotting your tasks...'
+              : rescheduleBanner === 'success'
+                ? 'Routine rescheduled successfully!'
+                : 'Reschedule failed — please try again.'}
+          </span>
+        </motion.div>
+      )}
 
       <motion.div 
         initial={{ opacity: 0, y: 15 }}
@@ -1162,6 +1207,16 @@ export function Timetable() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
+                      onClick={handleSyncCalendar}
+                      disabled={isSyncingCalendar}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                    >
+                      {isSyncingCalendar ? <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5 text-emerald-400" />}
+                      Google Calendar Sync
+                    </Button>
+                    <Button
                       onClick={printTimetable}
                       variant="outline"
                       size="sm"
@@ -1187,16 +1242,6 @@ export function Timetable() {
                     >
                       <FileText className="w-3.5 h-3.5 text-pink-400" />
                       Document (.doc)
-                    </Button>
-                    <Button
-                      onClick={handleSyncCalendar}
-                      disabled={isSyncingCalendar}
-                      variant="outline"
-                      size="sm"
-                      className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
-                    >
-                      {isSyncingCalendar ? <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" /> : <CalendarCheck className="w-3.5 h-3.5 text-emerald-400" />}
-                      Sync with Calendar
                     </Button>
                   </div>
                 </div>

@@ -23,6 +23,7 @@ import {
   Check
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import { Button } from '../components/ui/button';
 import { ACHIEVEMENTS, Achievement } from '../types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
@@ -190,22 +191,28 @@ export function Profile() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
-      <div className="max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         
-        {/* Breadcrumb Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/dashboard" className="p-2 bg-slate-900 hover:bg-slate-800 border border-[#21262d] rounded-xl text-slate-400 hover:text-white transition-all">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-[#f0f6fc] tracking-tight">User Profile</h1>
-              <p className="text-slate-400 text-xs md:text-sm">Manage your personal settings and security password.</p>
-            </div>
-          </div>
-          <div className="hidden sm:flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-1.5 rounded-full text-indigo-400 text-xs font-mono">
-            <ShieldCheck className="h-4 w-4" />
-            <span>Profile Secured</span>
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <Link to="/dashboard" className="p-2 mt-1 bg-slate-900 hover:bg-slate-800 border border-[#21262d] rounded-xl text-slate-400 hover:text-white transition-all shrink-0">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="flex-1">
+            <PageHeader
+              icon={UserIcon}
+              badge="User Profile"
+              color="indigo"
+              title="Account &"
+              titleAccent="Settings"
+              description="Manage your personal settings and security password."
+              actions={
+                <div className="hidden sm:flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-1.5 rounded-full text-indigo-400 text-xs font-mono">
+                  <ShieldCheck className="h-4 w-4" />
+                  <span>Profile Secured</span>
+                </div>
+              }
+            />
           </div>
         </div>
 
