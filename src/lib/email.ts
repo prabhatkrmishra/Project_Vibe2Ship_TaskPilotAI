@@ -4,7 +4,6 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_USERNAME = process.env.SMTP_USERNAME || '';
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD || '';
 const EMAIL_FROM = process.env.EMAIL_FROM || SMTP_USERNAME;
@@ -13,18 +12,24 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 let transporter: nodemailer.Transporter | null = null;
 
-function getTransporter(): nodemailer.Transporter | null {
+async function getTransporter(): Promise<nodemailer.Transporter | null> {
   if (!SMTP_USERNAME || !SMTP_PASSWORD) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: 587,
-      secure: false,
+      service: 'gmail',
       auth: {
         user: SMTP_USERNAME,
         pass: SMTP_PASSWORD,
       },
     });
+    try {
+      await transporter.verify();
+      console.log('SMTP connection verified successfully');
+    } catch (err) {
+      console.error('SMTP connection verification failed:', err);
+      transporter = null;
+      return null;
+    }
   }
   return transporter;
 }
@@ -69,7 +74,19 @@ function baseLayout(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-function passwordResetBody(name: string, resetUrl: string): string {
+function passwordResetText(name: string, resetUrl: string): string {
+  return `Hi ${name},
+
+We received a request to reset your password. Click the link below to set a new one. This link expires in 15 minutes.
+
+${resetUrl}
+
+If you didn't request this, you can safely ignore this email. Your password will remain unchanged.
+
+TaskPilot AI — Autonomous Productivity`;
+}
+
+function passwordResetHtml(name: string, resetUrl: string): string {
   return baseLayout('Reset Your Password', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
       Hi ${escHtml(name)},
@@ -88,7 +105,21 @@ function passwordResetBody(name: string, resetUrl: string): string {
   `);
 }
 
-function loginWarningBody(name: string, ip: string, device: string, timestamp: string): string {
+function loginWarningText(name: string, ip: string, device: string, timestamp: string): string {
+  return `Hi ${name},
+
+A new login was detected on your TaskPilot AI account:
+
+IP Address: ${ip}
+Device / Browser: ${device}
+Time: ${timestamp}
+
+If this wasn't you, change your password immediately and review your account security.
+
+TaskPilot AI — Autonomous Productivity`;
+}
+
+function loginWarningHtml(name: string, ip: string, device: string, timestamp: string): string {
   return baseLayout('New Login Detected', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
       Hi ${escHtml(name)},
@@ -117,7 +148,7 @@ function loginWarningBody(name: string, ip: string, device: string, timestamp: s
 // ─── Send Functions ──────────────────────────────────────────────────────────
 
 export async function sendPasswordResetEmail(to: string, name: string, token: string): Promise<boolean> {
-  const transport = getTransporter();
+  const transport = await getTransporter();
   if (!transport) return false;
 
   const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
@@ -126,7 +157,8 @@ export async function sendPasswordResetEmail(to: string, name: string, token: st
       from: EMAIL_FROM,
       to,
       subject: 'TaskPilot AI — Reset Your Password',
-      html: passwordResetBody(name, resetUrl),
+      text: passwordResetText(name, resetUrl),
+      html: passwordResetHtml(name, resetUrl),
     });
     return true;
   } catch (err) {
@@ -136,7 +168,7 @@ export async function sendPasswordResetEmail(to: string, name: string, token: st
 }
 
 export async function sendLoginWarningEmail(to: string, name: string, ip: string, device: string): Promise<boolean> {
-  const transport = getTransporter();
+  const transport = await getTransporter();
   if (!transport) return false;
 
   const timestamp = new Date().toLocaleString('en-US', {
@@ -149,7 +181,8 @@ export async function sendLoginWarningEmail(to: string, name: string, ip: string
       from: EMAIL_FROM,
       to,
       subject: 'TaskPilot AI — New Login Detected',
-      html: loginWarningBody(name, ip, device, timestamp),
+      text: loginWarningText(name, ip, device, timestamp),
+      html: loginWarningHtml(name, ip, device, timestamp),
     });
     return true;
   } catch (err) {
