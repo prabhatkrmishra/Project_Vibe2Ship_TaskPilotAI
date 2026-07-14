@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import rateLimit from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
@@ -29,6 +30,43 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) {
   );
 }
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// ─── Token encryption at rest ──────────────────────────────────────────────────
+// AES-256-GCM for encrypting sensitive fields (e.g. googleRefreshToken) in DB.
+// Key derived from JWT_SECRET via PBKDF2 so no extra env var needed.
+const ENCRYPTION_KEY = crypto.pbkdf2Sync(JWT_SECRET, 'taskpilot-token-encryption', 100_000, 32, 'sha512');
+
+function encryptToken(plain: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+function decryptToken(cipherText: string): string {
+  if (!cipherText || !cipherText.startsWith('enc:')) return cipherText;
+  const [, ivHex, tagHex, dataHex] = cipherText.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const tag = Buffer.from(tagHex, 'hex');
+  const data = Buffer.from(dataHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  decipher.setAuthTag(tag);
+  return decipher.update(data, undefined, 'utf8') + decipher.final('utf8');
+}
+
+// ─── Input sanitization ───────────────────────────────────────────────────────
+// Strip HTML/script tags from user-provided strings to prevent stored XSS
+// when values are rendered in server-generated HTML (e.g. OAuth callback pages).
+function sanitizeHtml(input: string | null | undefined): string {
+  if (!input) return '';
+  return input.replace(/<[^>]*>/g, '').trim();
+}
+
+// Escape </script> sequences for safe embedding in <script> blocks via JSON.stringify
+function safeJsonForScript(obj: any): string {
+  return JSON.stringify(obj).replace(/<\//g, '<\\/');
+}
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -480,6 +518,31 @@ async function startServer() {
 
   app.use(express.json());
 
+  // --- Rate Limiters ────────────────────────────────────────────────────────────
+  // S2: Rate limit auth endpoints to prevent brute-force / credential-stuffing.
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 min
+    max: 20,                   // 20 attempts per window per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many authentication attempts. Please try again later." },
+  });
+  const guestLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,                    // 5 guest accounts per IP per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many guest sessions. Please sign up or try again later." },
+  });
+  const chatLimiter = rateLimit({
+    windowMs: 60 * 1000,      // 1 min
+    max: 30,                   // 30 messages per min per user
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: any) => req.uid || req.ip,
+    message: { error: "You're sending messages too fast. Slow down." },
+  });
+
   // --- API Routes ---
   
   // Connect to MongoDB on server start (non-blocking to prevent server startup timeouts)
@@ -829,7 +892,7 @@ async function startServer() {
 
   // --- MongoDB Authentication Endpoints ---
 
-  app.post(["/register/user", "/api/register/user", "/api/auth/register"], async (req, res) => {
+  app.post(["/register/user", "/api/register/user", "/api/auth/register"], authLimiter, async (req, res) => {
     try {
       const { email, password, name, address } = req.body;
       if (!email || !password || !name) {
@@ -872,7 +935,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
@@ -908,9 +971,28 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/guest", async (req, res) => {
+  app.post("/api/auth/guest", guestLimiter, async (req, res) => {
     try {
       await connectDB();
+      // S3: Cap total guest accounts to prevent DB bloat. Auto-prune guests older than 30 days.
+      const GUEST_CAP = 500;
+      const guestCount = await User.countDocuments({ isGuest: true });
+      if (guestCount >= GUEST_CAP) {
+        // Prune oldest 10% of guests to make room
+        const pruneCount = Math.ceil(GUEST_CAP * 0.1);
+        const oldestGuests = await User.find({ isGuest: true }).sort({ createdAt: 1 }).limit(pruneCount).select('_id');
+        if (oldestGuests.length > 0) {
+          const ids = oldestGuests.map((g: any) => g._id);
+          await Promise.all([
+            User.deleteMany({ _id: { $in: ids } }),
+            Task.deleteMany({ userId: { $in: ids } }),
+            Goal.deleteMany({ userId: { $in: ids } }),
+            ChatMessage.deleteMany({ userId: { $in: ids } }),
+            DailyPlanModel.deleteMany({ userId: { $in: ids } }),
+            FocusSessionModel.deleteMany({ userId: { $in: ids } }),
+          ]);
+        }
+      }
       // Each guest session gets its own isolated account so guests never
       // share (or can see/edit/delete) each other's tasks, goals, chats, etc.
       const uniqueSuffix = `${Date.now()}-${crypto.randomUUID()}`;
@@ -2232,7 +2314,7 @@ async function startServer() {
   });
 
   // Handle GIS popup code exchange
-  app.post("/api/auth/google/callback", async (req, res) => {
+  app.post("/api/auth/google/callback", authLimiter, async (req, res) => {
     const { code } = req.body;
     if (!code) return res.status(400).send("Code is missing");
 
@@ -2260,7 +2342,8 @@ async function startServer() {
       if (!userRes.ok) return res.status(500).send("Failed to fetch user profile from Google");
 
       const userInfo = await userRes.json();
-      const { sub: googleUid, email, name, picture } = userInfo;
+      const { sub: googleUid, email, name: rawName, picture } = userInfo;
+      const name = sanitizeHtml(rawName); // S1: strip HTML tags to prevent stored XSS
       if (!email) return res.status(400).send("Google account has no email address to sign in with.");
 
       // Check for an existing authenticated user session
@@ -2305,7 +2388,7 @@ async function startServer() {
           currentUser.googleId = googleUid;
           currentUser.googleEmail = email.toLowerCase();
           if (tokens.refresh_token) {
-            currentUser.googleRefreshToken = tokens.refresh_token;
+            currentUser.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
           }
           if (picture && !currentUser.picture) currentUser.picture = picture;
           await currentUser.save();
@@ -2316,7 +2399,7 @@ async function startServer() {
         if (existingLinkedUser) {
           user = existingLinkedUser;
           if (tokens.refresh_token) {
-            user.googleRefreshToken = tokens.refresh_token;
+            user.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
           }
           if (picture && !user.picture) user.picture = picture;
           await user.save();
@@ -2330,14 +2413,14 @@ async function startServer() {
               authProvider: "google",
               googleId: googleUid,
               googleEmail: email.toLowerCase(),
-              googleRefreshToken: tokens.refresh_token || undefined,
+              googleRefreshToken: tokens.refresh_token ? encryptToken(tokens.refresh_token) : undefined, // S4: encrypt at rest
             });
           } else {
             user.authProvider = "google";
             user.googleId = googleUid;
             user.googleEmail = email.toLowerCase();
             if (picture && !user.picture) user.picture = picture;
-            if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+            if (tokens.refresh_token) user.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
             await user.save();
           }
         }
@@ -2442,7 +2525,7 @@ async function startServer() {
     res.json({ url: authUrl });
   });
 
-  app.get(["/oauth2callback", "/oauth2callback/"], async (req, res) => {
+  app.get(["/oauth2callback", "/oauth2callback/"], authLimiter, async (req, res) => {
     const { code, state, error: oauthError } = req.query;
 
     if (oauthError) {
@@ -2497,7 +2580,8 @@ async function startServer() {
       }
 
       const userInfo = await userRes.json();
-      const { sub: googleUid, email, name, picture } = userInfo;
+      const { sub: googleUid, email, name: rawName, picture } = userInfo;
+      const name = sanitizeHtml(rawName); // S1: strip HTML tags to prevent stored XSS
       if (!email) {
         return res.status(400).send("Google account has no email address to sign in with.");
       }
@@ -2531,7 +2615,7 @@ async function startServer() {
           currentUser.googleId = googleUid;
           currentUser.googleEmail = email.toLowerCase();
           if (tokens.refresh_token) {
-            currentUser.googleRefreshToken = tokens.refresh_token;
+            currentUser.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
           }
           if (picture && !currentUser.picture) currentUser.picture = picture;
           await currentUser.save();
@@ -2542,7 +2626,7 @@ async function startServer() {
         if (existingLinkedUser) {
           user = existingLinkedUser;
           if (tokens.refresh_token) {
-            user.googleRefreshToken = tokens.refresh_token;
+            user.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
           }
           if (picture && !user.picture) user.picture = picture;
           await user.save();
@@ -2556,14 +2640,14 @@ async function startServer() {
               authProvider: "google",
               googleId: googleUid,
               googleEmail: email.toLowerCase(),
-              googleRefreshToken: tokens.refresh_token || undefined,
+              googleRefreshToken: tokens.refresh_token ? encryptToken(tokens.refresh_token) : undefined, // S4: encrypt at rest
             });
           } else {
             user.authProvider = "google";
             user.googleId = googleUid;
             user.googleEmail = email.toLowerCase();
             if (picture && !user.picture) user.picture = picture;
-            if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+            if (tokens.refresh_token) user.googleRefreshToken = encryptToken(tokens.refresh_token); // S4: encrypt at rest
             await user.save();
           }
         }
@@ -2614,13 +2698,13 @@ async function startServer() {
             <script>
               const authData = {
                 type: 'GOOGLE_AUTH_SUCCESS',
-                accessToken: ${JSON.stringify(accessToken)},
-                taskpilotToken: ${JSON.stringify(taskpilotToken)},
-                user: ${JSON.stringify({ email: user.email, name: user.name, picture: user.picture, uid: user._id.toString() })}
+                accessToken: ${safeJsonForScript(accessToken)},
+                taskpilotToken: ${safeJsonForScript(taskpilotToken)},
+                user: ${safeJsonForScript({ email: user.email, name: user.name, picture: user.picture, uid: user._id.toString() })}
               };
 
               if (window.opener) {
-                window.opener.postMessage(authData, ${JSON.stringify(targetOrigin)});
+                window.opener.postMessage(authData, ${safeJsonForScript(targetOrigin)});
                 window.close();
               } else {
                 window.location.href = '/';
@@ -3122,7 +3206,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/chat", verifyToken, async (req: any, res: any) => {
+  app.post("/api/chat", verifyToken, chatLimiter, async (req: any, res: any) => {
     try {
       const { messages, context, model, localDateStr, localTimeStr } = req.body;
       const selectedModel = getValidModel(model);
