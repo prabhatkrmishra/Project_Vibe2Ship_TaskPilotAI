@@ -48,12 +48,12 @@ export async function exportToCalendar(task: Task) {
   return res.json();
 }
 
-export async function exportToDrive(tasks: Task[]) {
+export async function exportToDrive(data: any) {
   const headers = await getHeaders();
   
-  const content = JSON.stringify(tasks, null, 2);
+  const content = JSON.stringify(data, null, 2);
   const metadata = {
-    name: `TaskPilot_Export_${new Date().toISOString().split('T')[0]}.json`,
+    name: `TaskPilot_Backup_${new Date().toISOString().split('T')[0]}.json`,
     mimeType: 'application/json'
   };
 
@@ -243,4 +243,36 @@ export async function exportToSheets(tasks: Task[]) {
 
   if (!updateRes.ok) throw new Error("Failed to write to spreadsheet");
   return sheet;
+}
+
+
+export async function importFromTasks() {
+  const headers = await getHeaders();
+  
+  const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false', {
+    method: 'GET',
+    headers
+  });
+  
+  if (!res.ok) {
+     const err = await res.json();
+     throw new Error(`Tasks Error: ${err.error?.message || res.statusText}`);
+  }
+
+  const data = await res.json();
+  const importedTasks = [];
+  
+  if (data.items) {
+    for (const item of data.items) {
+      importedTasks.push({
+        title: item.title,
+        description: item.notes || "",
+        status: item.status === 'completed' ? 'completed' : 'pending',
+        priority: 'medium',
+        dueDate: item.due ? new Date(item.due) : undefined
+      });
+    }
+  }
+
+  return importedTasks;
 }
