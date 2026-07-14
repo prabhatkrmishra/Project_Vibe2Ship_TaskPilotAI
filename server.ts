@@ -556,6 +556,14 @@ async function startServer() {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       req.uid = decoded.uid;
+      // Invalidate JWTs issued before a password reset
+      if (decoded.tv !== undefined) {
+        await connectDB();
+        const user = await User.findById(decoded.uid).select('tokenVersion');
+        if (user && user.tokenVersion !== decoded.tv) {
+          return res.status(401).json({ error: 'Token invalidated — please log in again' });
+        }
+      }
       next();
     } catch {
       res.status(401).json({ error: 'Invalid token' });
@@ -917,7 +925,7 @@ async function startServer() {
         address: address || "",
         picture: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
       });
-      const token = jwt.sign({ uid: newUser._id.toString(), email: newUser.email }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ uid: newUser._id.toString(), email: newUser.email, tv: 0 }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
         user: {
@@ -990,7 +998,7 @@ async function startServer() {
         sendLoginWarningEmail(user.email, user.name, currentIP, currentDevice).catch(() => {});
       }
 
-      const token = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ uid: user._id.toString(), email: user.email, tv: user.tokenVersion || 0 }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
         user: {
@@ -1044,7 +1052,7 @@ async function startServer() {
         address: "123 Pilot Way, AI Station",
         isGuest: true
       });
-      const token = jwt.sign({ uid: guest._id.toString(), email: guest.email }, JWT_SECRET, { expiresIn: '30d' });
+      const token = jwt.sign({ uid: guest._id.toString(), email: guest.email, tv: 0 }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
         user: {
@@ -1217,6 +1225,8 @@ async function startServer() {
       }
       
       user.password = await bcrypt.hash(newPassword, 10);
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      user.passwordChangedAt = new Date();
       await user.save();
       
       res.json({ message: "Password updated successfully" });
@@ -1238,8 +1248,8 @@ async function startServer() {
         return res.json({ message: "If an account with that email exists, a reset link has been sent." });
       }
       const rawToken = crypto.randomBytes(32).toString('hex');
-      const hashedToken = await bcrypt.hash(rawToken, 10);
-      user.passwordResetToken = hashedToken;
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      user.passwordResetTokenHash = tokenHash;
       user.passwordResetExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
       await user.save();
       // Send email (non-blocking)
@@ -1252,21 +1262,14 @@ async function startServer() {
     }
   });
 
-  app.get("/api/auth/reset-password/:token", async (req: any, res: any) => {
+  app.get("/api/auth/reset-password/:token", authLimiter, async (req: any, res: any) => {
     try {
       const { token } = req.params;
       if (!token) return res.status(400).json({ valid: false });
       await connectDB();
-      // We need to scan users with a reset token and compare via bcrypt
-      const users = await User.find({ passwordResetToken: { $exists: true, $ne: null } });
-      let matchedUser: any = null;
-      for (const u of users) {
-        if (u.passwordResetExpiry && u.passwordResetExpiry > new Date()) {
-          const match = await bcrypt.compare(token, u.passwordResetToken);
-          if (match) { matchedUser = u; break; }
-        }
-      }
-      if (!matchedUser) return res.json({ valid: false });
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const user = await User.findOne({ passwordResetTokenHash: tokenHash, passwordResetExpiry: { $gt: new Date() } });
+      if (!user) return res.json({ valid: false });
       res.json({ valid: true });
     } catch (error: any) {
       res.json({ valid: false });
@@ -1279,19 +1282,15 @@ async function startServer() {
       if (!token || !newPassword) return res.status(400).json({ error: "Token and new password are required" });
       if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
       await connectDB();
-      const users = await User.find({ passwordResetToken: { $exists: true, $ne: null } });
-      let matchedUser: any = null;
-      for (const u of users) {
-        if (u.passwordResetExpiry && u.passwordResetExpiry > new Date()) {
-          const match = await bcrypt.compare(token, u.passwordResetToken);
-          if (match) { matchedUser = u; break; }
-        }
-      }
-      if (!matchedUser) return res.status(400).json({ error: "Invalid or expired reset token" });
-      matchedUser.password = await bcrypt.hash(newPassword, 10);
-      matchedUser.passwordResetToken = undefined;
-      matchedUser.passwordResetExpiry = undefined;
-      await matchedUser.save();
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const user = await User.findOne({ passwordResetTokenHash: tokenHash, passwordResetExpiry: { $gt: new Date() } });
+      if (!user) return res.status(400).json({ error: "Invalid or expired reset token" });
+      user.password = await bcrypt.hash(newPassword, 10);
+      user.passwordResetTokenHash = undefined;
+      user.passwordResetExpiry = undefined;
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      user.passwordChangedAt = new Date();
+      await user.save();
       res.json({ message: "Password reset successfully" });
     } catch (error: any) {
       console.error("Reset password error:", error);
@@ -1390,8 +1389,11 @@ async function startServer() {
       const { verifyTotpCode } = await import('./src/lib/totp.js');
       const secret = decryptToken(user.twoFactorSecret);
       if (!verifyTotpCode(secret, code)) return res.status(400).json({ error: "Invalid code" });
-      // Issue full JWT
-      const token = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      // Bump tokenVersion to invalidate the temp token and any other old sessions
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      await user.save();
+      // Issue full JWT with new version
+      const token = jwt.sign({ uid: user._id.toString(), email: user.email, tv: user.tokenVersion }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
         user: {
@@ -2646,7 +2648,7 @@ async function startServer() {
         }
       }
 
-      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email, tv: user.tokenVersion || 0 }, JWT_SECRET, { expiresIn: '30d' });
 
       res.json({
         accessToken,
@@ -2873,7 +2875,7 @@ async function startServer() {
         }
       }
 
-      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      const taskpilotToken = jwt.sign({ uid: user._id.toString(), email: user.email, tv: user.tokenVersion || 0 }, JWT_SECRET, { expiresIn: '30d' });
 
       // 4. Return HTML to notify parent window. We post to a specific
       // target origin (not '*') so the access token can't be read by an

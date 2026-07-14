@@ -57,9 +57,13 @@ const UserSchema = new mongoose.Schema({
   googleRefreshToken: { type: String },
   address: { type: String, default: '' },
 
-  // Password recovery
-  passwordResetToken: { type: String },
+  // Password recovery — SHA-256 hash of the raw token (fast O(1) lookup via index)
+  passwordResetTokenHash: { type: String, index: true },
   passwordResetExpiry: { type: Date },
+
+  // Session invalidation — bumped on password reset to invalidate all existing JWTs
+  tokenVersion: { type: Number, default: 0 },
+  passwordChangedAt: { type: Date },
 
   // Login warning — track known IPs and devices
   knownIPs: { type: [String], default: [] },

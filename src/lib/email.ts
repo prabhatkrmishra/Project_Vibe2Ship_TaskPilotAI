@@ -1,5 +1,9 @@
 import nodemailer from 'nodemailer';
 
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USERNAME = process.env.SMTP_USERNAME || '';
@@ -74,7 +78,7 @@ function baseLayout(title: string, bodyHtml: string): string {
 function passwordResetBody(name: string, resetUrl: string): string {
   return baseLayout('Reset Your Password', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
-      Hi ${name},
+      Hi ${escHtml(name)},
     </p>
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 24px;">
       We received a request to reset your password. Click the button below to set a new one. This link expires in <strong style="color:#f0f6fc;">15 minutes</strong>.
@@ -93,7 +97,7 @@ function passwordResetBody(name: string, resetUrl: string): string {
 function loginWarningBody(name: string, ip: string, device: string, timestamp: string): string {
   return baseLayout('New Login Detected', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
-      Hi ${name},
+      Hi ${escHtml(name)},
     </p>
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 20px;">
       A new login was detected on your TaskPilot AI account:
@@ -102,11 +106,11 @@ function loginWarningBody(name: string, ip: string, device: string, timestamp: s
       <tr>
         <td style="padding:16px 20px;">
           <p style="color:#8b949e;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">IP Address</p>
-          <p style="color:#f0f6fc;font-size:13px;margin:0 0 12px;font-family:monospace;">${ip}</p>
+          <p style="color:#f0f6fc;font-size:13px;margin:0 0 12px;font-family:monospace;">${escHtml(ip)}</p>
           <p style="color:#8b949e;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">Device / Browser</p>
-          <p style="color:#f0f6fc;font-size:13px;margin:0 0 12px;font-family:monospace;word-break:break-all;">${device}</p>
+          <p style="color:#f0f6fc;font-size:13px;margin:0 0 12px;font-family:monospace;word-break:break-all;">${escHtml(device)}</p>
           <p style="color:#8b949e;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">Time</p>
-          <p style="color:#f0f6fc;font-size:13px;margin:0;font-family:monospace;">${timestamp}</p>
+          <p style="color:#f0f6fc;font-size:13px;margin:0;font-family:monospace;">${escHtml(timestamp)}</p>
         </td>
       </tr>
     </table>
