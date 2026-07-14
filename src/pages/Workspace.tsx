@@ -79,7 +79,16 @@ export function Workspace() {
 
   useEffect(() => {
     verifyGoogleAuth();
-    return () => { verifyAbortRef.current?.abort(); };
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'workspace_access_token') verifyGoogleAuth();
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      verifyAbortRef.current?.abort();
+      window.removeEventListener('storage', onStorage);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
