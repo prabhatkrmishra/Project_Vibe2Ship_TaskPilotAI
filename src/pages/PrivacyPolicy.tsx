@@ -139,7 +139,7 @@ export function PrivacyPolicy() {
               If you have any questions or concerns about this Privacy Policy, please feel free to reach out to our team at:
             </p>
             <div className="bg-slate-900/60 border border-[#21262d] px-5 py-4 rounded-2xl w-fit font-mono text-sm text-indigo-300">
-              mprabhat774@gmail.com
+              taskpilot.ai.support@gmail.com
             </div>
           </section>
         </div>

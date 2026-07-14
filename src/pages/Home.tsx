@@ -355,7 +355,7 @@ export function Home() {
             <Link to="/privacy" className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-indigo-400 transition-colors">Terms of Service</Link>
             <span className="text-slate-700">|</span>
-            <span className="text-slate-400">Grievance contact: <strong className="text-indigo-400 font-normal">mprabhat774@gmail.com</strong></span>
+            <span className="text-slate-400">Grievance contact: <strong className="text-indigo-400 font-normal">taskpilot.ai.support@gmail.com</strong></span>
           </div>
 
           <p>© 2026 TaskPilot AI (India). All rights reserved.</p>
