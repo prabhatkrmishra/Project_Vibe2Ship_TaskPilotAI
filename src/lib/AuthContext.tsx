@@ -25,6 +25,7 @@ interface AuthContextType {
   disconnectWorkspaceAccess: () => void;
   updateUser: (updatedUser: { name?: string; address?: string; gamification?: any }) => void;
   refreshGamification: () => Promise<void>;
+  verify2FA: (tempToken: string, code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -221,6 +222,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error(data.error || "Login failed");
       }
 
+      // 2FA required — throw with tempToken so Login component can handle it
+      if (data.requires2FA) {
+        const err = new Error("2FA_REQUIRED") as any;
+        err.tempToken = data.tempToken;
+        throw err;
+      }
+
+      localStorage.setItem('taskpilot_jwt', data.token);
+      setUser(makeUserObject(data.user, data.token));
+      showSuccess("Successfully logged in!");
+    } catch (error: any) {
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verify2FA = async (tempToken: string, code: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/2fa/validate-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tempToken, code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid code");
       localStorage.setItem('taskpilot_jwt', data.token);
       setUser(makeUserObject(data.user, data.token));
       showSuccess("Successfully logged in!");
@@ -328,7 +356,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, disconnectWorkspaceAccess, updateUser, refreshGamification }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, disconnectWorkspaceAccess, updateUser, refreshGamification, verify2FA }}>
       {children}
     </AuthContext.Provider>
   );

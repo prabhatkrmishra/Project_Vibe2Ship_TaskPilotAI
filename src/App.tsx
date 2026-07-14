@@ -20,6 +20,8 @@ import { TermsOfService } from './pages/TermsOfService';
 import { Home } from './pages/Home';
 import { Profile } from './pages/Profile';
 import Focus from './pages/Focus';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import { NotFound } from './pages/NotFound';
 import { Toaster } from './components/ui/sonner';
 import { Analytics } from '@vercel/analytics/react';
@@ -206,7 +208,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function Login() {
-  const { loginWithGoogle, login, register, user, loading } = useAuth();
+  const { loginWithGoogle, login, register, user, loading, verify2FA } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -214,6 +216,9 @@ function Login() {
   const [retypePassword, setRetypePassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [twoFARequired, setTwoFARequired] = useState(false);
+  const [twoFATempToken, setTwoFATempToken] = useState('');
+  const [twoFACode, setTwoFACode] = useState('');
   
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (user) return <Navigate to="/dashboard" replace />;
@@ -240,8 +245,31 @@ function Login() {
         await login(email, password);
       }
     } catch (err: any) {
-      const errorMsg = err.message || "An error occurred.";
-      setError(errorMsg);
+      if (err.message === '2FA_REQUIRED' && err.tempToken) {
+        setTwoFARequired(true);
+        setTwoFATempToken(err.tempToken);
+        setError(null);
+      } else {
+        const errorMsg = err.message || "An error occurred.";
+        setError(errorMsg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerify2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!twoFACode || twoFACode.length !== 6) {
+      setError("Please enter a 6-digit code.");
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await verify2FA(twoFATempToken, twoFACode);
+    } catch (err: any) {
+      setError(err.message || "Invalid code.");
     } finally {
       setSubmitting(false);
     }
@@ -272,6 +300,53 @@ function Login() {
         )}
 
         {/* Form Container */}
+        {twoFARequired ? (
+          <form onSubmit={handleVerify2FA} className="space-y-4">
+            <div className="text-center space-y-2 pb-2">
+              <div className="mx-auto w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                <svg className="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+              </div>
+              <p className="text-sm text-slate-300">Two-factor authentication required</p>
+              <p className="text-xs text-slate-500">Enter the 6-digit code from your authenticator app</p>
+            </div>
+
+            <div className="space-y-1 text-left">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Verification Code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                autoFocus
+                value={twoFACode}
+                onChange={(e) => { setTwoFACode(e.target.value.replace(/\D/g, '')); setError(null); }}
+                placeholder="000000"
+                className="w-full px-4 py-3 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={submitting || twoFACode.length !== 6}
+              className="w-full h-11 text-xs uppercase tracking-widest font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Verify & Sign In"}
+            </Button>
+
+            {error && (
+              <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-4 py-2.5 rounded-xl text-center font-medium animate-in fade-in slide-in-from-top-1 duration-200">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => { setTwoFARequired(false); setTwoFACode(''); setTwoFATempToken(''); setError(null); }}
+              className="block w-full text-center text-[13px] text-indigo-400 hover:text-indigo-300 transition-colors hover:underline font-medium"
+            >
+              Back to login
+            </button>
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
             <div className="space-y-1 text-left">
@@ -311,6 +386,14 @@ function Login() {
             />
           </div>
 
+          {!isRegister && (
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors hover:underline">
+                Forgot your password?
+              </Link>
+            </div>
+          )}
+
           {isRegister && (
             <div className="space-y-1 text-left">
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Confirm Password</label>
@@ -344,9 +427,10 @@ function Login() {
             </div>
           )}
         </form>
+        )}
 
         {/* Divider & Google Login option (only on login mode) */}
-        {!isRegister && (
+        {!isRegister && !twoFARequired && (
           <div className="space-y-4">
             <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-[#21262d]"></div>
@@ -365,6 +449,7 @@ function Login() {
         )}
 
         {/* Dynamic Mode Switcher */}
+        {!twoFARequired && (
         <div className="text-center pt-2">
           <button
             type="button"
@@ -384,6 +469,7 @@ function Login() {
               : "Don't have an account? Register as new user"}
           </button>
         </div>
+        )}
 
         <div className="flex justify-center gap-4 text-xs text-slate-500 pt-4 border-t border-[#21262d]">
           <Link to="/privacy" className="hover:text-indigo-400 transition-colors">Privacy Policy</Link>
@@ -405,6 +491,8 @@ export default function App() {
               <HabitReminderBanner />
               <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/" element={<Home />} />

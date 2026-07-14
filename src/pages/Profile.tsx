@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { showSuccess, showError } from '../lib/toastTheme';
 import { 
@@ -20,7 +20,9 @@ import {
   Target,
   Briefcase,
   Cpu,
-  Check
+  Check,
+  Smartphone,
+  Copy
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -46,6 +48,17 @@ export function Profile() {
   });
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+
+  // 2FA state
+  const [twoFAEnabled, setTwoFAEnabled] = useState(false);
+  const [twoFASetupStep, setTwoFASetupStep] = useState<'idle' | 'qr' | 'verify' | 'done'>('idle');
+  const [twoFASecret, setTwoFASecret] = useState('');
+  const [twoFAQRCode, setTwoFAQRCode] = useState('');
+  const [twoFACode, setTwoFACode] = useState('');
+  const [twoFADisableCode, setTwoFADisableCode] = useState('');
+  const [twoFASetupLoading, setTwoFASetupLoading] = useState(false);
+  const [twoFADialogOpen, setTwoFADialogOpen] = useState(false);
+  const [twoFADisableDialogOpen, setTwoFADisableDialogOpen] = useState(false);
 
   useEffect(() => {
     const fetchModels = async () => {
@@ -83,6 +96,25 @@ export function Profile() {
       fetchModels();
     }
   }, [user, activeTab]);
+
+  // Check 2FA status on mount
+  useEffect(() => {
+    const check2FA = async () => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch('/api/auth/2fa/status', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTwoFAEnabled(data.enabled);
+        }
+      } catch {}
+    };
+    check2FA();
+  }, [user]);
 
   const handleDefaultModelChange = (value: string) => {
     const model = models.find(m => m.name === value);
@@ -188,6 +220,86 @@ export function Profile() {
       setIsChangingPassword(false);
     }
   };
+
+  // ─── 2FA Handlers ──────────────────────────────────────────────────────────
+  const handle2FASetup = useCallback(async () => {
+    if (!user) return;
+    try {
+      setTwoFASetupLoading(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/auth/2fa/setup', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to start 2FA setup');
+      setTwoFASecret(data.secret);
+      setTwoFAQRCode(data.qrCodeDataUrl);
+      setTwoFASetupStep('qr');
+    } catch (err: any) {
+      showError(err.message || 'Failed to start 2FA setup');
+    } finally {
+      setTwoFASetupLoading(false);
+    }
+  }, [user]);
+
+  const handle2FAVerify = useCallback(async () => {
+    if (!user || twoFACode.length !== 6) return;
+    try {
+      setTwoFASetupLoading(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ code: twoFACode })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Invalid code');
+      setTwoFAEnabled(true);
+      setTwoFASetupStep('done');
+      setTwoFACode('');
+      showSuccess('Two-factor authentication enabled!');
+      setTimeout(() => { setTwoFADialogOpen(false); setTwoFASetupStep('idle'); }, 2000);
+    } catch (err: any) {
+      showError(err.message || 'Invalid code');
+    } finally {
+      setTwoFASetupLoading(false);
+    }
+  }, [user, twoFACode]);
+
+  const handle2FADisable = useCallback(async () => {
+    if (!user || twoFADisableCode.length !== 6) return;
+    try {
+      setTwoFASetupLoading(true);
+      const token = await user.getIdToken();
+      const res = await fetch('/api/auth/2fa/disable', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ code: twoFADisableCode })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Invalid code');
+      setTwoFAEnabled(false);
+      setTwoFADisableDialogOpen(false);
+      setTwoFADisableCode('');
+      showSuccess('Two-factor authentication disabled');
+    } catch (err: any) {
+      showError(err.message || 'Invalid code');
+    } finally {
+      setTwoFASetupLoading(false);
+    }
+  }, [user, twoFADisableCode]);
+
+  const copySecret = useCallback(() => {
+    navigator.clipboard.writeText(twoFASecret);
+    showSuccess('Secret copied to clipboard');
+  }, [twoFASecret]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
@@ -472,6 +584,58 @@ export function Profile() {
               </form>
             </div>
 
+            {/* Two-Factor Authentication */}
+            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
+              <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                <Smartphone className="h-5 w-5 text-amber-400" />
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-[#f0f6fc]">Two-Factor Authentication</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Add an extra layer of security with an authenticator app.</p>
+                </div>
+                {twoFAEnabled ? (
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold font-mono">ENABLED</span>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-slate-500/10 border border-slate-500/20 text-slate-400 text-xs font-semibold font-mono">OFF</span>
+                )}
+              </div>
+
+              <p className="text-sm text-slate-400">
+                {twoFAEnabled
+                  ? "Two-factor authentication is active. You'll need your authenticator app code each time you sign in."
+                  : "Protect your account by requiring a verification code from your authenticator app when signing in."}
+              </p>
+
+              <div className="flex justify-end pt-2">
+                {twoFAEnabled ? (
+                  <Button
+                    onClick={() => setTwoFADisableDialogOpen(true)}
+                    className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm transition-all"
+                  >
+                    <Smartphone className="h-4 w-4" />
+                    Disable 2FA
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handle2FASetup}
+                    disabled={twoFASetupLoading}
+                    className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-medium text-sm transition-all"
+                  >
+                    {twoFASetupLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Setting up...
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="h-4 w-4" />
+                        Enable 2FA
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+
             {/* Default AI Brain Model Selector Card */}
             <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
               <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
@@ -730,6 +894,115 @@ export function Profile() {
         </div>
 
       </div>
+
+      {/* 2FA Setup Dialog */}
+      <Dialog open={twoFADialogOpen} onOpenChange={(open) => { setTwoFADialogOpen(open); if (!open) { setTwoFASetupStep('idle'); setTwoFACode(''); } }}>
+        <DialogContent className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#f0f6fc] text-xl">Set Up Two-Factor Authentication</DialogTitle>
+          </DialogHeader>
+
+          {twoFASetupStep === 'qr' && (
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-slate-400 text-center">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
+              <div className="flex justify-center">
+                <div className="bg-white p-3 rounded-xl">
+                  <img src={twoFAQRCode} alt="2FA QR Code" className="w-48 h-48" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500 text-center">Or enter this secret manually:</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-slate-900 border border-[#21262d] rounded-lg px-3 py-2 font-mono text-amber-300 break-all">{twoFASecret}</code>
+                  <Button onClick={copySecret} size="sm" className="shrink-0 h-8 px-3 rounded-lg bg-[#161b22] border border-[#21262d] hover:border-amber-500/30">
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <Button onClick={() => setTwoFASetupStep('verify')} className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm">
+                I've scanned it — Next
+              </Button>
+            </div>
+          )}
+
+          {twoFASetupStep === 'verify' && (
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-slate-400 text-center">Enter the 6-digit code from your authenticator app to verify</p>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                autoFocus
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className="w-full px-4 py-3 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
+              />
+              <Button
+                onClick={handle2FAVerify}
+                disabled={twoFACode.length !== 6 || twoFASetupLoading}
+                className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm"
+              >
+                {twoFASetupLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Verify & Enable"}
+              </Button>
+            </div>
+          )}
+
+          {twoFASetupStep === 'done' && (
+            <div className="py-6 text-center space-y-3">
+              <div className="mx-auto w-12 h-12 bg-emerald-500/20 rounded-full flex items-center justify-center">
+                <CheckCircle className="h-6 w-6 text-emerald-400" />
+              </div>
+              <p className="text-sm text-emerald-300 font-medium">Two-factor authentication is now active!</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 2FA Disable Dialog */}
+      <Dialog open={twoFADisableDialogOpen} onOpenChange={(open) => { setTwoFADisableDialogOpen(open); if (!open) setTwoFADisableCode(''); }}>
+        <DialogContent className="sm:max-w-[420px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#f0f6fc] text-xl">Disable Two-Factor Authentication</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-slate-400">Enter a code from your authenticator app to confirm.</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              value={twoFADisableCode}
+              onChange={(e) => setTwoFADisableCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="000000"
+              className="w-full px-4 py-3 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
+            />
+            <div className="flex gap-3">
+              <Button onClick={() => setTwoFADisableDialogOpen(false)} variant="ghost" className="flex-1 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-[#161b22]">Cancel</Button>
+              <Button
+                onClick={handle2FADisable}
+                disabled={twoFADisableCode.length !== 6 || twoFASetupLoading}
+                className="flex-1 h-10 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm"
+              >
+                {twoFASetupLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Disable"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2FA Setup Trigger Dialog (hidden, opened by button) */}
+      <Dialog open={twoFADialogOpen && twoFASetupStep === 'idle'} onOpenChange={(open) => { setTwoFADialogOpen(open); }}>
+        <DialogContent className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#f0f6fc] text-xl">Set Up Two-Factor Authentication</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto text-indigo-400" />
+            <p className="text-sm text-slate-400 mt-3">Preparing your authenticator setup...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

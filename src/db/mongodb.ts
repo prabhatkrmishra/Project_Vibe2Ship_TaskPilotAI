@@ -56,6 +56,18 @@ const UserSchema = new mongoose.Schema({
   // should be encrypted at rest (e.g. via KMS) rather than stored as plain text.
   googleRefreshToken: { type: String },
   address: { type: String, default: '' },
+
+  // Password recovery
+  passwordResetToken: { type: String },
+  passwordResetExpiry: { type: Date },
+
+  // Login warning — track known IPs and devices
+  knownIPs: { type: [String], default: [] },
+  knownDevices: { type: [String], default: [] },
+
+  // Two-Factor Authentication (TOTP)
+  twoFactorEnabled: { type: Boolean, default: false },
+  twoFactorSecret: { type: String },
   
   // Gamification Profile
   gamification: {

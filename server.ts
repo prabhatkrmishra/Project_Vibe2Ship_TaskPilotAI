@@ -953,6 +953,43 @@ async function startServer() {
       if (!isMatch) {
         return res.status(400).json({ error: "Invalid email or password" });
       }
+
+      // ── 2FA: if enabled, return temp token instead of full JWT ──────────
+      if (user.twoFactorEnabled) {
+        const tempToken = jwt.sign(
+          { uid: user._id.toString(), email: user.email, twoFA: true },
+          JWT_SECRET,
+          { expiresIn: '5m' }
+        );
+        return res.json({ requires2FA: true, tempToken });
+      }
+
+      // ── Login warning: detect new IP or device ──────────────────────────
+      const currentIP = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+      const currentDevice = (req.headers['user-agent'] || 'unknown').substring(0, 200);
+      const knownIPs: string[] = user.knownIPs || [];
+      const knownDevices: string[] = user.knownDevices || [];
+      const isNewIP = !knownIPs.includes(currentIP);
+      const isNewDevice = !knownDevices.includes(currentDevice);
+
+      if (isNewIP || isNewDevice) {
+        // Update known lists (cap at 50 each, FIFO)
+        if (isNewIP) {
+          knownIPs.push(currentIP);
+          if (knownIPs.length > 50) knownIPs.shift();
+          user.knownIPs = knownIPs;
+        }
+        if (isNewDevice) {
+          knownDevices.push(currentDevice);
+          if (knownDevices.length > 50) knownDevices.shift();
+          user.knownDevices = knownDevices;
+        }
+        await user.save();
+        // Send warning email (non-blocking)
+        const { sendLoginWarningEmail } = await import('./src/lib/email.js');
+        sendLoginWarningEmail(user.email, user.name, currentIP, currentDevice).catch(() => {});
+      }
+
       const token = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
       res.json({
         token,
@@ -1185,6 +1222,189 @@ async function startServer() {
       res.json({ message: "Password updated successfully" });
     } catch (error: any) {
       console.error("Change password error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── Password Recovery ───────────────────────────────────────────────────────
+  app.post("/api/auth/forgot-password", authLimiter, async (req: any, res: any) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: "Email is required" });
+      await connectDB();
+      const user = await User.findOne({ email: email.toLowerCase() });
+      // Always return success to prevent user enumeration
+      if (!user || user.authProvider === 'google' || !user.password) {
+        return res.json({ message: "If an account with that email exists, a reset link has been sent." });
+      }
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const hashedToken = await bcrypt.hash(rawToken, 10);
+      user.passwordResetToken = hashedToken;
+      user.passwordResetExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+      await user.save();
+      // Send email (non-blocking)
+      const { sendPasswordResetEmail } = await import('./src/lib/email.js');
+      sendPasswordResetEmail(user.email, user.name, rawToken).catch(() => {});
+      res.json({ message: "If an account with that email exists, a reset link has been sent." });
+    } catch (error: any) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/auth/reset-password/:token", async (req: any, res: any) => {
+    try {
+      const { token } = req.params;
+      if (!token) return res.status(400).json({ valid: false });
+      await connectDB();
+      // We need to scan users with a reset token and compare via bcrypt
+      const users = await User.find({ passwordResetToken: { $exists: true, $ne: null } });
+      let matchedUser: any = null;
+      for (const u of users) {
+        if (u.passwordResetExpiry && u.passwordResetExpiry > new Date()) {
+          const match = await bcrypt.compare(token, u.passwordResetToken);
+          if (match) { matchedUser = u; break; }
+        }
+      }
+      if (!matchedUser) return res.json({ valid: false });
+      res.json({ valid: true });
+    } catch (error: any) {
+      res.json({ valid: false });
+    }
+  });
+
+  app.post("/api/auth/reset-password", authLimiter, async (req: any, res: any) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) return res.status(400).json({ error: "Token and new password are required" });
+      if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+      await connectDB();
+      const users = await User.find({ passwordResetToken: { $exists: true, $ne: null } });
+      let matchedUser: any = null;
+      for (const u of users) {
+        if (u.passwordResetExpiry && u.passwordResetExpiry > new Date()) {
+          const match = await bcrypt.compare(token, u.passwordResetToken);
+          if (match) { matchedUser = u; break; }
+        }
+      }
+      if (!matchedUser) return res.status(400).json({ error: "Invalid or expired reset token" });
+      matchedUser.password = await bcrypt.hash(newPassword, 10);
+      matchedUser.passwordResetToken = undefined;
+      matchedUser.passwordResetExpiry = undefined;
+      await matchedUser.save();
+      res.json({ message: "Password reset successfully" });
+    } catch (error: any) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ─── Two-Factor Authentication (TOTP) ───────────────────────────────────────
+  app.post("/api/auth/2fa/status", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json({ enabled: !!user.twoFactorEnabled });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/setup", verifyToken, async (req: any, res: any) => {
+    try {
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (user.twoFactorEnabled) return res.status(400).json({ error: "2FA is already enabled. Disable it first." });
+      const { generateTotpSecret, generateQrDataUrl } = await import('./src/lib/totp.js');
+      const { secret, otpauthUrl } = generateTotpSecret(user.email);
+      const qrCodeDataUrl = await generateQrDataUrl(otpauthUrl);
+      // Store secret temporarily (not enabled yet until verified)
+      user.twoFactorSecret = encryptToken(secret);
+      await user.save();
+      res.json({ secret, qrCodeDataUrl });
+    } catch (error: any) {
+      console.error("2FA setup error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/verify", verifyToken, async (req: any, res: any) => {
+    try {
+      const { code } = req.body;
+      if (!code || code.length !== 6) return res.status(400).json({ error: "Please enter a 6-digit code" });
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user.twoFactorSecret) return res.status(400).json({ error: "No 2FA setup in progress. Start setup first." });
+      if (user.twoFactorEnabled) return res.status(400).json({ error: "2FA is already enabled." });
+      const { verifyTotpCode } = await import('./src/lib/totp.js');
+      const secret = decryptToken(user.twoFactorSecret);
+      if (!verifyTotpCode(secret, code)) return res.status(400).json({ error: "Invalid code. Please try again." });
+      user.twoFactorEnabled = true;
+      await user.save();
+      res.json({ message: "Two-factor authentication enabled successfully" });
+    } catch (error: any) {
+      console.error("2FA verify error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/disable", verifyToken, async (req: any, res: any) => {
+    try {
+      const { code } = req.body;
+      if (!code || code.length !== 6) return res.status(400).json({ error: "Please enter a 6-digit code" });
+      await connectDB();
+      const user = await User.findById(req.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user.twoFactorEnabled) return res.status(400).json({ error: "2FA is not enabled." });
+      const { verifyTotpCode } = await import('./src/lib/totp.js');
+      const secret = decryptToken(user.twoFactorSecret);
+      if (!verifyTotpCode(secret, code)) return res.status(400).json({ error: "Invalid code." });
+      user.twoFactorEnabled = false;
+      user.twoFactorSecret = undefined;
+      await user.save();
+      res.json({ message: "Two-factor authentication disabled" });
+    } catch (error: any) {
+      console.error("2FA disable error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/validate-login", authLimiter, async (req: any, res: any) => {
+    try {
+      const { tempToken, code } = req.body;
+      if (!tempToken || !code) return res.status(400).json({ error: "Temp token and code are required" });
+      let payload: any;
+      try {
+        payload = jwt.verify(tempToken, JWT_SECRET) as any;
+      } catch {
+        return res.status(400).json({ error: "Invalid or expired session. Please log in again." });
+      }
+      if (!payload.twoFA || !payload.uid) return res.status(400).json({ error: "Invalid temp token" });
+      await connectDB();
+      const user = await User.findById(payload.uid);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user.twoFactorEnabled || !user.twoFactorSecret) return res.status(400).json({ error: "2FA is not enabled" });
+      const { verifyTotpCode } = await import('./src/lib/totp.js');
+      const secret = decryptToken(user.twoFactorSecret);
+      if (!verifyTotpCode(secret, code)) return res.status(400).json({ error: "Invalid code" });
+      // Issue full JWT
+      const token = jwt.sign({ uid: user._id.toString(), email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({
+        token,
+        user: {
+          uid: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          picture: user.picture,
+          address: user.address || "",
+          gamification: getCorrectedGamification(user.gamification)
+        }
+      });
+    } catch (error: any) {
+      console.error("2FA validate-login error:", error);
       res.status(500).json({ error: error.message });
     }
   });
