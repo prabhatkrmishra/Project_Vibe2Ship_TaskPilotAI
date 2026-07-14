@@ -19,18 +19,27 @@ const AIJobContext = createContext<AIJobContextValue | null>(null);
 
 export function AIJobProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<AIJob[]>([]);
+  // jobsRef provides synchronous reads for isJobRunning() calls inside callbacks
+  // that may fire between renders. It's always synced from setJobs via the
+  // functional updater pattern below — no manual sync needed.
   const jobsRef = useRef<AIJob[]>([]);
   const [planVersion, setPlanVersion] = useState(0);
 
   const startJob = useCallback((id: string, label: string) => {
     const job: AIJob = { id, label, startedAt: Date.now() };
-    jobsRef.current = [...jobsRef.current, job];
-    setJobs([...jobsRef.current]);
+    setJobs(prev => {
+      const next = [...prev, job];
+      jobsRef.current = next;
+      return next;
+    });
   }, []);
 
   const endJob = useCallback((id: string) => {
-    jobsRef.current = jobsRef.current.filter(j => j.id !== id);
-    setJobs([...jobsRef.current]);
+    setJobs(prev => {
+      const next = prev.filter(j => j.id !== id);
+      jobsRef.current = next;
+      return next;
+    });
   }, []);
 
   const isJobRunning = useCallback((id: string) => {

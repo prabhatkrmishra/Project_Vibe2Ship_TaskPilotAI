@@ -48,6 +48,7 @@ const UserSchema = new mongoose.Schema({
   picture: { type: String },
   // 'local' = email/password account, 'google' = signed in via Google OAuth.
   authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
+  isGuest: { type: Boolean, default: false },
   googleId: { type: String, index: true },
   googleEmail: { type: String, index: true },
   // Stored so we can refresh Workspace (Calendar/Docs/Sheets) access without
@@ -138,6 +139,10 @@ const ChatMessageSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
+// Compound index: covers the most common query pattern (fetch messages for a
+// specific chat, sorted by time).
+ChatMessageSchema.index({ userId: 1, chatId: 1, timestamp: 1 });
+
 // 5. AIDecision Schema
 const AIDecisionSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
@@ -165,6 +170,11 @@ const DailyPlanSchema = new mongoose.Schema({
   sessions: { type: [ScheduledSessionSchema], default: [] },
   updatedAt: { type: Date, default: Date.now }
 });
+
+// Compound unique index: one plan per user per day. Prevents duplicate plans
+// from concurrent requests and speeds up the findOne({ userId, date }) pattern
+// used on every timetable fetch and save.
+DailyPlanSchema.index({ userId: 1, date: 1 }, { unique: true });
 
 // 7. FocusSession Schema
 const FocusSessionSchema = new mongoose.Schema({

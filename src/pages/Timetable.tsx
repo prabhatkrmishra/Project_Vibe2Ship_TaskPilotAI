@@ -1291,12 +1291,23 @@ export function Timetable() {
                         // user started it a little early or the scheduled window hasn't technically begun
                         // yet — not only once the clock catches up to session.startTime.
                         const isActive = !!session.started && !isCompleted && now <= end;
+                        // Session was started but its time window has passed — user started it
+                        // but didn't click "done" before the clock ran out. Still visually distinct
+                        // from a truly "pending" or "not attended" session.
+                        const isStartedPastEnd = !!session.started && !isCompleted && isPast;
                         const rawProgress = isTimeWindowActive ? ((now - start) / (end - start)) * 100 : (now < start ? 0 : 100);
                         const progress = isActive ? Math.min(100, Math.max(0, rawProgress)) : 0;
                         // A session can be marked as finished once it has actually started,
                         // or once its time window has fully elapsed (e.g. it was missed).
                         const isNotAttended = isPast && !isCompleted && !session.started;
-                        const canMarkCompleted = isActive || !!session.started;
+                        // Only show mark-complete button for REAL tasks (not routine/temp-task-id)
+                        // and only when the session is active (within its time window) or past-end
+                        // but already started. Hide during the first 10 minutes of an active session
+                        // so the user completes the work before marking it done.
+                        const isObjectId = /^[0-9a-fA-F]{24}$/.test(session.taskId || '');
+                        const remainingMs = end - now;
+                        const showCompleteButton = session.taskId && isObjectId && (isActive || isStartedPastEnd) && remainingMs <= 10 * 60 * 1000;
+                        const canMarkCompleted = showCompleteButton;
                         
                         const riskColor = isCompleted 
                           ? 'bg-emerald-500' 
@@ -1346,11 +1357,13 @@ export function Timetable() {
                                       ? 'bg-emerald-500/5 border-emerald-500/20 opacity-75' 
                                       : isActive
                                         ? 'bg-indigo-500/5 border-indigo-500/30 ring-1 ring-indigo-500/10'
-                                        : isNotAttended
-                                          ? 'bg-red-500/[0.03] border-red-500/20 opacity-50'
-                                          : isPast 
-                                            ? 'bg-[#161b22] border-[#21262d] opacity-50' 
-                                            : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
+                                        : isStartedPastEnd
+                                          ? 'bg-amber-500/[0.04] border-amber-500/20'
+                                          : isNotAttended
+                                            ? 'bg-red-500/[0.03] border-red-500/20 opacity-50'
+                                            : isPast 
+                                              ? 'bg-[#161b22] border-[#21262d] opacity-50' 
+                                              : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
                                 }`}
                               >
                                 {/* Risk bar or active progress bar */}
@@ -1415,6 +1428,11 @@ export function Timetable() {
                                           <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
                                         </span>
                                         Active Session
+                                      </span>
+                                    ) : isStartedPastEnd ? (
+                                      <span className="text-[10px] text-amber-400 flex items-center gap-1 font-bold uppercase tracking-widest">
+                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                        Started
                                       </span>
                                     ) : !matchingTask ? (
                                       <span className="text-[10px] text-indigo-400 font-semibold uppercase tracking-widest">

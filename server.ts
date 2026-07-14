@@ -22,9 +22,9 @@ const AIDecision = AIDecisionSrc as any;
 const DailyPlanModel = DailyPlanModelSrc as any;
 const FocusSessionModel = FocusSessionSrc as any;
 
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) {
   throw new Error(
-    "JWT_SECRET environment variable is not set. Refusing to start with an insecure default secret. " +
+    "JWT_SECRET environment variable is not set or too short (minimum 32 characters). " +
     "Set JWT_SECRET to a long, random value (e.g. `openssl rand -hex 32`)."
   );
 }
@@ -356,11 +356,15 @@ async function generateAIContent(params: {
 }
 
 // Validate/sanitize a model name. Strips "models/" prefix, maps deprecated Gemini
-// models to current defaults, and passes through any non-Gemini model as-is.
+// models to current defaults, and validates against the known MODEL_PROVIDER_MAP.
 function getValidModel(modelName: string | undefined): string {
   let model = modelName || "gemini-3.5-flash";
   model = model.replace(/^models\//, "");
   if (model.includes("gemini-2.0-flash") || model.includes("gemini-1.5") || model === "gemini-pro") {
+    return "gemini-3.5-flash";
+  }
+  // If the model is in our provider map, it's valid. Otherwise fall back to default.
+  if (!MODEL_PROVIDER_MAP.has(model)) {
     return "gemini-3.5-flash";
   }
   return model;
@@ -495,8 +499,16 @@ async function startServer() {
     }
   };
 
+  // Helper: compute local date string (YYYY-MM-DD) from a Date, avoiding the
+  // UTC-shift bug that occurs when using new Date().toISOString().split('T')[0].
+  function localDateStr(d: Date = new Date()): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   async function processGamificationOnTaskComplete(userId: string, task: any) {
     try {
+      // Read current state to compute streak/badges, then write atomically
+      // with a condition on lastActiveDate to prevent lost concurrent updates.
       const user = await User.findOne({ _id: userId });
       if (!user) return null;
       
@@ -504,7 +516,8 @@ async function startServer() {
         currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
       };
       
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
+      const prevLastActiveDate = gamification.lastActiveDate;
       
       if (gamification.lastActiveDate !== today) {
         if (gamification.lastActiveDate) {
@@ -562,8 +575,19 @@ async function startServer() {
       checkBadge('punctual_10', gamification.onTimeTasksCompleted >= 10);
       checkBadge('deadline_50', gamification.onTimeTasksCompleted >= 50);
       
-      user.gamification = gamification;
-      await user.save();
+      // Atomic write: condition on lastActiveDate to prevent lost concurrent
+      // streak/xp updates. If another request changed it between our read and
+      // write, the update returns null and we skip gamification for this call.
+      const updateResult = await User.findOneAndUpdate(
+        { _id: userId, 'gamification.lastActiveDate': prevLastActiveDate },
+        { $set: { gamification } },
+        { new: true }
+      );
+      
+      if (!updateResult) {
+        console.warn("Gamification update skipped due to concurrent modification");
+        return null;
+      }
       
       return { xpEarned, newBadges, levelUp };
     } catch(e) {
@@ -623,7 +647,8 @@ async function startServer() {
       let gamification = user.gamification || {
         currentStreak: 0, longestStreak: 0, lastActiveDate: null, xp: 0, level: 1, totalTasksCompleted: 0, onTimeTasksCompleted: 0, earnedBadges: []
       };
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
+      const prevLastActiveDate = gamification.lastActiveDate;
       if (gamification.lastActiveDate !== today) {
         if (gamification.lastActiveDate) {
           const lastActive = new Date(gamification.lastActiveDate);
@@ -662,8 +687,17 @@ async function startServer() {
       checkBadge('streak_7', gamification.currentStreak >= 7);
       checkBadge('streak_30', gamification.currentStreak >= 30);
       checkBadge('streak_100', gamification.currentStreak >= 100);
-      user.gamification = gamification;
-      await user.save();
+
+      // Atomic write with optimistic concurrency check on lastActiveDate
+      const updateResult = await User.findOneAndUpdate(
+        { _id: userId, 'gamification.lastActiveDate': prevLastActiveDate },
+        { $set: { gamification } },
+        { new: true }
+      );
+      if (!updateResult) {
+        console.warn("Session gamification skipped due to concurrent modification");
+        return null;
+      }
       return { xpEarned, newBadges, levelUp };
     } catch (e) {
       console.error("Session gamification error:", e);
@@ -801,6 +835,12 @@ async function startServer() {
       if (!email || !password || !name) {
         return res.status(400).json({ error: "Please provide email, password, and name" });
       }
+      if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+      if (typeof password !== 'string' || password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
+      }
       await connectDB();
       const existingUser = await User.findOne({ email: email.toLowerCase() });
       if (existingUser) {
@@ -909,7 +949,7 @@ async function startServer() {
     // Convert to plain object if it's a mongoose document
     const gamification = gamificationObj.toObject ? gamificationObj.toObject() : { ...gamificationObj };
     
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStr();
     if (gamification.lastActiveDate && gamification.lastActiveDate !== today) {
       const lastActive = new Date(gamification.lastActiveDate);
       const todayDate = new Date(today);
@@ -1046,6 +1086,10 @@ async function startServer() {
       
       if (user.authProvider === 'google') {
         return res.status(400).json({ error: "Google accounts do not have a local password to change." });
+      }
+      
+      if (!user.password) {
+        return res.status(400).json({ error: "No local password set for this account" });
       }
       
       const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -1242,7 +1286,9 @@ async function startServer() {
       let sessionGamification = null;
 
       // If this session references a real task, update its state
-      if (session.taskId) {
+      // Skip for routine/non-task sessions (temp-task-id or invalid ObjectIds)
+      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(session.taskId || '');
+      if (session.taskId && isValidObjectId) {
         const task = await Task.findOne({ _id: session.taskId, userId: req.uid });
         if (task) {
           const schedulingMode = session.schedulingMode || await getSchedulingMode(task);
@@ -1412,7 +1458,9 @@ async function startServer() {
 
       let gamificationUpdates = null;
       if (shouldAwardGamification) {
-        gamificationUpdates = await processGamificationOnTaskComplete(req.uid, obj);
+        // Pass the freshly-updated task from DB (not the formatted output obj)
+        // so deadline and _id fields are correct for streak/gamification checks.
+        gamificationUpdates = await processGamificationOnTaskComplete(req.uid, updatedTask);
       }
 
       // Sync quest progress if this task belongs to a quest
@@ -1457,7 +1505,7 @@ async function startServer() {
     if (!goalObj) return goalObj;
     const goal = goalObj.toObject ? goalObj.toObject() : { ...goalObj };
     if (goal.type === 'habit' && goal.lastLogged) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
       if (goal.lastLogged !== today) {
         const lastActive = new Date(goal.lastLogged);
         const todayDate = new Date(today);
@@ -1470,7 +1518,7 @@ async function startServer() {
     }
     // Time-based habit: auto-break streak if past scheduled time +5 min and not logged today
     if (goal.type === 'habit' && goal.scheduledTime && goal.lastLogged) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDateStr();
       if (goal.lastLogged !== today) {
         const [schedH, schedM] = goal.scheduledTime.split(':').map(Number);
         const now = new Date();
@@ -2910,7 +2958,7 @@ async function startServer() {
       // those subtasks forward with a note so the AI bumps their priority today.
       const yesterday = new Date(date);
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = localDateStr(yesterday);
       const carryForward: { taskId: string; taskTitle: string; subtaskIds: string[] }[] = [];
       if (yesterdayStr !== date) {
         const yesterdayPlan = await DailyPlanModel.findOne({ userId: req.uid, date: yesterdayStr });
@@ -3317,6 +3365,31 @@ async function startServer() {
             startTime: s.startTime,
             endTime: s.endTime
           })));
+
+          // Preserve started/completed progress from the existing plan so that
+          // "Customize Routine" doesn't wipe out active execution state.
+          const existingPlan = await DailyPlanModel.findOne({ userId, date: todayDateStr });
+          if (existingPlan && existingPlan.sessions?.length > 0) {
+            // Build a lookup: sessions that were started or completed, keyed by
+            // taskTitle + start time so we can match them to the new AI output.
+            const progressMap = new Map<string, { started: boolean; completed: boolean }>();
+            for (const es of existingPlan.sessions) {
+              if (es.started || es.completed) {
+                const key = `${es.taskTitle}__${es.startTime}`;
+                progressMap.set(key, { started: !!es.started, completed: !!es.completed });
+              }
+            }
+            // Merge progress back into the new sessions
+            for (const ns of formattedSessions) {
+              const key = `${ns.taskTitle}__${ns.startTime}`;
+              const prev = progressMap.get(key);
+              if (prev) {
+                ns.started = prev.started;
+                ns.completed = prev.completed;
+              }
+            }
+          }
+
           await DailyPlanModel.findOneAndUpdate(
             { userId, date: todayDateStr },
             { $set: { sessions: formattedSessions, updatedAt: new Date() } },
@@ -3590,37 +3663,9 @@ async function startServer() {
     }
   });
 
-  // GET /api/focus-sessions — fetch focus history with optional filters
-  app.get("/api/focus-sessions", verifyToken, async (req: any, res: any) => {
-    try {
-      const userId = req.uid;
-      const { from, to, method, limit: limitStr } = req.query;
-      const filter: any = { userId };
-      if (method) filter.method = method;
-      if (from || to) {
-        filter.startedAt = {};
-        if (from) filter.startedAt.$gte = new Date(from);
-        if (to) filter.startedAt.$lte = new Date(to);
-      }
-      const rawSessions = await FocusSessionModel.find(filter)
-        .sort({ startedAt: -1 })
-        .limit(parseInt(limitStr) || 100);
-      // Normalize Mongoose documents
-      const sessions = rawSessions.map((s: any) => {
-        const obj = s.toObject();
-        obj.id = obj._id.toString();
-        delete obj._id;
-        delete obj.__v;
-        return obj;
-      });
-      res.json({ sessions });
-    } catch (e: any) {
-      console.error("Focus sessions fetch error:", e);
-      res.status(500).json({ error: e.message || "Failed to fetch focus sessions" });
-    }
-  });
-
   // GET /api/focus-sessions/stats — aggregated focus statistics
+  // NOTE: Defined BEFORE the generic /api/focus-sessions route so Express
+  // matches the more specific path first.
   app.get("/api/focus-sessions/stats", verifyToken, async (req: any, res: any) => {
     try {
       const userId = req.uid;
@@ -3744,6 +3789,38 @@ async function startServer() {
     } catch (e: any) {
       console.error("Focus heatmap error:", e);
       res.status(500).json({ error: e.message || "Failed to fetch heatmap" });
+    }
+  });
+
+  // GET /api/focus-sessions — fetch focus history with optional filters
+  // NOTE: This generic route MUST come after /stats and /heatmap so those
+  // specific paths are matched first by Express.
+  app.get("/api/focus-sessions", verifyToken, async (req: any, res: any) => {
+    try {
+      const userId = req.uid;
+      const { from, to, method, limit: limitStr } = req.query;
+      const filter: any = { userId };
+      if (method) filter.method = method;
+      if (from || to) {
+        filter.startedAt = {};
+        if (from) filter.startedAt.$gte = new Date(from);
+        if (to) filter.startedAt.$lte = new Date(to);
+      }
+      const rawSessions = await FocusSessionModel.find(filter)
+        .sort({ startedAt: -1 })
+        .limit(parseInt(limitStr) || 100);
+      // Normalize Mongoose documents
+      const sessions = rawSessions.map((s: any) => {
+        const obj = s.toObject();
+        obj.id = obj._id.toString();
+        delete obj._id;
+        delete obj.__v;
+        return obj;
+      });
+      res.json({ sessions });
+    } catch (e: any) {
+      console.error("Focus sessions fetch error:", e);
+      res.status(500).json({ error: e.message || "Failed to fetch focus sessions" });
     }
   });
 

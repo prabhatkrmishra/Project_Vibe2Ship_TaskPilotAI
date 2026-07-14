@@ -73,6 +73,12 @@ export interface GamificationState {
   earnedBadges: string[];
   unlockedPersonalities?: string[];
   activePersonality?: string;
+  // Focus Zone gamification
+  focusStreak?: number;
+  longestFocusStreak?: number;
+  totalFocusMinutes?: number;
+  focusSessionsCompleted?: number;
+  focusLastActiveDate?: string | null;
 }
 
 export interface Achievement {
