@@ -7,7 +7,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
@@ -539,7 +539,7 @@ async function startServer() {
     max: 30,                   // 30 messages per min per user
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req: any) => req.uid || req.ip,
+    keyGenerator: (req: any) => req.uid || ipKeyGenerator(req.ip),
     message: { error: "You're sending messages too fast. Slow down." },
   });
 
