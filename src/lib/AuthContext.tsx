@@ -22,6 +22,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
   requestWorkspaceAccess: () => Promise<string | null>;
+  disconnectWorkspaceAccess: () => void;
   updateUser: (updatedUser: { name?: string; address?: string; gamification?: any }) => void;
   refreshGamification: () => Promise<void>;
 }
@@ -286,6 +287,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return await startWorkspaceOAuth();
   };
 
+  // Revokes only the cached Google Workspace access token (Calendar/Drive/
+  // Docs/Sheets/Slides/Tasks scopes). Does NOT log the user out of TaskPilot
+  // — a DB-authenticated (email/password or guest) user stays signed in,
+  // they just lose Workspace access until they reconnect their Google
+  // account.
+  const disconnectWorkspaceAccess = () => {
+    try {
+      localStorage.removeItem('workspace_access_token');
+    } catch (e) {
+      console.warn('localStorage is not accessible');
+    }
+    cachedAccessToken = null;
+  };
+
   const logout = async () => {
     try {
       localStorage.removeItem('taskpilot_jwt');
@@ -313,7 +328,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, updateUser, refreshGamification }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, loginWithGoogle, logout, getAccessToken, requestWorkspaceAccess, disconnectWorkspaceAccess, updateUser, refreshGamification }}>
       {children}
     </AuthContext.Provider>
   );

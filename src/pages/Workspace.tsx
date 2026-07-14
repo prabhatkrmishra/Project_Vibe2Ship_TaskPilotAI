@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { Task, Goal } from '../types';
 import { Button } from '../components/ui/button';
-import { Calendar as CalendarIcon, FileText, Presentation, Table, Cloud, CheckCircle, ArrowRight } from 'lucide-react';
+import { Calendar as CalendarIcon, FileText, Presentation, Table, Cloud, CheckCircle, ArrowRight, Lock } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
@@ -12,9 +12,10 @@ import PageHeader from '../components/PageHeader';
 import { showSuccess, showError } from '../lib/toastTheme';
 import { BackupErrorBanner } from '../components/BackupErrorBanner';
 import { TamperedBackupError } from '../lib/google-workspace';
+import { GoogleWorkspaceAuthCard, GoogleAuthStatus } from '../components/GoogleWorkspaceAuthCard';
 
 export function Workspace() {
-  const { user, getAccessToken, requestWorkspaceAccess } = useAuth();
+  const { user, getAccessToken, requestWorkspaceAccess, disconnectWorkspaceAccess } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -23,6 +24,63 @@ export function Workspace() {
   const [isSlidesDialogOpen, setIsSlidesDialogOpen] = useState(false);
   const [slidesType, setSlidesType] = useState('project-dashboard');
   const [backupError, setBackupError] = useState<string | null>(null);
+
+  // ─── Google Workspace authorization status ────────────────────────────
+  // Logging into TaskPilot (email/password, guest, or even Google login)
+  // does NOT by itself guarantee a live, valid Google OAuth grant for the
+  // Workspace scopes (Calendar/Drive/Docs/Sheets/Slides/Tasks) — the access
+  // token can be absent, expired, or revoked independently of the DB
+  // session. We verify the cached token against Google's own tokeninfo
+  // endpoint so the card (and the gated actions below it) reflect reality,
+  // not just "a token exists in localStorage".
+  const [googleAuthStatus, setGoogleAuthStatus] = useState<GoogleAuthStatus>('checking');
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
+
+  const verifyGoogleAuth = async () => {
+    const token = getAccessToken();
+    if (!token) {
+      setGoogleAuthStatus('disconnected');
+      setGoogleEmail(null);
+      return;
+    }
+    try {
+      const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(token)}`);
+      if (!res.ok) throw new Error('Token invalid or expired');
+      const info = await res.json();
+      setGoogleEmail(info.email || null);
+      setGoogleAuthStatus('connected');
+    } catch {
+      // Stale/expired/revoked token — clear it so requestWorkspaceAccess()
+      // triggers a fresh OAuth grant instead of silently reusing a dead one.
+      disconnectWorkspaceAccess();
+      setGoogleAuthStatus('disconnected');
+      setGoogleEmail(null);
+    }
+  };
+
+  useEffect(() => {
+    verifyGoogleAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const handleConnectGoogle = async () => {
+    setConnectingGoogle(true);
+    try {
+      const token = await requestWorkspaceAccess();
+      if (token) {
+        await verifyGoogleAuth();
+      }
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = () => {
+    disconnectWorkspaceAccess();
+    setGoogleAuthStatus('disconnected');
+    setGoogleEmail(null);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -259,7 +317,7 @@ export function Workspace() {
       if (result.skipped) {
         showSuccess("Already up to date — no changes since your last backup.");
       } else {
-        showSuccess("Full backup have been saved to your Google Drive!");
+        showSuccess("Full backup have been saved to Google Drive!");
       }
     } catch (e: any) {
       toast.dismiss();
@@ -341,9 +399,33 @@ export function Workspace() {
           description="Connect your TaskPilot data seamlessly with Google Workspace. Push schedules, export analytics, and generate beautiful presentations from your active tasks and goals."
         />
 
+        {/* Google Workspace Authorization */}
+        <GoogleWorkspaceAuthCard
+          status={googleAuthStatus}
+          googleEmail={googleEmail}
+          onConnect={handleConnectGoogle}
+          onDisconnect={handleDisconnectGoogle}
+          connecting={connectingGoogle}
+        />
+
         {backupError && (
           <BackupErrorBanner message={backupError} onDismiss={() => setBackupError(null)} />
         )}
+
+        {googleAuthStatus !== 'connected' ? (
+          <div className="bg-[#0d1117] border border-dashed border-[#21262d] rounded-3xl p-10 flex flex-col items-center text-center gap-3">
+            <div className="w-12 h-12 bg-[#161b22] border border-[#21262d] rounded-2xl flex items-center justify-center">
+              <Lock className="h-5 w-5 text-slate-500" />
+            </div>
+            <h3 className="text-lg font-bold text-[#f0f6fc]">Workspace actions are locked</h3>
+            <p className="text-sm text-slate-400 max-w-md">
+              {googleAuthStatus === 'checking'
+                ? 'Checking your Google authorization before showing sync, export, and backup actions.'
+                : 'Connect your Google account above to unlock Calendar sync, Google Tasks, report/analytics generation, and Drive backups.'}
+            </p>
+          </div>
+        ) : (
+        <>
 
         {/* Sync */}
         <section className="space-y-4">
@@ -507,6 +589,9 @@ export function Workspace() {
 
           </div>
         </section>
+
+        </>
+        )}
 
       <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
         <DialogContent className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
