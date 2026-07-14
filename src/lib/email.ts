@@ -5,23 +5,21 @@ function escHtml(s: string): string {
 }
 
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USERNAME = process.env.SMTP_USERNAME || '';
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD || '';
 const EMAIL_FROM = process.env.EMAIL_FROM || SMTP_USERNAME;
-const EMAIL_ENABLED = process.env.EMAIL_ENABLED === 'true' || (!!SMTP_USERNAME && !!SMTP_PASSWORD);
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 let transporter: nodemailer.Transporter | null = null;
 
 function getTransporter(): nodemailer.Transporter | null {
-  if (!EMAIL_ENABLED) return null;
+  if (!SMTP_USERNAME || !SMTP_PASSWORD) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
+      port: 465,
+      secure: true,
       auth: {
         user: SMTP_USERNAME,
         pass: SMTP_PASSWORD,
@@ -29,10 +27,6 @@ function getTransporter(): nodemailer.Transporter | null {
     });
   }
   return transporter;
-}
-
-export function isEmailEnabled(): boolean {
-  return EMAIL_ENABLED;
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────
@@ -44,7 +38,7 @@ function baseLayout(title: string, bodyHtml: string): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${title}</title>
+  <title>${escHtml(title)}</title>
 </head>
 <body style="margin:0;padding:0;background:#030712;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#030712;padding:40px 20px;">
@@ -55,7 +49,7 @@ function baseLayout(title: string, bodyHtml: string): string {
             <td style="padding:32px 40px;">
               <div style="text-align:center;margin-bottom:24px;">
                 <div style="width:48px;height:48px;background:#4f46e5;border-radius:12px;margin:0 auto 16px;line-height:48px;font-size:20px;color:#fff;">TP</div>
-                <h1 style="color:#f0f6fc;font-size:20px;font-weight:600;margin:0 0 4px;">${title}</h1>
+                <h1 style="color:#f0f6fc;font-size:20px;font-weight:600;margin:0 0 4px;">${escHtml(title)}</h1>
               </div>
               ${bodyHtml}
             </td>
