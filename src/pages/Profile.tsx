@@ -22,7 +22,8 @@ import {
   Cpu,
   Check,
   Smartphone,
-  Copy
+  Copy,
+  Headphones
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -226,6 +227,7 @@ export function Profile() {
     if (!user) return;
     try {
       setTwoFASetupLoading(true);
+      setTwoFADialogOpen(true);
       const token = await user.getIdToken();
       const res = await fetch('/api/auth/2fa/setup', {
         method: 'POST',
@@ -288,6 +290,8 @@ export function Profile() {
       setTwoFAEnabled(false);
       setTwoFADisableDialogOpen(false);
       setTwoFADisableCode('');
+      setTwoFASecret('');
+      setTwoFAQRCode('');
       showSuccess('Two-factor authentication disabled');
     } catch (err: any) {
       showError(err.message || 'Invalid code');
@@ -748,6 +752,7 @@ export function Profile() {
                   if (achievement.icon === 'Flame') Icon = Flame;
                   if (achievement.icon === 'CheckCircle') Icon = CheckCircle;
                   if (achievement.icon === 'Clock') Icon = Clock;
+                  if (achievement.icon === 'Headphones') Icon = Headphones;
 
                   const tierColors = {
                     'Common': 'from-slate-500 to-slate-400 border-slate-500 text-slate-100',
@@ -896,7 +901,7 @@ export function Profile() {
       </div>
 
       {/* 2FA Setup Dialog */}
-      <Dialog open={twoFADialogOpen} onOpenChange={(open) => { setTwoFADialogOpen(open); if (!open) { setTwoFASetupStep('idle'); setTwoFACode(''); } }}>
+      <Dialog open={twoFADialogOpen} onOpenChange={(open) => { setTwoFADialogOpen(open); if (!open) { setTwoFASetupStep('idle'); setTwoFACode(''); setTwoFASecret(''); setTwoFAQRCode(''); } }}>
         <DialogContent className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-[#f0f6fc] text-xl">Set Up Two-Factor Authentication</DialogTitle>

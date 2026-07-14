@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 
 function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -84,7 +84,7 @@ function passwordResetBody(name: string, resetUrl: string): string {
       We received a request to reset your password. Click the button below to set a new one. This link expires in <strong style="color:#f0f6fc;">15 minutes</strong>.
     </p>
     <div style="text-align:center;margin:0 0 24px;">
-      <a href="${resetUrl}" style="display:inline-block;padding:12px 32px;background:#4f46e5;color:#fff;font-size:13px;font-weight:600;text-decoration:none;border-radius:8px;letter-spacing:0.5px;">
+      <a href="${escHtml(resetUrl)}" style="display:inline-block;padding:12px 32px;background:#4f46e5;color:#fff;font-size:13px;font-weight:600;text-decoration:none;border-radius:8px;letter-spacing:0.5px;">
         Reset Password
       </a>
     </div>

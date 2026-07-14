@@ -555,6 +555,10 @@ async function startServer() {
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
+      // Reject 2FA temp tokens — they are single-purpose for /2fa/validate-login only
+      if (decoded.twoFA) {
+        return res.status(401).json({ error: 'Incomplete 2FA verification' });
+      }
       req.uid = decoded.uid;
       // Invalidate JWTs issued before a password reset
       if (decoded.tv !== undefined) {
@@ -1207,6 +1211,7 @@ async function startServer() {
       if (!currentPassword || !newPassword) {
         return res.status(400).json({ error: "Please provide current password and new password" });
       }
+      if (newPassword.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
       await connectDB();
       const user = await User.findById(req.uid);
       if (!user) return res.status(404).json({ error: "User not found" });
@@ -1286,8 +1291,8 @@ async function startServer() {
       const user = await User.findOne({ passwordResetTokenHash: tokenHash, passwordResetExpiry: { $gt: new Date() } });
       if (!user) return res.status(400).json({ error: "Invalid or expired reset token" });
       user.password = await bcrypt.hash(newPassword, 10);
-      user.passwordResetTokenHash = undefined;
-      user.passwordResetExpiry = undefined;
+      user.passwordResetTokenHash = null;
+      user.passwordResetExpiry = null;
       user.tokenVersion = (user.tokenVersion || 0) + 1;
       user.passwordChangedAt = new Date();
       await user.save();
@@ -1329,7 +1334,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/2fa/verify", verifyToken, async (req: any, res: any) => {
+  app.post("/api/auth/2fa/verify", authLimiter, verifyToken, async (req: any, res: any) => {
     try {
       const { code } = req.body;
       if (!code || code.length !== 6) return res.status(400).json({ error: "Please enter a 6-digit code" });
@@ -1350,7 +1355,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/2fa/disable", verifyToken, async (req: any, res: any) => {
+  app.post("/api/auth/2fa/disable", authLimiter, verifyToken, async (req: any, res: any) => {
     try {
       const { code } = req.body;
       if (!code || code.length !== 6) return res.status(400).json({ error: "Please enter a 6-digit code" });
@@ -1362,7 +1367,7 @@ async function startServer() {
       const secret = decryptToken(user.twoFactorSecret);
       if (!verifyTotpCode(secret, code)) return res.status(400).json({ error: "Invalid code." });
       user.twoFactorEnabled = false;
-      user.twoFactorSecret = undefined;
+      user.twoFactorSecret = null;
       await user.save();
       res.json({ message: "Two-factor authentication disabled" });
     } catch (error: any) {
