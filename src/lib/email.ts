@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 
 function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const SMTP_USERNAME = process.env.SMTP_USERNAME || '';
@@ -13,31 +13,33 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 let transporter: nodemailer.Transporter | null = null;
 
 async function getTransporter(): Promise<nodemailer.Transporter | null> {
-  if (!SMTP_USERNAME || !SMTP_PASSWORD) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: SMTP_USERNAME,
-        pass: SMTP_PASSWORD,
-      },
-    });
-    try {
-      await transporter.verify();
-      console.log('SMTP connection verified successfully');
-    } catch (err) {
-      console.error('SMTP connection verification failed:', err);
-      transporter = null;
-      return null;
+    if (!SMTP_USERNAME || !SMTP_PASSWORD) return null;
+    if (!transporter) {
+        transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            auth: {
+                user: SMTP_USERNAME,
+                pass: SMTP_PASSWORD,
+            },
+        });
+        try {
+            await transporter.verify();
+            console.log('SMTP connection verified successfully');
+        } catch (err) {
+            console.error('SMTP connection verification failed:', err);
+            transporter = null;
+            return null;
+        }
     }
-  }
-  return transporter;
+    return transporter;
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────
 
 function baseLayout(title: string, bodyHtml: string): string {
-  return `
+    return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,7 +77,7 @@ function baseLayout(title: string, bodyHtml: string): string {
 }
 
 function passwordResetText(name: string, resetUrl: string): string {
-  return `Hi ${name},
+    return `Hi ${name},
 
 We received a request to reset your password. Click the link below to set a new one. This link expires in 15 minutes.
 
@@ -87,7 +89,7 @@ TaskPilot AI — Autonomous Productivity`;
 }
 
 function passwordResetHtml(name: string, resetUrl: string): string {
-  return baseLayout('Reset Your Password', `
+    return baseLayout('Reset Your Password', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
       Hi ${escHtml(name)},
     </p>
@@ -106,7 +108,7 @@ function passwordResetHtml(name: string, resetUrl: string): string {
 }
 
 function loginWarningText(name: string, ip: string, device: string, timestamp: string): string {
-  return `Hi ${name},
+    return `Hi ${name},
 
 A new login was detected on your TaskPilot AI account:
 
@@ -120,7 +122,7 @@ TaskPilot AI — Autonomous Productivity`;
 }
 
 function loginWarningHtml(name: string, ip: string, device: string, timestamp: string): string {
-  return baseLayout('New Login Detected', `
+    return baseLayout('New Login Detected', `
     <p style="color:#c9d1d9;font-size:14px;line-height:1.6;margin:0 0 16px;">
       Hi ${escHtml(name)},
     </p>
@@ -148,45 +150,76 @@ function loginWarningHtml(name: string, ip: string, device: string, timestamp: s
 // ─── Send Functions ──────────────────────────────────────────────────────────
 
 export async function sendPasswordResetEmail(to: string, name: string, token: string): Promise<boolean> {
-  const transport = await getTransporter();
-  if (!transport) return false;
+    const transport = await getTransporter();
+    if (!transport) {
+        console.error('Cannot send password reset email: SMTP credentials not configured or transporter unavailable');
+        return false;
+    }
 
-  const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
-  try {
-    await transport.sendMail({
-      from: EMAIL_FROM,
-      to,
-      subject: 'TaskPilot AI — Reset Your Password',
-      text: passwordResetText(name, resetUrl),
-      html: passwordResetHtml(name, resetUrl),
-    });
-    return true;
-  } catch (err) {
-    console.error('Failed to send password reset email:', err);
-    return false;
-  }
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
+    try {
+        await transport.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: 'TaskPilot AI — Reset Your Password',
+            text: passwordResetText(name, resetUrl),
+            html: passwordResetHtml(name, resetUrl),
+        });
+        console.log(`Password reset email sent to ${to}`);
+        return true;
+    } catch (err) {
+        console.error('Failed to send password reset email:', err);
+        return false;
+    }
 }
 
 export async function sendLoginWarningEmail(to: string, name: string, ip: string, device: string): Promise<boolean> {
-  const transport = await getTransporter();
-  if (!transport) return false;
+    const transport = await getTransporter();
+    if (!transport) {
+        console.error('Cannot send login warning email: SMTP credentials not configured or transporter unavailable');
+        return false;
+    }
 
-  const timestamp = new Date().toLocaleString('en-US', {
-    timeZone: 'UTC',
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-  });
-  try {
-    await transport.sendMail({
-      from: EMAIL_FROM,
-      to,
-      subject: 'TaskPilot AI — New Login Detected',
-      text: loginWarningText(name, ip, device, timestamp),
-      html: loginWarningHtml(name, ip, device, timestamp),
+    const timestamp = new Date().toLocaleString('en-US', {
+        timeZone: 'UTC',
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
     });
-    return true;
-  } catch (err) {
-    console.error('Failed to send login warning email:', err);
-    return false;
-  }
+    try {
+        await transport.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject: 'TaskPilot AI — New Login Detected',
+            text: loginWarningText(name, ip, device, timestamp),
+            html: loginWarningHtml(name, ip, device, timestamp),
+        });
+        console.log(`Login warning email sent to ${to}`);
+        return true;
+    } catch (err) {
+        console.error('Failed to send login warning email:', err);
+        return false;
+    }
+}
+
+export async function sendEmail(to: string, subject: string, text: string, html?: string): Promise<boolean> {
+    const transport = await getTransporter();
+    if (!transport) {
+        console.error('Cannot send email: SMTP credentials not configured or transporter unavailable');
+        return false;
+    }
+
+    try {
+        await transport.sendMail({
+            from: EMAIL_FROM,
+            to,
+            subject,
+            text,
+            html,
+        });
+        console.log(`Email sent to ${to}`);
+        return true;
+    } catch (err) {
+        console.error('Failed to send email:', err);
+        return false;
+    }
 }

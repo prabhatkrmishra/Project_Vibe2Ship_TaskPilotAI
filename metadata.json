@@ -2,5 +2,7 @@
   "name": "TaskPilot AI",
   "description": "An intelligent productivity companion designed to help users complete tasks instead of simply reminding them.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
+
 @plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -83,6 +84,13 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /* New premium color palette */
+    --violet: oklch(0.62 0.243 264.376);
+    --violet-foreground: oklch(0.985 0 0);
+    --cyan: oklch(0.704 0.191 22.216);
+    --cyan-foreground: oklch(0.985 0 0);
+    --gold: oklch(0.72 0.13 55);
+    --gold-foreground: oklch(0.145 0 0);
 }
 
 .dark {
@@ -92,8 +100,9 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    /* Updated primary to violet for premium feel */
+    --primary: oklch(0.62 0.243 264.376);
+    --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
@@ -111,7 +120,7 @@
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary: oklch(0.62 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -120,34 +129,131 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+    * {
+        @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
+
+    body {
+        @apply bg-background text-foreground;
     }
-  html {
-    @apply font-sans;
+
+    html {
+        @apply font-sans;
     }
 }
 
+.no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
 /* Smooth scrollbar */
-* { scrollbar-width: thin; scrollbar-color: #21262d transparent; }
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #21262d transparent;
+}
 
 /* Login page dot-grid */
 .login-bg {
-  background-color: #030712;
-  background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
-  background-size: 28px 28px;
+    background-color: #030712;
+    background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
+    background-size: 28px 28px;
 }
 
 /* Card hover lift */
 .card-lift {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.card-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.12);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.font-data { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+.card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.12);
+}
+
+.font-data {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Premium color utilities */
+.bg-violet {
+    background-color: oklch(0.62 0.243 264.376);
+}
+
+.text-violet {
+    color: oklch(0.62 0.243 264.376);
+}
+
+.border-violet {
+    border-color: oklch(0.704 0.194 264.376);
+}
+
+.hover\:bg-violet-light {
+    background-color: oklch(0.704 0.194 264.376);
+}
+
+.bg-cyan {
+    background-color: oklch(0.704 0.191 22.216);
+}
+
+.text-cyan {
+    color: oklch(0.704 0.191 22.216);
+}
+
+.border-cyan {
+    border-color: oklch(0.556 0.191 22.216);
+}
+
+.bg-gold {
+    background-color: oklch(0.72 0.13 55);
+}
+
+.text-gold {
+    color: oklch(0.72 0.13 55);
+}
+
+.border-gold {
+    border-color: oklch(0.62 0.13 55);
+}
+
+/* Premium badge */
+.premium-badge {
+    background: linear-gradient(135deg, oklch(0.72 0.13 55) 0%, oklch(0.87 0.14 55) 100%);
+    color: oklch(0.145 0 0);
+    font-weight: 600;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    box-shadow: 0 0 15px oklch(0.72 0.13 55);
+    animation: pulse-gold 2s infinite;
+}
+
+@keyframes pulse-gold {
+    0%, 100% {
+        box-shadow: 0 0 0 0 oklch(0.72 0.13 55);
+    }
+    50% {
+        box-shadow: 0 0 10px 6px oklch(0.72 0.13 55);
+    }
+}
+
+/* Violet gradient button */
+.violet-gradient {
+    background: linear-gradient(135deg, oklch(0.62 0.243 264.376) 0%, oklch(0.556 0.25 265) 100%);
+}
+
+.violet-gradient-hover {
+    background: linear-gradient(135deg, oklch(0.704 0.194 264.376) 0%, oklch(0.62 0.243 264.376) 100%);
+}
+
+/* Gold premium button */
+.gold-gradient {
+    background: linear-gradient(135deg, oklch(0.72 0.13 55) 0%, oklch(0.87 0.14 55) 100%);
+}
+
+.gold-gradient-hover {
+    background: linear-gradient(135deg, oklch(0.87 0.14 55) 0%, oklch(0.72 0.13 55) 100%);
+}
