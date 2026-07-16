@@ -8,6 +8,7 @@ export interface CustomUser {
     displayName?: string;
     picture?: string;
     address?: string;
+    emailVerified?: boolean;
     gamification?: any; // Ideally import GamificationState but any for now
     isPremium?: boolean;
     premiumExpiry?: string | null;
@@ -58,6 +59,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
             displayName: userData.name,
             picture: userData.picture,
             address: userData.address,
+            emailVerified: userData.emailVerified,
             gamification: userData.gamification,
             isPremium: userData.isPremium,
             premiumExpiry: userData.premiumExpiry,
@@ -136,9 +138,9 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
                 if (taskpilotToken && googleUser) {
                     localStorage.setItem('taskpilot_jwt', taskpilotToken);
                     setUser(makeUserObject(googleUser, taskpilotToken));
-                    showSuccess("Successfully logged in with Google!");
+                    showSuccess("Google Sign-In", "You have been successfully logged in with Google.");
                 } else {
-                    showSuccess("Workspace access authorized.");
+                    showSuccess("Workspace Access", "Your Google Workspace access has been authorized.");
                 }
             }
         };
@@ -153,7 +155,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
             const {googleClientId} = await res.json();
 
             if (!googleClientId) {
-                showError("Google Client ID is not configured on the server.");
+                showError("Configuration Error", "Google Client ID is not configured on the server.");
                 return null;
             }
 
@@ -172,7 +174,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
                     ux_mode: "popup",
                     callback: async (response: any) => {
                         if (response.error) {
-                            showError("Google Sign-In failed or was cancelled.");
+                            showError("Google Error", "Google Sign-In failed or was cancelled.");
                             resolve(null);
                             return;
                         }
@@ -199,13 +201,13 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
                                 if (taskpilotToken && googleUser) {
                                     localStorage.setItem("taskpilot_jwt", taskpilotToken);
                                     setUser(makeUserObject(googleUser, taskpilotToken));
-                                    showSuccess("Successfully logged in with Google!");
+                                    showSuccess("Google Sign-In", "You have been successfully logged in with Google.");
                                 } else {
-                                    showSuccess("Workspace access authorized.");
+                                    showSuccess("Workspace Access", "Your Google Workspace access has been authorized.");
                                 }
                                 resolve(accessToken);
                             } catch (err: any) {
-                                showError("Failed to exchange code: " + err.message);
+                                showError("Exchange Failed", "Failed to exchange authorization code: " + err.message);
                                 resolve(null);
                             }
                         } else {
@@ -217,7 +219,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
                 client.requestCode();
             });
         } catch (error: any) {
-            showError("Failed to start Google Sign-In.");
+            showError("Sign-In Error", "Failed to start Google Sign-In.");
             console.warn("Login start failed:", error);
             return null;
         }
@@ -246,7 +248,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
 
             localStorage.setItem('taskpilot_jwt', data.token);
             setUser(makeUserObject(data.user, data.token));
-            showSuccess("Successfully logged in!");
+            showSuccess("Signed In", "You have been successfully logged in.");
         } catch (error: any) {
             throw error;
         } finally {
@@ -266,7 +268,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
             if (!res.ok) throw new Error(data.error || "Invalid code");
             localStorage.setItem('taskpilot_jwt', data.token);
             setUser(makeUserObject(data.user, data.token));
-            showSuccess("Successfully logged in!");
+            showSuccess("Signed In", "You have been successfully logged in.");
         } catch (error: any) {
             throw error;
         } finally {
@@ -290,7 +292,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
 
             localStorage.setItem('taskpilot_jwt', data.token);
             setUser(makeUserObject(data.user, data.token));
-            showSuccess("Account created successfully!");
+            showSuccess("Account Created", "Your account has been created successfully.");
         } catch (error: any) {
             throw error;
         } finally {
@@ -313,9 +315,9 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
 
             localStorage.setItem('taskpilot_jwt', data.token);
             setUser(makeUserObject(data.user, data.token));
-            showSuccess("Welcome! Logged in as Guest.");
+            showSuccess("Guest Login", "Welcome! You are now logged in as a guest.");
         } catch (error: any) {
-            showError(error.message || "Failed to sign in as guest.");
+            showError("Guest Login Failed", error.message || "Failed to sign in as guest.");
         } finally {
             setLoading(false);
         }
@@ -350,7 +352,7 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
             localStorage.removeItem('workspace_access_token');
             cachedAccessToken = null;
             setUser(null);
-            showSuccess("Logged out successfully");
+            showSuccess("Signed Out", "You have been successfully logged out.");
         } catch (error) {
             console.warn("Logout failed:", error);
         }

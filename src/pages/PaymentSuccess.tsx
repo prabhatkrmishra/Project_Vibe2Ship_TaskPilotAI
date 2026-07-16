@@ -4,6 +4,7 @@ import {useAuth} from '../lib/AuthContext';
 import {Button} from '../components/ui/button';
 import {Crown, Loader2} from 'lucide-react';
 import {showSuccess, showError} from '../lib/toastTheme';
+import {subscriptionsApi} from '../api/subscriptions';
 
 export function PaymentSuccess() {
     const navigate = useNavigate();
@@ -15,28 +16,23 @@ export function PaymentSuccess() {
             try {
                 const token = await user?.getIdToken();
                 if (!token) {
-                    showError('Please login first');
+                    showError('Authentication Required', 'Please login first');
                     navigate('/login');
                     return;
                 }
 
-                const res = await fetch('/api/subscriptions/status', {
-                    headers: {'Authorization': `Bearer ${token}`}
-                });
+                const data = await subscriptionsApi.getStatus();
 
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.isPremium) {
-                        showSuccess('Payment successful! Premium activated.');
-                        await refreshPremiumStatus();
-                        setTimeout(() => navigate('/dashboard'), 2000);
-                    } else {
-                        showError('Payment not yet processed. Please wait a few minutes.');
-                        setChecking(false);
-                    }
+                if (data.isPremium) {
+                    showSuccess('Payment Success', 'Payment successful! Premium activated.');
+                    await refreshPremiumStatus();
+                    setTimeout(() => navigate('/dashboard'), 2000);
+                } else {
+                    showError('Payment Pending', 'Payment not yet processed. Please wait a few minutes.');
+                    setChecking(false);
                 }
             } catch (error) {
-                showError('Failed to verify payment status');
+                showError('Verification Failed', 'Failed to verify payment status');
                 setChecking(false);
             }
         };

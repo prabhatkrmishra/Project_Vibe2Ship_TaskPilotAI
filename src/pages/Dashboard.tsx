@@ -20,11 +20,16 @@ import PageHeader from '../components/PageHeader';
 import {showSuccess, showError, showInfo} from '../lib/toastTheme';
 import {CircularProgress} from '../components/CircularProgress';
 import {ActiveSessionCard} from '../components/ActiveSessionCard';
-import {safeJson} from '../lib/utils';
 import {TaskSelectionModal} from '../components/TaskSelectionModal';
 import {useAIJobs} from '../lib/AIJobContext';
 import {HabitQuickLog} from '../components/HabitQuickLog';
 import {useHabitReminders} from '../lib/HabitReminderContext';
+import {formatTime, getTodayISO} from '@/lib/time.ts';
+import {deriveSessionView} from '@/features/timetable/lib/sessionState.ts';
+import {tasksApi} from '../api/tasks';
+import {goalsApi} from '../api/goals';
+import {plansApi} from '../api/plans';
+import {aiApi} from '../api/integrations';
 
 export function Dashboard() {
     const {user, getAccessToken, requestWorkspaceAccess} = useAuth();
@@ -41,48 +46,32 @@ export function Dashboard() {
     const isJobActive = isJobRunning('generate-plan');
     const {setHabits} = useHabitReminders();
 
-    const today = (() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    })();
+    const today = getTodayISO();
 
     const fetchDashboardData = async () => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const headers = {'Authorization': `Bearer ${token}`};
-
-            // Fetch all dashboard data simultaneously for optimal performance
-            const [resTasks, resGoals, resDecisions, resPlan] = await Promise.all([
-                fetch('/api/tasks', {headers}),
-                fetch('/api/goals', {headers}),
-                fetch('/api/ai-decisions', {headers}),
-                fetch(`/api/plans/${today}`, {headers})
+            const [allTasks, goalsData, decisionsData, planData] = await Promise.all([
+                tasksApi.list() as Promise<Task[]>,
+                goalsApi.list() as Promise<Goal[]>,
+                aiApi.aiDecisions() as Promise<any[]>,
+                plansApi.get(today).catch(() => null)
             ]);
 
-            let goalsData: Goal[] = [];
-            if (resGoals.ok) {
-                goalsData = await safeJson(resGoals) as Goal[];
-                setGoals(goalsData);
-            }
+            setGoals(goalsData);
 
-            if (resDecisions.ok) {
-                const decisionsData = await safeJson(resDecisions);
+            if (Array.isArray(decisionsData)) {
                 setDecisions(decisionsData.slice(0, 3));
             }
 
-            if (resPlan.ok) {
-                const planData = await safeJson(resPlan);
+            if (planData) {
                 setPlan(planData);
             } else {
                 setPlan(null);
             }
 
-            if (resTasks.ok) {
-                const allTasksData = await safeJson(resTasks) as Task[];
-
-                // Sort tasks globally based on parent quest's creation date (oldest quest first)
-                const sorted = allTasksData.sort((a, b) => {
+            if (allTasks) {
+                const sorted = allTasks.sort((a, b) => {
                     const questA = a.goalId ? goalsData.find(g => g.id === a.goalId && g.type === 'quest') : null;
                     const questB = b.goalId ? goalsData.find(g => g.id === b.goalId && g.type === 'quest') : null;
 
@@ -90,7 +79,7 @@ export function Dashboard() {
                     const timeB = questB?.createdAt ? new Date(questB.createdAt).getTime() : Infinity;
 
                     if (timeA !== timeB) {
-                        return timeA - timeB; // ascending: oldest quest first
+                        return timeA - timeB;
                     }
 
                     const deadlineA = a.deadline ? new Date(a.deadline).getTime() : 0;
@@ -104,7 +93,7 @@ export function Dashboard() {
                     return createdAtA - createdAtB;
                 });
 
-                setTasks(sorted.filter(t => t.status === 'pending' || t.status === 'in_progress'));
+                setTasks(sorted.filter(t => t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo'));
                 setCompletedTasks(sorted.filter(t => t.status === 'completed'));
             }
         } catch (err) {
@@ -133,38 +122,25 @@ export function Dashboard() {
     const scheduleTasksIntoTimetable = async (selectedTasks: Task[]) => {
         if (!user) return;
         if (selectedTasks.length === 0) {
-            showInfo("No pending tasks to plan.");
+            showInfo("No Tasks", "No pending tasks to plan.");
             return;
         }
 
         setIsGenerating(true);
         startJob('generate-plan', 'Scheduling tasks into timetable');
         try {
-            const token = await user?.getIdToken();
             const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
-            const res = await fetch('/api/generate-plan', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    date: today,
-                    tasks: selectedTasks,
-                    model: selectedModel
-                })
+            const result = await aiApi.generatePlan({
+                date: today,
+                tasks: selectedTasks,
+                model: selectedModel
             });
 
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || "Failed to generate schedule.");
-            }
-
-            showSuccess("AI is recalculating your optimal schedule...");
+            showSuccess("Schedule Ready", "AI is recalculating your optimal schedule...");
             await fetchDashboardData();
         } catch (error: any) {
             console.error(error);
-            showError(error.message || "Failed to generate plan");
+            showError("Plan Failed", error.message || "Failed to generate plan");
         } finally {
             setIsGenerating(false);
             endJob('generate-plan');
@@ -178,10 +154,6 @@ export function Dashboard() {
     const productivityScore = tasks.length + completedTasks.length > 0
         ? Math.round((completedTasks.length / (tasks.length + completedTasks.length)) * 100)
         : 0;
-
-    const formatTime = (isoString: string) => {
-        return new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-    };
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
@@ -435,67 +407,52 @@ export function Dashboard() {
                                             }
 
                                             return visibleSessions.map((session, i) => {
+                                                const view = deriveSessionView(session, tasks, completedTasks);
                                                 const now = new Date().getTime();
                                                 const start = new Date(session.startTime).getTime();
                                                 const end = new Date(session.endTime).getTime();
-                                                const isPast = now > end;
-                                                const isTimeWindowActive = now >= start && now <= end;
-                                                const isActive = isTimeWindowActive && !!session.started;
-                                                const progress = isActive ? ((now - start) / (end - start)) * 100 : 0;
-
-                                                const matchingTask = tasks.find(t => t.title === session.taskTitle);
-                                                const isCompleted = session.completed || completedTasks.some(t => t.title === session.taskTitle);
-
-                                                const riskColor = isCompleted
-                                                    ? 'bg-emerald-500'
-                                                    : !matchingTask
-                                                        ? 'bg-emerald-500'
-                                                        : (matchingTask.riskScore || 0) > 60
-                                                            ? 'bg-red-500'
-                                                            : (matchingTask.riskScore || 0) > 30
-                                                                ? 'bg-orange-500'
-                                                                : 'bg-emerald-500';
+                                                const progress = view.isActive ? ((now - start) / (end - start)) * 100 : 0;
 
                                                 return (
                                                     <div
                                                         key={i}
                                                         className={`flex gap-4 p-4 rounded-2xl border items-center relative overflow-hidden transition-all ${
-                                                            isCompleted
-                                                                ? 'bg-emerald-500/5 border-emerald-500/20 opacity-75'
-                                                                : isPast
+                                                            view.isCompleted
+                                                                ? 'bg-success/5 border-success/20 opacity-75'
+                                                                : view.isPast
                                                                     ? 'bg-[#161b22] border-[#21262d] opacity-50'
                                                                     : 'bg-[#161b22] border-[#21262d] card-lift'
                                                         }`}
                                                     >
                                                         <div
-                                                            className={`absolute top-0 left-0 w-full h-1 ${riskColor} ${isCompleted ? 'opacity-80' : 'opacity-50'}`}></div>
-                                                        {isActive && !isCompleted && (
-                                                            <div className="absolute top-0 left-0 h-1 bg-cyan-400"
+                                                            className={`absolute top-0 left-0 w-full h-1 ${view.riskColor} ${view.isCompleted ? 'opacity-80' : 'opacity-50'}`}></div>
+                                                        {view.isActive && !view.isCompleted && (
+                                                            <div className="absolute top-0 left-0 h-1 bg-primary"
                                                                  style={{width: `${progress}%`}}></div>
                                                         )}
                                                         <div
                                                             className="w-24 text-xs font-mono font-bold text-slate-400 text-right shrink-0 border-r border-[#21262d] pr-4 uppercase">
                                                             {formatTime(session.startTime)}<br/>
                                                             <span
-                                                                className="text-indigo-400/70">{formatTime(session.endTime)}</span>
+                                                                className="text-primary/70">{formatTime(session.endTime)}</span>
                                                         </div>
                                                         <div className="flex-grow">
-                                                            <h4 className={`font-medium text-sm ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
+                                                            <h4 className={`font-medium text-sm ${view.isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
                                                                 {session.sessionLabel || session.taskTitle}
                                                             </h4>
-                                                            {isCompleted ? (
+                                                            {view.isCompleted ? (
                                                                 <span
-                                                                    className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1 font-bold uppercase tracking-widest">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                                                    className="text-[10px] text-success mt-1 flex items-center gap-1 font-bold uppercase tracking-widest">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-success"></span>
                                 Completed
                               </span>
                                                             ) : (
                                                                 <span
-                                                                    className="text-[10px] text-indigo-400 mt-1 block font-bold uppercase tracking-widest">Deep Work Session</span>
+                                                                    className="text-[10px] text-primary mt-1 block font-bold uppercase tracking-widest">Deep Work Session</span>
                                                             )}
                                                         </div>
-                                                        {isCompleted && (
-                                                            <div className="text-emerald-400 shrink-0">
+                                                        {view.isCompleted && (
+                                                            <div className="text-success shrink-0">
                                                                 <svg className="w-5 h-5" fill="none"
                                                                      stroke="currentColor" strokeWidth="2.5"
                                                                      viewBox="0 0 24 24">
@@ -703,6 +660,7 @@ export function Dashboard() {
                 onOpenChange={setShowSelectionModal}
                 tasks={tasks}
                 goals={goals}
+                scheduledTaskTitles={new Set((plan?.sessions || []).map(s => s.taskTitle))}
                 onConfirm={(selected) => {
                     setShowSelectionModal(false);
                     scheduleTasksIntoTimetable(selected);

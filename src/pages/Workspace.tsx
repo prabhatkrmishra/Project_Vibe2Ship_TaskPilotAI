@@ -22,6 +22,10 @@ import {showSuccess, showError} from '../lib/toastTheme';
 import {BackupErrorBanner} from '../components/BackupErrorBanner';
 import {TamperedBackupError} from '../lib/google-workspace';
 import {GoogleWorkspaceAuthCard, GoogleAuthStatus} from '../components/GoogleWorkspaceAuthCard';
+import {tasksApi} from '../api/tasks';
+import {goalsApi} from '../api/goals';
+import {plansApi} from '../api/plans';
+import {formatDate} from '@/lib/time.ts';
 
 export function Workspace() {
     const {user, getAccessToken, requestWorkspaceAccess, disconnectWorkspaceAccess} = useAuth();
@@ -123,24 +127,16 @@ export function Workspace() {
         const fetchData = async () => {
             if (!user) return;
             try {
-                const token = await user.getIdToken();
-                const headers = {'Authorization': `Bearer ${token}`};
-
-                const [resTasks, resGoals] = await Promise.all([
-                    fetch('/api/tasks', {headers}),
-                    fetch('/api/goals', {headers})
+                const [tasksData, goalsData] = await Promise.all([
+                    tasksApi.list() as Promise<any[]>,
+                    goalsApi.list() as Promise<Goal[]>
                 ]);
 
-                if (resTasks.ok) {
-                    const allTasksData = await resTasks.json() as Task[];
-                    setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress'));
-                    setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
-                }
+                const allTasksData = tasksData as Task[];
+                setTasks(allTasksData.filter(t => t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo'));
+                setCompletedTasks(allTasksData.filter(t => t.status === 'completed'));
 
-                if (resGoals.ok) {
-                    const goalsData = await resGoals.json() as Goal[];
-                    setGoals(goalsData);
-                }
+                setGoals(goalsData);
             } catch (err) {
                 console.error("Error loading workspace data:", err);
             } finally {
@@ -167,7 +163,7 @@ export function Workspace() {
 
             let pushedCount = 0;
             for (const task of tasks) {
-                if (task.status === 'pending' || task.status === 'in_progress') {
+                if (task.status === 'pending' || task.status === 'in_progress' || task.status === 'todo') {
                     const exists = events.items?.find((e: any) => e.summary === task.title);
                     if (!exists) {
                         const taskDate = task.deadline ? new Date(task.deadline) : new Date();
@@ -187,28 +183,20 @@ export function Workspace() {
                 }
             }
 
-            const idToken = await user?.getIdToken();
             const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
-            const res = await fetch('/api/autonomous-pipeline', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${idToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    eventName: 'Calendar Synced',
-                    eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today. Pushed ${pushedCount} tasks to calendar.`,
-                    tasks: tasks,
-                    calendarEvents: events.items || [],
-                    model: selectedModel
-                })
+            await plansApi.runPipeline({
+                eventName: 'Calendar Synced',
+                eventDetail: `User synced their calendar. Found ${events.items?.length || 0} events today. Pushed ${pushedCount} tasks to calendar.`,
+                tasks: tasks,
+                calendarEvents: events.items || [],
+                model: selectedModel
             });
 
             toast.dismiss();
-            showSuccess(`Calendar synced! ${pushedCount > 0 ? '(' + pushedCount + ' tasks pushed)' : ''}`);
+            showSuccess("Calendar Synced", `Found ${events.items?.length || 0} events. ${pushedCount > 0 ? pushedCount + ' tasks pushed to calendar.' : 'All tasks already on calendar.'}`);
         } catch (e: any) {
             toast.dismiss();
-            showError(e.message || "Failed to sync calendar.");
+            showError("Calendar Sync Failed", e.message || "Failed to sync calendar.");
         }
     };
 
@@ -223,17 +211,17 @@ export function Workspace() {
             toast.loading("Generating report...");
             const {generateGoogleDocReport} = await import('../lib/workspace');
             const reportData = {
-                title: `Daily Report - ${new Date().toLocaleDateString()}`,
+                title: `Daily Report - ${formatDate(new Date().toISOString())}`,
                 tasks,
                 completedTasks,
                 goals
             };
             await generateGoogleDocReport(token, reportData);
             toast.dismiss();
-            showSuccess("Saved to Google Drive!");
+            showSuccess("Report Generated", "Daily report saved to Google Drive!");
         } catch (e) {
             toast.dismiss();
-            showError("Failed to generate report.");
+            showError("Report Failed", "Failed to generate report.");
         }
     };
 
@@ -252,12 +240,12 @@ export function Workspace() {
                 ...tasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0]),
                 ...completedTasks.map(t => [t.title, t.priority, t.status, t.estimatedHours, t.riskScore || 0])
             ];
-            await createGoogleSheet(token, `TaskPilot AI Analytics - ${new Date().toLocaleDateString()}`, data);
+            await createGoogleSheet(token, `TaskPilot AI Analytics - ${formatDate(new Date().toISOString())}`, data);
             toast.dismiss();
-            showSuccess("Spreadsheet created in Google Drive!");
+            showSuccess("Sheet Created", "Spreadsheet created in Google Drive!");
         } catch (e) {
             toast.dismiss();
-            showError("Failed to create spreadsheet.");
+            showError("Sheet Failed", "Failed to create spreadsheet.");
         }
     };
 
@@ -279,10 +267,10 @@ export function Workspace() {
             };
             await generatePresentation(token, reportData);
             toast.dismiss();
-            showSuccess("Slides created in Google Drive!");
+            showSuccess("Slides Created", "Presentation saved to Google Drive!");
         } catch (e: any) {
             toast.dismiss();
-            showError(e.message || "Failed to create presentation.");
+            showError("Slides Failed", e.message || "Failed to create presentation.");
         }
     };
 
@@ -298,10 +286,10 @@ export function Workspace() {
             const {exportToTasks} = await import('../lib/google-workspace');
             await exportToTasks([...tasks, ...completedTasks]);
             toast.dismiss();
-            showSuccess("Tasks synced to Google Tasks!");
+            showSuccess("Tasks Synced", "All tasks exported to Google Tasks!");
         } catch (e: any) {
             toast.dismiss();
-            showError(e.message || "Failed to sync tasks.");
+            showError("Tasks Sync Failed", e.message || "Failed to sync tasks.");
         }
     };
 
@@ -323,20 +311,16 @@ export function Workspace() {
             };
 
             for (const t of importedTasks) {
-                await fetch('/api/tasks', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify(t)
-                });
+                await tasksApi.create(t);
             }
 
             toast.dismiss();
-            showSuccess(`Imported ${importedTasks.length} tasks from Google Tasks!`);
+            showSuccess("Import Complete", `Imported ${importedTasks.length} tasks from Google Tasks.`);
             // Refresh to show tasks
             window.location.reload();
         } catch (e: any) {
             toast.dismiss();
-            showError(e.message || "Failed to import tasks.");
+            showError("Import Failed", e.message || "Failed to import tasks.");
         }
     };
 
@@ -355,13 +339,13 @@ export function Workspace() {
             const result = await exportFullBackupToDrive(token, idToken);
             toast.dismiss();
             if (result.skipped) {
-                showSuccess("Already up to date — no changes since your last backup.");
+                showSuccess("Backup Saved", "Already up to date — no changes since your last backup.");
             } else {
-                showSuccess("Full backup have been saved to Google Drive!");
+                showSuccess("Backup Saved", "Full backup saved to Google Drive!");
             }
         } catch (e: any) {
             toast.dismiss();
-            showError(e.message || "Failed to backup data.");
+            showError("Backup Failed", e.message || "Failed to backup data.");
         }
     };
 
@@ -373,7 +357,7 @@ export function Workspace() {
         if (!token) return;
 
         if (!(window as any).gapi) {
-            showError("Google API not loaded yet. Try again.");
+            showError("API Not Ready", "Google API not loaded yet. Try again.");
             return;
         }
 
@@ -408,14 +392,14 @@ export function Workspace() {
                                 const {tasksAdded, goalsAdded} = await restoreBackupPayload(idToken, payload);
 
                                 toast.dismiss();
-                                showSuccess(`Restored ${tasksAdded} task(s) and ${goalsAdded} goal(s) from ${file.name}`);
+                                showSuccess("Backup Restored", `Restored ${tasksAdded} task(s) and ${goalsAdded} goal(s) from ${file.name}.`);
                                 setTimeout(() => window.location.reload(), 1500);
                             } catch (e: any) {
                                 toast.dismiss();
                                 if (e instanceof TamperedBackupError) {
                                     setBackupError(e.message);
                                 } else {
-                                    showError("Failed to restore backup: " + e.message);
+                                    showError("Restore Failed", "Failed to restore backup: " + e.message);
                                 }
                             }
                         }
@@ -506,11 +490,11 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.15}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
-                                                className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
-                                                <CheckCircle className="h-6 w-6 text-blue-400"/>
+                                                className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-6">
+                                                <CheckCircle className="h-6 w-6 text-indigo-400"/>
                                             </div>
                                             <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export to Google
                                                 Tasks</h3>
@@ -520,7 +504,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleSyncTasks}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-indigo-500/30 hover:bg-indigo-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
                                             Sync Tasks <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -560,11 +544,11 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.1}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
-                                                className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
-                                                <FileText className="h-6 w-6 text-blue-400"/>
+                                                className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-6">
+                                                <FileText className="h-6 w-6 text-indigo-400"/>
                                             </div>
                                             <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Daily
                                                 Report</h3>
@@ -574,7 +558,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleExportDocs}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-indigo-500/30 hover:bg-indigo-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
                                             Generate Report (Docs) <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>

@@ -42,14 +42,14 @@ export function PremiumSubscriptionCard() {
             });
             const data = await res.json();
             if (data.success) {
-                showSuccess(data.message || 'Subscription cancelled');
+                showSuccess('Subscription Cancelled', data.message || 'Your subscription has been cancelled successfully.');
                 await refreshPremiumStatus();
                 setConfirmCancel(false);
             } else {
-                showError(data.error || 'Failed to cancel');
+                showError('Cancellation Failed', data.error || 'Failed to cancel subscription');
             }
         } catch {
-            showError('Failed to cancel subscription');
+            showError('Cancellation Failed', 'Failed to cancel subscription');
         } finally {
             setCancelling(false);
         }

@@ -24,9 +24,23 @@ import {
     Route
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import {goalsApi} from '../api/goals';
+import {tasksApi} from '../api/tasks';
 import {toast} from 'sonner';
 import {showSuccess, showError} from '../lib/toastTheme';
+import {
+    computeQuestProgress,
+    getStreakBadgeClass,
+    getStreakEmojiColor,
+    getStreakProgressWidth,
+    isAlreadyLoggedToday,
+    calculateNewStreak,
+    calculateNewProgress,
+    updateHabitStreak
+} from '@/lib/goals.ts';
+import {getTodayISO, formatDate, formatTime, timeToMinutes} from '@/lib/time.ts';
 import {getDelayText, getGoalCompletionDate} from '../lib/utils';
+import {isRoutineTitle} from '@/features/timetable/lib/sessionState.ts';
 
 export function Goals() {
     const {user} = useAuth();
@@ -73,27 +87,19 @@ export function Goals() {
                     const sessions = data.sessions || [];
                     setTimetableSessions(sessions);
 
-                    const tHours = tDate.getHours();
-                    const tMins = tDate.getMinutes();
-                    const targetVal = tHours * 60 + tMins;
+                    const targetVal = timeToMinutes(tDate);
 
                     for (const s of sessions) {
                         const sStart = new Date(s.startTime);
                         const sEnd = new Date(s.endTime);
-                        const startVal = sStart.getHours() * 60 + sStart.getMinutes();
-                        const endVal = sEnd.getHours() * 60 + sEnd.getMinutes();
+                        const startVal = timeToMinutes(sStart);
+                        const endVal = timeToMinutes(sEnd);
 
                         if (targetVal >= startVal && targetVal < endVal) {
-                            const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(s.taskTitle);
-                            const displayTime = sStart.toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            }) + ' - ' + sEnd.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                            const isRoutine = isRoutineTitle(s.taskTitle);
+                            const displayTime = formatTime(sStart.toISOString()) + ' - ' + formatTime(sEnd.toISOString());
                             if (isRoutine) {
-                                setTimetableConflict(`⚠️ Overlap Warning: Selected deadline time (${tDate.toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                })}) falls during your scheduled routine "${s.taskTitle}" (${displayTime}). Adjusting is recommended.`);
+                                setTimetableConflict(`⚠️ Overlap Warning: Selected deadline time (${formatTime(tDate.toISOString())}) falls during your scheduled routine "${s.taskTitle}" (${displayTime}). Adjusting is recommended.`);
                             } else {
                                 setTimetableConflict(`⚠️ Note: Selected deadline overlaps with scheduled session "${s.taskTitle}" (${displayTime}).`);
                             }
@@ -255,30 +261,21 @@ export function Goals() {
     const fetchGoalsAndTasks = async () => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const headers = {'Authorization': `Bearer ${token}`};
-
             // Fetch goals
-            const resGoals = await fetch('/api/goals', {headers});
-            if (resGoals.ok) {
-                const goalsData = await resGoals.json() as Goal[];
-                const sortedData = goalsData.sort((a, b) => {
-                    if (a.completed !== b.completed) {
-                        return a.completed ? 1 : -1;
-                    }
-                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return dateB - dateA;
-                });
-                setGoals(sortedData);
-            }
+            const goalsData = await goalsApi.list() as Goal[];
+            const sortedData = goalsData.sort((a, b) => {
+                if (a.completed !== b.completed) {
+                    return a.completed ? 1 : -1;
+                }
+                const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return dateB - dateA;
+            });
+            setGoals(sortedData);
 
             // Fetch tasks
-            const resTasks = await fetch('/api/tasks', {headers});
-            if (resTasks.ok) {
-                const tasksData = await resTasks.json() as Task[];
-                setLinkedTasks(tasksData);
-            }
+            const tasksData = await tasksApi.list() as Task[];
+            setLinkedTasks(tasksData);
         } catch (err) {
             console.error("Failed to load goals and tasks:", err);
         } finally {
@@ -299,9 +296,7 @@ export function Goals() {
         const tasks = taskList.filter(t => t.goalId === goalId);
         if (tasks.length === 0) return;
 
-        const completedCount = tasks.filter(t => t.status === 'completed').length;
-        const progress = Math.round((completedCount / tasks.length) * 100);
-        const isCompleted = progress === 100;
+        const {progress, isCompleted} = computeQuestProgress(tasks);
 
         if (goal.progress === progress && goal.completed === isCompleted) return;
 
@@ -318,21 +313,11 @@ export function Goals() {
         }
 
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch(`/api/goals/${goalId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({progress, completed: isCompleted})
-            });
-            if (res.ok) {
-                if (shouldShowCompletion) {
-                    showBeautifulCompletion(goal.title, 'quest');
-                }
-                fetchGoalsAndTasks();
+            await goalsApi.update(goalId, {progress, completed: isCompleted});
+            if (shouldShowCompletion) {
+                showBeautifulCompletion(goal.title, 'quest');
             }
+            fetchGoalsAndTasks();
         } catch (error) {
             console.error('Failed to sync quest progress', error);
         }
@@ -351,27 +336,17 @@ export function Goals() {
         setIsCreating(true);
         try {
             const token = await user.getIdToken();
-            const resGoal = await fetch('/api/goals', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title,
-                    description,
-                    type,
-                    targetDate: type === 'quest' ? targetDate : null,
-                    scheduledTime: type === 'habit' && scheduledTime ? scheduledTime : null,
-                    progress: 0,
-                    streak: type === 'habit' ? 0 : null,
-                    completed: false,
-                    createdAt: new Date().toISOString()
-                })
+            const goalRef = await goalsApi.create({
+                title,
+                description,
+                type,
+                targetDate: type === 'quest' ? targetDate : null,
+                scheduledTime: type === 'habit' && scheduledTime ? scheduledTime : null,
+                progress: 0,
+                streak: type === 'habit' ? 0 : null,
+                completed: false,
+                createdAt: new Date().toISOString()
             });
-
-            if (!resGoal.ok) throw new Error("Failed to create goal");
-            const goalRef = await resGoal.json();
 
             if (type === 'quest') {
                 const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
@@ -396,37 +371,30 @@ export function Goals() {
 
                     if (generatedTasks.length > 0) {
                         for (const t of generatedTasks) {
-                            await fetch('/api/tasks', {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    title: t.title || 'Untitled step',
-                                    description: t.description || '',
-                                    deadline: t.deadline || (targetDate ? new Date(targetDate).toISOString() : new Date().toISOString()),
-                                    priority: t.priority || 'medium',
-                                    status: 'pending',
-                                    category: 'quest',
-                                    estimatedHours: t.estimatedHours || 1,
-                                    riskScore: t.riskScore ?? 30,
-                                    resources: t.resources || [],
-                                    subtasks: [],
-                                    goalId: goalRef.id,
-                                    createdAt: new Date().toISOString()
-                                })
+                            await tasksApi.create({
+                                title: t.title || 'Untitled step',
+                                description: t.description || '',
+                                deadline: t.deadline || (targetDate ? new Date(targetDate).toISOString() : new Date().toISOString()),
+                                priority: t.priority || 'medium',
+                                status: 'pending',
+                                category: 'quest',
+                                estimatedHours: t.estimatedHours || 1,
+                                riskScore: t.riskScore ?? 30,
+                                resources: t.resources || [],
+                                subtasks: [],
+                                goalId: goalRef.id,
+                                createdAt: new Date().toISOString()
                             });
                         }
-                        showSuccess(`Quest created with ${generatedTasks.length} scheduled task(s)!`);
+                        showSuccess("Quest Created", `Quest created with ${generatedTasks.length} scheduled task(s)!`);
                     } else {
-                        showError("AI couldn't generate tasks. You can add them manually from Mission Board.");
+                        showError("AI Generation Failed", "AI couldn't generate tasks. You can add them manually from Mission Board.");
                     }
                 } else {
-                    showError("Failed to generate tasks with AI. You can add them manually from Mission Board.");
+                    showError("Task Generation Failed", "Failed to generate tasks with AI. You can add them manually from Mission Board.");
                 }
             } else {
-                showSuccess("Habit created successfully!");
+                showSuccess("Habit Created", "Habit created successfully!");
             }
 
             setIsDialogOpen(false);
@@ -438,7 +406,7 @@ export function Goals() {
             fetchGoalsAndTasks();
         } catch (error) {
             console.error(error);
-            showError("Failed to create goal");
+            showError("Creation Failed", "Failed to create goal");
         } finally {
             setIsCreating(false);
         }
@@ -450,89 +418,58 @@ export function Goals() {
         if (!goal || goal.type !== 'habit') return;
 
         try {
-            const token = await user?.getIdToken();
-            let newStreak = goal.streak || 0;
-            let newProgress = goal.progress;
-            const today = (() => {
-                const d = new Date();
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            })();
+            const today = getTodayISO();
+            const alreadyLoggedToday = isAlreadyLoggedToday(goal, today);
+            const newStreak = calculateNewStreak(goal, today);
+            const newProgress = calculateNewProgress(goal);
 
-            if (increment) {
-                newProgress += 1;
-                if (goal.lastLogged !== today) {
-                    newStreak += 1;
-                }
-            } else {
-                newStreak = 0;
-            }
-
-            await fetch(`/api/goals/${goalId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    progress: newProgress,
-                    streak: newStreak,
-                    lastLogged: increment ? today : goal.lastLogged
-                })
+            const token = await user.getIdToken();
+            const success = await updateHabitStreak(token, {
+                goalId: goal.id,
+                goalTitle: goal.title,
+                streak: increment ? newStreak : 0,
+                progress: increment ? newProgress : goal.progress,
+                lastLogged: increment ? today : goal.lastLogged || '',
+                alreadyLoggedToday
             });
 
-            showSuccess(increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
-            fetchGoalsAndTasks();
+            if (success) {
+                showSuccess(increment ? "Habit Logged" : "Streak Reset", increment ? "Habit logged!" : "Streak reset. Tomorrow's a fresh start.");
+                fetchGoalsAndTasks();
+            } else {
+                showError("Update Failed", "Failed to update progress");
+            }
         } catch (error) {
-            showError("Failed to update progress");
+            showError("Update Failed", "Failed to update progress");
         }
     };
 
     const deleteGoal = async (goal: Goal) => {
         if (!user) return;
         try {
-            const token = await user?.getIdToken();
             const deletedTasks = linkedTasks.filter(t => t.goalId === goal.id);
 
-            const res = await fetch(`/api/goals/${goal.id}`, {
-                method: 'DELETE',
-                headers: {'Authorization': `Bearer ${token}`}
-            });
-
-            if (!res.ok) throw new Error();
+            await goalsApi.delete(goal.id);
 
             const labelType = goal.type === 'quest' ? 'Quest' : 'Habit';
 
-            showSuccess(`${labelType} deleted`, {
+            showSuccess(`${labelType} Deleted`, `${labelType} deleted`, {
                 action: {
                     label: "Undo",
                     onClick: async () => {
                         try {
-                            const resGoal = await fetch('/api/goals', {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(goal)
-                            });
+                            const resGoal = await goalsApi.create(goal);
 
-                            if (resGoal.ok && deletedTasks.length > 0) {
+                            if (resGoal && deletedTasks.length > 0) {
                                 for (const t of deletedTasks) {
-                                    await fetch('/api/tasks', {
-                                        method: 'POST',
-                                        headers: {
-                                            'Authorization': `Bearer ${token}`,
-                                            'Content-Type': 'application/json'
-                                        },
-                                        body: JSON.stringify(t)
-                                    });
+                                    await tasksApi.create(t);
                                 }
                             }
 
-                            showSuccess(`${labelType} restored`);
+                            showSuccess("Goal Restored", `${labelType} restored`);
                             fetchGoalsAndTasks();
                         } catch (e) {
-                            showError(`Failed to restore ${labelType.toLowerCase()}`);
+                            showError("Restore Failed", `Failed to restore ${labelType.toLowerCase()}`);
                         }
                     }
                 },
@@ -541,27 +478,19 @@ export function Goals() {
 
             fetchGoalsAndTasks();
         } catch (error) {
-            showError(`Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
+            showError("Delete Failed", `Failed to delete ${goal.type === 'quest' ? 'quest' : 'habit'}`);
         }
     };
 
     const toggleLinkedTask = async (taskId: string, currentStatus: string) => {
         if (!user) return;
         try {
-            const token = await user?.getIdToken();
-            await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    status: currentStatus === 'completed' ? 'pending' : 'completed'
-                })
+            await tasksApi.update(taskId, {
+                status: currentStatus === 'completed' ? 'pending' : 'completed'
             });
             fetchGoalsAndTasks();
         } catch (error) {
-            showError("Failed to update task");
+            showError("Task Update Failed", "Failed to update task");
         }
     };
 
@@ -578,21 +507,13 @@ export function Goals() {
             return;
         }
         try {
-            const token = await user?.getIdToken();
-            await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: editingTaskText.trim()
-                })
+            await tasksApi.update(taskId, {
+                title: editingTaskText.trim()
             });
-            showSuccess("Task updated!");
+            showSuccess("Task Updated", "Task updated!");
             fetchGoalsAndTasks();
         } catch (error) {
-            showError("Failed to update task");
+            showError("Update Failed", "Failed to update task");
         } finally {
             setEditingTaskId(null);
         }
@@ -603,32 +524,24 @@ export function Goals() {
         if (!title || !user) return;
 
         try {
-            const token = await user.getIdToken();
-            await fetch('/api/tasks', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title,
-                    description: '',
-                    deadline: targetDate ? new Date(targetDate).toISOString() : new Date().toISOString(),
-                    priority: 'medium',
-                    status: 'pending',
-                    category: 'quest',
-                    estimatedHours: 2,
-                    riskScore: 30,
-                    subtasks: [],
-                    goalId: goalId,
-                    createdAt: new Date().toISOString()
-                })
+            await tasksApi.create({
+                title,
+                description: '',
+                deadline: targetDate ? new Date(targetDate).toISOString() : new Date().toISOString(),
+                priority: 'medium',
+                status: 'pending',
+                category: 'quest',
+                estimatedHours: 2,
+                riskScore: 30,
+                subtasks: [],
+                goalId: goalId,
+                createdAt: new Date().toISOString()
             });
-            showSuccess("Task added to Quest!");
+            showSuccess("Task Added", "Task added to Quest!");
             setNewManualTaskTitles(prev => ({...prev, [goalId]: ''}));
             fetchGoalsAndTasks();
         } catch (error) {
-            showError("Failed to add task");
+            showError("Add Task Failed", "Failed to add task");
         }
     };
 
@@ -803,7 +716,7 @@ export function Goals() {
                                                 className="bg-slate-900 border-slate-800 text-slate-400 hover:text-white px-4 rounded-xl h-11"
                                                 onClick={() => {
                                                     if (!('webkitSpeechRecognition' in window)) {
-                                                        showError("Speech recognition is not supported in this browser.");
+                                                        showError("Not Supported", "Speech recognition is not supported in this browser.");
                                                         return;
                                                     }
                                                     const recognition = new (window as any).webkitSpeechRecognition();
@@ -811,9 +724,9 @@ export function Goals() {
                                                     recognition.onerror = (err: any) => {
                                                         console.error('Speech recognition error:', err.error);
                                                         if (err.error === 'network') {
-                                                            showError("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
+                                                            showError("Network Error", "Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
                                                         } else {
-                                                            showError(`Speech recognition error: ${err.error}`);
+                                                            showError("Speech Error", `Speech recognition error: ${err.error}`);
                                                         }
                                                     };
                                                     recognition.start();
@@ -1058,11 +971,11 @@ export function Goals() {
 
                                     <div className="flex gap-2 mb-4 flex-wrap">
                                         {goal.type === 'habit' ? (
-                                            <span
-                                                className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${(goal.streak || 0) >= 7 ? 'bg-red-500/15 text-red-400 border-red-500/25' : (goal.streak || 0) >= 3 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'}`}>
-                    <Flame className="w-3.5 h-3.5 mr-1"/>
-                                                {goal.streak || 0} Day Streak
-                  </span>
+<span
+                                        className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${getStreakBadgeClass(goal.streak || 0)}`}>
+                                        <Flame className="w-3.5 h-3.5 mr-1"/>
+                                        {goal.streak || 0} Day Streak
+                                    </span>
                                         ) : (
                                             <span
                                                 className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center">
@@ -1087,7 +1000,7 @@ export function Goals() {
                                                         <div
                                                             className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[#161b22] border border-[#21262d] shrink-0">
                                                             <span
-                                                                className={`text-xl font-black ${(goal.streak || 0) >= 7 ? 'text-red-400' : (goal.streak || 0) >= 3 ? 'text-orange-400' : 'text-[#f0f6fc]'}`}>{goal.streak || 0}</span>
+                                                                className={`text-xl font-black ${getStreakEmojiColor(goal.streak || 0)}`}>{goal.streak || 0}</span>
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-[10px] uppercase tracking-widest font-bold text-[#8b949e] mb-1.5">Progress
@@ -1096,7 +1009,7 @@ export function Goals() {
                                                                 className="h-1.5 bg-[#161b22] rounded-full overflow-hidden">
                                                                 <div
                                                                     className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500"
-                                                                    style={{width: `${((goal.streak || 0) % 7) / 7 * 100}%`}}></div>
+                                                                    style={{width: `${getStreakProgressWidth(goal.streak || 0)}%`}}></div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1202,14 +1115,11 @@ export function Goals() {
                                             {t.title}
                                           </span>
                                                                                             )}
-                                                                                            <span
-                                                                                                className={`text-[10px] font-mono flex items-center gap-1 mt-0.5 ${overdue ? 'text-red-400' : 'text-slate-500'}`}>
-                                          <Clock className="w-2.5 h-2.5"/>
-                                                                                                {overdue ? 'Overdue' : new Date(t.deadline).toLocaleDateString(undefined, {
-                                                                                                    month: 'short',
-                                                                                                    day: 'numeric'
-                                                                                                })}
-                                        </span>
+<span
+                                    className={`text-[10px] font-mono flex items-center gap-1 mt-0.5 ${overdue ? 'text-red-400' : 'text-slate-500'}`}>
+                                <Clock className="w-2.5 h-2.5"/>
+                                {overdue ? 'Overdue' : formatDate(t.deadline)}
+                            </span>
                                                                                         </div>
                                                                                     </div>
 
@@ -1265,18 +1175,15 @@ export function Goals() {
                                                                         </div>
                                                                         <div className="flex-1 min-w-0">
                                                                             <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
-                                                                            <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
-                                                                                {new Date(entry.date).toLocaleDateString(undefined, {
-                                                                                    month: 'short',
-                                                                                    day: 'numeric'
-                                                                                })} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, {
-                                                                                hour: '2-digit',
-                                                                                minute: '2-digit'
-                                                                            })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, {
-                                                                                hour: '2-digit',
-                                                                                minute: '2-digit'
-                                                                            })}` : ''}
-                                                                            </p>
+<p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                {formatDate(entry.date)} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit'
+            })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit'
+            })}` : ''}
+            </p>
                                                                         </div>
                                                                     </div>
                                                                 ))}

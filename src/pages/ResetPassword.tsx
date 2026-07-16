@@ -2,6 +2,7 @@ import {useState, useEffect} from 'react';
 import {Link, Navigate, useSearchParams} from 'react-router-dom';
 import {Loader2, LayoutDashboard, Lock, CheckCircle2, XCircle} from 'lucide-react';
 import {useAuth} from '../lib/AuthContext';
+import {authApi} from '../api/auth';
 
 export default function ResetPassword() {
     const {user, loading} = useAuth();
@@ -21,8 +22,7 @@ export default function ResetPassword() {
             setTokenValid(false);
             return;
         }
-        fetch(`/api/auth/reset-password/${encodeURIComponent(token)}`)
-            .then(r => r.json())
+        authApi.verifyResetToken(token)
             .then((data: any) => setTokenValid(data.valid))
             .catch(() => setTokenValid(false));
     }, [token]);
@@ -76,16 +76,7 @@ export default function ResetPassword() {
         }
         try {
             setSubmitting(true);
-            const res = await fetch('/api/auth/reset-password', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({token, newPassword}),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                setErrorMsg(data.error || "Something went wrong.");
-                return;
-            }
+            await authApi.resetPassword({token, password: newPassword});
             setResult('success');
         } catch (err: any) {
             setErrorMsg(err.message || "Network error. Please try again.");

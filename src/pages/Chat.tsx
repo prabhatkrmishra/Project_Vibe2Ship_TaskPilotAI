@@ -9,6 +9,10 @@ import ReactMarkdown from 'react-markdown';
 import {showSuccess, showError, showWarning} from '../lib/toastTheme';
 import {Task} from '../types';
 import {safeJson} from '../lib/utils';
+import {formatTime, getTodayISO} from '@/lib/time.ts';
+import {chatApi} from '../api/chat';
+import {tasksApi} from '../api/tasks';
+import {goalsApi} from '../api/goals';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -107,7 +111,7 @@ export function Chat() {
         }
 
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            showError("Speech recognition is not supported in this browser.");
+            showError("Speech Error", "Speech recognition is not supported in this browser.");
             return;
         }
 
@@ -175,7 +179,7 @@ export function Chat() {
                     isError: true,
                     timestamp: new Date().toISOString()
                 }]);
-                showError(errorDesc);
+                showError("Speech Error", errorDesc);
             };
 
             recognition.onend = () => {
@@ -185,7 +189,7 @@ export function Chat() {
             recognition.start();
         } catch (err) {
             console.error("Microphone access error:", err);
-            showError("Could not access microphone for visualization.");
+            showError("Microphone Error", "Could not access microphone for visualization.");
         }
     };
 
@@ -264,41 +268,35 @@ export function Chat() {
         setSelectedModel(value);
         localStorage.setItem('default_gemini_model', value);
         const displayName = models.find(m => m.name === value)?.displayName || value;
-        showSuccess(`Active AI Model changed to: ${displayName}`);
+        showSuccess("Model Changed", `Active AI Model changed to: ${displayName}`);
     };
 
     const fetchSessions = async (overrideActiveChatId?: string) => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const res = await fetch('/api/chats/sessions', {
-                headers: {'Authorization': `Bearer ${token}`}
-            });
-            if (res.ok) {
-                const data = await safeJson(res);
-                const currentId = overrideActiveChatId !== undefined ? overrideActiveChatId : activeChatId;
+            const data = await chatApi.sessions();
+            const currentId = overrideActiveChatId !== undefined ? overrideActiveChatId : activeChatId;
 
-                let sessionsList = [...data];
-                const exists = sessionsList.some((s: any) => s.chatId === currentId);
-                if (!exists && currentId !== 'default') {
-                    sessionsList.unshift({
-                        chatId: currentId,
-                        title: currentId === 'default' ? 'Default Chat' : 'New Chat',
-                        timestamp: new Date().toISOString(),
-                        messagesCount: 0
-                    });
-                }
-                setSessions(sessionsList);
+            let sessionsList = [...data];
+            const exists = sessionsList.some((s: any) => s.chatId === currentId);
+            if (!exists && currentId !== 'default') {
+                sessionsList.unshift({
+                    chatId: currentId,
+                    title: currentId === 'default' ? 'Default Chat' : 'New Chat',
+                    timestamp: new Date().toISOString(),
+                    messagesCount: 0
+                });
+            }
+            setSessions(sessionsList);
 
-                // Find and set current active chat's title
-                const current = sessionsList.find((s: any) => s.chatId === currentId);
-                if (current) {
-                    setActiveChatTitle(current.title);
-                } else if (currentId === 'default') {
-                    setActiveChatTitle('Default Chat');
-                } else {
-                    setActiveChatTitle('New Chat');
-                }
+            // Find and set current active chat's title
+            const current = sessionsList.find((s: any) => s.chatId === currentId);
+            if (current) {
+                setActiveChatTitle(current.title);
+            } else if (currentId === 'default') {
+                setActiveChatTitle('Default Chat');
+            } else {
+                setActiveChatTitle('New Chat');
             }
         } catch (err) {
             console.error("Failed to fetch sessions:", err);
@@ -308,33 +306,21 @@ export function Chat() {
     const fetchAllData = async () => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const headers = {'Authorization': `Bearer ${token}`};
-
             // Fetch messages for active chat
-            const resChats = await fetch(`/api/chats?chatId=${activeChatId}`, {headers});
-            if (resChats.ok) {
-                const chatsData = await safeJson(resChats);
-                setMessages(chatsData);
-            }
+            const chatsData = await chatApi.messages(activeChatId);
+            setMessages(chatsData);
 
             // Fetch sessions list
             fetchSessions(activeChatId);
 
             // Fetch tasks
-            const resTasks = await fetch('/api/tasks', {headers});
-            if (resTasks.ok) {
-                const tasksData = await safeJson(resTasks);
-                const pendingTasks = tasksData.filter((t: any) => t.status === 'pending' || t.status === 'in_progress');
-                setTasks(pendingTasks);
-            }
+            const tasksData = await tasksApi.list();
+            const pendingTasks = tasksData.filter((t: any) => t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo');
+            setTasks(pendingTasks);
 
             // Fetch goals
-            const resGoals = await fetch('/api/goals', {headers});
-            if (resGoals.ok) {
-                const goalsData = await safeJson(resGoals);
-                setGoals(goalsData);
-            }
+            const goalsData = await goalsApi.list();
+            setGoals(goalsData);
         } catch (err) {
             console.error("Failed to fetch chat dashboard data:", err);
         }
@@ -352,7 +338,7 @@ export function Chat() {
         setActiveChatTitle('New Chat');
         setMessages([]);
         localStorage.setItem('active_chat_id', newId);
-        showSuccess("Started a new conversation session");
+        showSuccess("Session Started", "Started a new conversation session");
 
         // Add to sessions list provisionally so it shows in the dropdown
         setSessions(prev => [
@@ -371,7 +357,7 @@ export function Chat() {
             setActiveChatTitle(chatId === 'default' ? 'Default Chat' : 'New Chat');
         }
         setIsRenaming(false); // cancel renaming if we switch chats
-        showSuccess("Switched conversation session");
+        showSuccess("Session Switched", "Switched conversation session");
     };
 
     const startRenameMode = () => {
@@ -382,32 +368,20 @@ export function Chat() {
     const handleRenameSession = async () => {
         const trimmed = renameTitleInput.trim();
         if (!trimmed) {
-            showError("Title cannot be empty");
+            showError("Invalid Title", "Title cannot be empty");
             return;
         }
         if (!user) return;
         setIsUpdatingTitle(true);
         try {
-            const token = await user.getIdToken();
-            const res = await fetch(`/api/chats/sessions/${activeChatId}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({title: trimmed})
-            });
-            if (res.ok) {
-                showSuccess("Chat renamed successfully");
-                setActiveChatTitle(trimmed);
-                setIsRenaming(false);
-                fetchSessions(activeChatId);
-            } else {
-                showError("Failed to rename chat session");
-            }
+            await chatApi.renameSession(activeChatId, trimmed);
+            showSuccess("Chat Renamed", "Chat renamed successfully");
+            setActiveChatTitle(trimmed);
+            setIsRenaming(false);
+            fetchSessions(activeChatId);
         } catch (err) {
             console.error(err);
-            showError("An error occurred while renaming chat session");
+            showError("Rename Failed", "Failed to rename chat session");
         } finally {
             setIsUpdatingTitle(false);
         }
@@ -419,29 +393,21 @@ export function Chat() {
 
         setIsDeletingSession(chatId);
         try {
-            const token = await user.getIdToken();
-            const res = await fetch(`/api/chats/sessions/${chatId}`, {
-                method: 'DELETE',
-                headers: {'Authorization': `Bearer ${token}`}
-            });
-            if (res.ok) {
-                showSuccess("Conversation deleted successfully");
-                // If we deleted the active chat, switch to default or another
-                if (activeChatId === chatId) {
-                    const nextSession = sessions.find(s => s.chatId !== chatId);
-                    const nextId = nextSession?.chatId || 'default';
-                    setActiveChatId(nextId);
-                    localStorage.setItem('active_chat_id', nextId);
-                } else {
-                    // If we deleted some other chat, just refresh sessions
-                    fetchSessions(activeChatId);
-                }
+            await chatApi.removeSession(chatId);
+            showSuccess("Session Deleted", "Conversation deleted successfully");
+            // If we deleted the active chat, switch to default or another
+            if (activeChatId === chatId) {
+                const nextSession = sessions.find(s => s.chatId !== chatId);
+                const nextId = nextSession?.chatId || 'default';
+                setActiveChatId(nextId);
+                localStorage.setItem('active_chat_id', nextId);
             } else {
-                showError("Failed to delete session");
+                // If we deleted some other chat, just refresh sessions
+                fetchSessions(activeChatId);
             }
         } catch (err) {
             console.error(err);
-            showError("An error occurred while deleting session");
+            showError("Delete Failed", "Failed to delete session");
         } finally {
             setIsDeletingSession(null);
         }
@@ -453,7 +419,7 @@ export function Chat() {
 
         // Guard: don't send with an unavailable model
         if (models.length > 0 && !models.some(m => m.name === selectedModel && m.available)) {
-            showError('Selected AI model is not available. Please pick a different model.');
+            showError("Model Unavailable", 'Selected AI model is not available. Please pick a different model.');
             return;
         }
 
@@ -470,27 +436,16 @@ export function Chat() {
         }
 
         try {
-            const token = await user.getIdToken();
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            };
-
             // Add user message to MongoDB
-            const userMsgRes = await fetch('/api/chats', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
+            let savedUserMsg: Message = {role: 'user', content: userMsg};
+            try {
+                savedUserMsg = await chatApi.send({
                     role: 'user',
                     content: userMsg,
                     chatId: activeChatId,
                     chatTitle: updatedTitle
-                })
-            });
-
-            let savedUserMsg: Message = {role: 'user', content: userMsg};
-            if (userMsgRes.ok) {
-                savedUserMsg = await userMsgRes.json();
+                });
+            } catch {
             }
             setMessages(prev => [...prev, savedUserMsg]);
 
@@ -522,17 +477,9 @@ export function Chat() {
             const cleanQuests = cleanGoals.filter(g => g.type === 'Quest');
             const cleanHabits = cleanGoals.filter(g => g.type === 'Habit');
 
-            const getLocalYYYYMMDD = (d = new Date()) => {
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-            };
-
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
+            let data: any;
+            try {
+                data = await chatApi.sendAI({
                     messages: cleanMessages,
                     context: {
                         tasks: cleanTasks,
@@ -540,13 +487,11 @@ export function Chat() {
                         habits: cleanHabits
                     },
                     model: selectedModel,
-                    localDateStr: getLocalYYYYMMDD(),
+                    localDateStr: getTodayISO(),
                     localTimeStr: new Date().toLocaleTimeString()
-                })
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
+                });
+            } catch (aiErr: any) {
+                const errData = aiErr.body || {};
                 let friendlyError = 'The neural network is currently offline. Please try switching models.';
 
                 if (errData && errData.error) {
@@ -568,30 +513,27 @@ export function Chat() {
                 }
 
                 // Add assistant error message to DB
-                const errorMsgRes = await fetch('/api/chats', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
+                let savedErrorMsg: Message = {
+                    role: 'assistant',
+                    content: `⚠️ **Service Error**: ${friendlyError}`
+                };
+                try {
+                    savedErrorMsg = await chatApi.send({
                         role: 'assistant',
                         content: `⚠️ **Service Error**: ${friendlyError}`,
                         chatId: activeChatId,
                         chatTitle: updatedTitle
-                    })
-                });
-                const savedErrorMsg = errorMsgRes.ok ? await errorMsgRes.json() : {
-                    role: 'assistant' as const,
-                    content: `⚠️ **Service Error**: ${friendlyError}`
-                };
+                    });
+                } catch {
+                }
                 setMessages(prev => [...prev, {...savedErrorMsg, isError: true}]);
                 fetchSessions(activeChatId);
-                showError(friendlyError);
+                showError("Service Error", friendlyError);
                 return;
             }
 
-            const data = await res.json();
-
             if (data.planUpdated) {
-                showSuccess("📅 Custom timetable updated on your Command Center!", {
+                showSuccess("Timetable Updated", "📅 Custom timetable updated on your Command Center!", {
                     duration: 6000,
                     description: "Your daily execution plan has been updated according to your instructions."
                 });
@@ -601,6 +543,7 @@ export function Chat() {
                 const exhaustedModel = (data.quotaModel || selectedModel || '').split('/').pop();
                 const fallbackCandidate = models.find((m) => m.name !== selectedModel)?.name;
                 showWarning(
+                    "Quota Exceeded",
                     exhaustedModel
                         ? `"${exhaustedModel}" has hit its API quota limit. Switch to a different AI brain to keep going without interruptions.`
                         : `Your current AI model has hit its API quota limit. Switch to a different AI brain to keep going without interruptions.`,
@@ -611,51 +554,44 @@ export function Chat() {
             }
 
             // Add assistant message to DB
-            const assistantMsgRes = await fetch('/api/chats', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
+            let savedAssistantMsg: Message = {
+                role: 'assistant',
+                content: data.text || 'No response generated.'
+            };
+            try {
+                savedAssistantMsg = await chatApi.send({
                     role: 'assistant',
                     content: data.text || 'No response generated.',
                     chatId: activeChatId,
                     chatTitle: updatedTitle
-                })
-            });
-            const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : {
-                role: 'assistant' as const,
-                content: data.text || 'No response generated.'
-            };
+                });
+            } catch {
+            }
             setMessages(prev => [...prev, savedAssistantMsg]);
             fetchSessions(activeChatId);
         } catch (error: any) {
             console.error(error);
             const fallbackError = error.message || 'Sorry, I encountered an error while thinking.';
             try {
-                const token = await user.getIdToken();
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                let savedAssistantMsg: Message = {
+                    role: 'assistant',
+                    content: `⚠️ **Connection Error**: ${fallbackError}`
                 };
-                const assistantMsgRes = await fetch('/api/chats', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({
+                try {
+                    savedAssistantMsg = await chatApi.send({
                         role: 'assistant',
                         content: `⚠️ **Connection Error**: ${fallbackError}`,
                         chatId: activeChatId,
                         chatTitle: updatedTitle
-                    })
-                });
-                const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : {
-                    role: 'assistant' as const,
-                    content: `⚠️ **Connection Error**: ${fallbackError}`
-                };
+                    });
+                } catch {
+                }
                 setMessages(prev => [...prev, {...savedAssistantMsg, isError: true}]);
                 fetchSessions(activeChatId);
             } catch (err) {
                 console.error("Double failure during error logging:", err);
             }
-            showError(fallbackError);
+            showError("Connection Error", fallbackError);
         } finally {
             setIsSending(false);
         }
@@ -666,7 +602,7 @@ export function Chat() {
 
         // Guard: don't send with an unavailable model
         if (models.length > 0 && !models.some(m => m.name === selectedModel && m.available)) {
-            showError('Selected AI model is not available. Please pick a different model.');
+            showError("Model Unavailable", 'Selected AI model is not available. Please pick a different model.');
             return;
         }
 
@@ -681,34 +617,31 @@ export function Chat() {
         }
 
         try {
-            const token = await user.getIdToken();
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
+            let savedUserMsg: Message = {
+                role: 'user',
+                content: `[Audio Journal] ${input}`
             };
-
-            const userMsgRes = await fetch('/api/chats', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
+            try {
+                savedUserMsg = await chatApi.send({
                     role: 'user',
                     content: `[Audio Journal] ${input}`,
                     chatId: activeChatId,
                     chatTitle: updatedTitle
-                })
-            });
-            const savedUserMsg = userMsgRes.ok ? await userMsgRes.json() : {
-                role: 'user' as const,
-                content: `[Audio Journal] ${input}`
-            };
+                });
+            } catch {
+            }
             setMessages(prev => [...prev, savedUserMsg]);
 
             const currentInput = input;
             setInput('');
 
+            const token = await user.getIdToken();
             const res = await fetch('/api/audio-journal', {
                 method: 'POST',
-                headers,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({
                     text: currentInput,
                     model: selectedModel
@@ -723,28 +656,27 @@ export function Chat() {
 
             const botResponse = `**Audio Journal Processed**\n\n${data.summary}\n\nI have extracted and automatically created **${data.createdTasks?.length || 0} tasks** from this reflection. You can find them on your dashboard.`;
 
-            const assistantMsgRes = await fetch('/api/chats', {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
+            let savedAssistantMsg: Message = {
+                role: 'assistant',
+                content: botResponse
+            };
+            try {
+                savedAssistantMsg = await chatApi.send({
                     role: 'assistant',
                     content: botResponse,
                     chatId: activeChatId,
                     chatTitle: updatedTitle
-                })
-            });
-            const savedAssistantMsg = assistantMsgRes.ok ? await assistantMsgRes.json() : {
-                role: 'assistant' as const,
-                content: botResponse
-            };
+                });
+            } catch {
+            }
 
             setMessages(prev => [...prev, savedAssistantMsg]);
             fetchSessions(activeChatId);
-            showSuccess(`Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
+            showSuccess("Journal Processed", `Extracted ${data.createdTasks?.length || 0} tasks successfully!`);
 
         } catch (err: any) {
             console.error(err);
-            showError(err.message || 'Error processing audio journal.');
+            showError("Journal Error", err.message || 'Error processing audio journal.');
         } finally {
             setIsSending(false);
         }
@@ -1036,10 +968,7 @@ export function Chat() {
                                             )}
                                             <span
                                                 className="text-[10px] text-slate-500 font-data mt-2 block text-right opacity-70">
-                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        }) : new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                        {formatTime(msg.timestamp || new Date().toISOString())}
                       </span>
                                         </div>
                                     </div>

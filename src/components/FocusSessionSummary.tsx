@@ -34,7 +34,7 @@ export default function FocusSessionSummary({
         if (rating === 0 || saving) return;
         setSaving(true);
         try {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('taskpilot_jwt');
             const res = await fetch('/api/focus-sessions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
@@ -60,10 +60,10 @@ export default function FocusSessionSummary({
             }
             if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
             const xp = data.gamification?.xpEarned || 20;
-            showSuccess(`Focus session saved! +${xp} XP`, {duration: 3000});
+            showSuccess('Session Saved', `Focus session saved! +${xp} XP earned.`, {duration: 3000});
             onSave();
         } catch (e: any) {
-            showError(e.message || 'Failed to save');
+            showError('Save Failed', e.message || 'Failed to save session');
         } finally {
             setSaving(false);
         }

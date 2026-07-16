@@ -27,6 +27,12 @@ import PageHeader from '../components/PageHeader';
 import {format} from 'date-fns';
 import {toast} from 'sonner';
 import {showSuccess, showError} from '../lib/toastTheme';
+import {tasksApi} from '../api/tasks';
+import {goalsApi} from '../api/goals';
+import {plansApi} from '../api/plans';
+import {aiApi} from '../api/integrations';
+import {getTodayISO, timeToMinutes, formatTime, pad2, formatDate} from '@/lib/time.ts';
+import {isAlreadyLoggedToday, calculateNewStreak, calculateNewProgress, updateHabitStreak} from '@/lib/goals.ts';
 
 export function Tasks() {
     const {user, refreshGamification} = useAuth();
@@ -62,15 +68,12 @@ export function Tasks() {
             const sDate = new Date(session.startTime);
             const eDate = new Date(session.endTime);
 
-            const sVal = sDate.getHours() * 60 + sDate.getMinutes();
-            const eVal = eDate.getHours() * 60 + eDate.getMinutes();
+            const sVal = timeToMinutes(sDate);
+            const eVal = timeToMinutes(eDate);
 
             if (chosenVal >= sVal && chosenVal < eVal) {
                 const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(session.taskTitle);
-                const displayTime = sDate.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                }) + ' - ' + eDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                const displayTime = formatTime(sDate.toISOString()) + ' - ' + formatTime(eDate.toISOString());
                 if (isRoutine) {
                     setTimeConflict(`⚠️ Overlap: This time overlaps with your scheduled routine "${session.taskTitle}" (${displayTime}). Consider choosing an available focus session instead!`);
                 } else {
@@ -88,21 +91,13 @@ export function Tasks() {
             setIsLoadingTimetable(true);
             setTimeConflict(null);
             try {
-                const token = await user.getIdToken();
                 const year = selectedDate.getFullYear();
                 const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
                 const day = String(selectedDate.getDate()).padStart(2, '0');
-                const dateStr = `${year}-${month}-${day}`;
+                const dateStr = formatDate(selectedDate.toISOString());
 
-                const res = await fetch(`/api/plans/${dateStr}`, {
-                    headers: {'Authorization': `Bearer ${token}`}
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setTimetableSessions(data.sessions || []);
-                } else {
-                    setTimetableSessions([]);
-                }
+                const data = await plansApi.get(dateStr);
+                setTimetableSessions(data?.sessions || []);
             } catch (err) {
                 console.error("Failed to fetch timetable for task date:", err);
                 setTimetableSessions([]);
@@ -136,8 +131,8 @@ export function Tasks() {
             const session = timetableSessions[idx];
             if (session) {
                 const sDate = new Date(session.startTime);
-                const hours = sDate.getHours().toString().padStart(2, '0');
-                const mins = sDate.getMinutes().toString().padStart(2, '0');
+                const hours = pad2(sDate.getHours());
+                const mins = pad2(sDate.getMinutes());
                 setTime(`${hours}:${mins}`);
             }
         }
@@ -160,51 +155,36 @@ export function Tasks() {
     const fetchTasksAndGoals = async () => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const headers = {'Authorization': `Bearer ${token}`};
-
-            // Fetch both simultaneously for optimal performance
-            const [resTasks, resGoals] = await Promise.all([
-                fetch('/api/tasks', {headers}),
-                fetch('/api/goals', {headers})
+            const [tasksData, goalsData] = await Promise.all([
+                tasksApi.list() as Promise<Task[]>,
+                goalsApi.list() as Promise<Goal[]>
             ]);
 
-            let goalsData: Goal[] = [];
-            if (resGoals.ok) {
-                goalsData = await resGoals.json() as Goal[];
-                setGoals(goalsData);
-            }
+            setGoals(goalsData);
 
-            if (resTasks.ok) {
-                const tasksData = await resTasks.json() as Task[];
+            const sorted = tasksData.sort((a, b) => {
+                const questA = a.goalId ? goalsData.find(g => g.id === a.goalId && g.type === 'quest') : null;
+                const questB = b.goalId ? goalsData.find(g => g.id === b.goalId && g.type === 'quest') : null;
 
-                // Sort tasks globally based on parent quest's creation date (oldest quest first)
-                const sorted = tasksData.sort((a, b) => {
-                    const questA = a.goalId ? goalsData.find(g => g.id === a.goalId && g.type === 'quest') : null;
-                    const questB = b.goalId ? goalsData.find(g => g.id === b.goalId && g.type === 'quest') : null;
+                const timeA = questA?.createdAt ? new Date(questA.createdAt).getTime() : Infinity;
+                const timeB = questB?.createdAt ? new Date(questB.createdAt).getTime() : Infinity;
 
-                    // If task belongs to a quest, get quest's creation date. Otherwise, push to the end (Infinity)
-                    const timeA = questA?.createdAt ? new Date(questA.createdAt).getTime() : Infinity;
-                    const timeB = questB?.createdAt ? new Date(questB.createdAt).getTime() : Infinity;
+                if (timeA !== timeB) {
+                    return timeA - timeB;
+                }
 
-                    if (timeA !== timeB) {
-                        return timeA - timeB; // ascending: oldest quest first
-                    }
+                const deadlineA = a.deadline ? new Date(a.deadline).getTime() : 0;
+                const deadlineB = b.deadline ? new Date(b.deadline).getTime() : 0;
+                if (deadlineA !== deadlineB) {
+                    return deadlineA - deadlineB;
+                }
 
-                    // Fallback to task's own deadline or creation date
-                    const deadlineA = a.deadline ? new Date(a.deadline).getTime() : 0;
-                    const deadlineB = b.deadline ? new Date(b.deadline).getTime() : 0;
-                    if (deadlineA !== deadlineB) {
-                        return deadlineA - deadlineB;
-                    }
+                const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return createdAtA - createdAtB;
+            });
 
-                    const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return createdAtA - createdAtB;
-                });
-
-                setTasks(sorted);
-            }
+            setTasks(sorted);
         } catch (err) {
             console.error("Failed to load tasks and goals:", err);
         } finally {
@@ -221,20 +201,12 @@ export function Tasks() {
     const triggerAutonomousPipeline = async (eventName: string, eventDetail: string, currentTasks: Task[]) => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
             const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
-            await fetch('/api/autonomous-pipeline', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    eventName,
-                    eventDetail,
-                    tasks: currentTasks,
-                    model: selectedModel
-                })
+            await aiApi.autonomousPipeline({
+                eventName,
+                eventDetail,
+                tasks: currentTasks,
+                model: selectedModel
             });
             fetchTasksAndGoals();
         } catch (error) {
@@ -245,30 +217,21 @@ export function Tasks() {
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!title || !user || !date || !time) {
-            showError("Please fill in all required fields.");
+            showError("Missing Fields", "Please fill in all required fields.");
             return;
         }
 
         setIsAnalyzing(true);
         try {
             const deadlineString = new Date(`${format(date, 'yyyy-MM-dd')}T${time}`).toISOString();
-            const token = await user.getIdToken();
             const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
-            const res = await fetch('/api/analyze-task', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({title, description, deadline: deadlineString, model: selectedModel})
-            });
 
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || "The AI is currently busy or out of quota. Please switch the AI Brain model in Mission Control.");
-            }
-
-            const analysis = await res.json();
+            const analysis = await aiApi.analyzeTask({
+                title,
+                description,
+                deadline: deadlineString,
+                model: selectedModel
+            }) as any;
 
             const subtasks: Subtask[] = (analysis.subtasks || []).map((t: string) => ({
                 id: crypto.randomUUID(),
@@ -290,18 +253,7 @@ export function Tasks() {
                 createdAt: new Date().toISOString()
             };
 
-            const resPost = await fetch('/api/tasks', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(newTask)
-            });
-
-            if (!resPost.ok) throw new Error("Failed to save task");
-
-            const savedTask = await resPost.json();
+            const savedTask = await tasksApi.create(newTask);
 
             if (selectedSessionIdx !== 'custom' && date) {
                 const idx = Number(selectedSessionIdx);
@@ -314,23 +266,13 @@ export function Tasks() {
                     updatedSessions[idx].taskTitle = `${cleanOriginal}: ${savedTask.title}`;
                     updatedSessions[idx].taskId = savedTask.id;
 
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
-                    const dateStr = `${year}-${month}-${day}`;
+                    const dateStr = getTodayISO();
 
-                    await fetch(`/api/plans/${dateStr}`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({sessions: updatedSessions})
-                    });
+                    await plansApi.upsert(dateStr, updatedSessions);
                 }
             }
 
-            showSuccess("Task analyzed and created successfully!");
+            showSuccess("Task Created", "Task analyzed and created successfully!");
             setIsDialogOpen(false);
             setTitle('');
             setDescription('');
@@ -344,7 +286,7 @@ export function Tasks() {
             triggerAutonomousPipeline("Task Created", `Created task: ${title}`, [...tasks, savedTask]);
         } catch (error) {
             console.error(error);
-            showError("Failed to create task");
+            showError("Create Failed", "Failed to create task");
         } finally {
             setIsAnalyzing(false);
         }
@@ -402,23 +344,16 @@ export function Tasks() {
             });
             if (!res.ok) throw new Error();
 
-            showSuccess("Task deleted", {
+            showSuccess("Task Deleted", "Task removed successfully.", {
                 action: {
                     label: "Undo",
                     onClick: async () => {
                         try {
-                            await fetch('/api/tasks', {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(task)
-                            });
-                            showSuccess("Task restored");
+                            await tasksApi.create(task);
+                            showSuccess("Task Restored", "Your task has been restored successfully.");
                             fetchTasksAndGoals();
                         } catch (error) {
-                            showError("Failed to restore task");
+                            showError("Restore Failed", "Failed to restore task");
                         }
                     }
                 },
@@ -426,7 +361,7 @@ export function Tasks() {
             });
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to delete task");
+            showError("Delete Failed", "Failed to delete task");
         }
     };
 
@@ -434,26 +369,12 @@ export function Tasks() {
         if (!user) return;
         setIsGeneratingSubtasks(prev => ({...prev, [task.id]: true}));
         try {
-            const token = await user.getIdToken();
             const selectedModel = localStorage.getItem('default_gemini_model') || 'gemini-3.1-flash-lite';
-            const res = await fetch('/api/generate-subtasks', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: task.title,
-                    description: task.description,
-                    model: selectedModel
-                })
+            const data = await aiApi.generateSubtasks({
+                title: task.title,
+                description: task.description,
+                model: selectedModel
             });
-
-            if (!res.ok) {
-                throw new Error("Failed to generate subtasks");
-            }
-
-            const data = await res.json();
             if (data.subtasks && Array.isArray(data.subtasks)) {
                 const newSubtasks = data.subtasks.map((title: string) => ({
                     id: crypto.randomUUID(),
@@ -461,31 +382,24 @@ export function Tasks() {
                     completed: false
                 }));
 
-                await fetch(`/api/tasks/${task.id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        subtasks: newSubtasks,
-                        status: 'pending'
-                    })
+                await tasksApi.update(task.id, {
+                    subtasks: newSubtasks,
+                    status: 'pending'
                 });
 
                 if (data.isFallback) {
-                    showSuccess(`Generated ${newSubtasks.length} structured subtasks for you!`);
+                    showSuccess("Subtasks Generated", `Generated ${newSubtasks.length} structured subtasks for you!`);
                 } else {
-                    showSuccess(`Generated ${newSubtasks.length} subtasks with AI!`);
+                    showSuccess("Subtasks Generated", `Generated ${newSubtasks.length} subtasks with AI!`);
                 }
                 setExpandedTasks(prev => ({...prev, [task.id]: true}));
                 fetchTasksAndGoals();
             } else {
-                showError("Could not generate subtasks. Please try again.");
+                showError("Subtask Error", "Could not generate subtasks. Please try again.");
             }
         } catch (error) {
             console.error(error);
-            showError("Failed to generate subtasks. Quota limit may have been reached.");
+            showError("Generation Failed", "Failed to generate subtasks. Quota limit may have been reached.");
         } finally {
             setIsGeneratingSubtasks(prev => ({...prev, [task.id]: false}));
         }
@@ -514,10 +428,10 @@ export function Tasks() {
                     status: 'in_progress'
                 })
             });
-            showSuccess("Subtask added!");
+            showSuccess("Subtask Added", "Subtask added!");
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to add subtask");
+            showError("Add Failed", "Failed to add subtask");
         }
     };
 
@@ -551,10 +465,10 @@ export function Tasks() {
                 },
                 body: JSON.stringify({subtasks: updatedSubtasks})
             });
-            showSuccess("Subtask updated!");
+            showSuccess("Subtask Updated", "Subtask updated!");
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to update subtask");
+            showError("Update Failed", "Failed to update subtask");
         } finally {
             setEditingSubtask(null);
         }
@@ -578,10 +492,10 @@ export function Tasks() {
                 },
                 body: JSON.stringify({subtasks: updatedSubtasks})
             });
-            showSuccess("Subtask deleted!");
+            showSuccess("Subtask Deleted", "Subtask deleted!");
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to delete subtask");
+            showError("Delete Failed", "Failed to delete subtask");
         }
     };
 
@@ -607,10 +521,10 @@ export function Tasks() {
                 },
                 body: JSON.stringify({title: editingTaskText.trim()})
             });
-            showSuccess("Task updated!");
+            showSuccess("Task Updated", "Task updated!");
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to update task");
+            showError("Update Failed", "Failed to update task");
         } finally {
             setEditingTaskId(null);
         }
@@ -642,7 +556,7 @@ export function Tasks() {
             });
 
             if (isAllCompleted) {
-                showSuccess("Task completed!");
+                showSuccess("Task Completed", "Task completed!");
                 triggerAutonomousPipeline("Task Completed", `Completed task: ${task.title}`, tasksList.filter(t => t.id !== taskId));
             } else {
                 const subtaskTitle = task.subtasks.find(s => s.id === subtaskId)?.title;
@@ -653,30 +567,23 @@ export function Tasks() {
             if (goalId) {
                 const matchingGoal = goals.find(g => g.id === goalId);
                 if (matchingGoal && matchingGoal.type === 'habit' && isAllCompleted) {
-                    const currentStreak = matchingGoal.streak || 0;
-                    const today = new Date().toISOString().split('T')[0];
-                    const alreadyLoggedToday = matchingGoal.lastLogged === today;
-                    const newStreak = alreadyLoggedToday ? currentStreak : currentStreak + 1;
-                    await fetch(`/api/goals/${goalId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            streak: newStreak,
-                            progress: (matchingGoal.progress || 0) + 1,
-                            lastLogged: today
-                        })
-                    });
-                    if (!alreadyLoggedToday) {
-                        showSuccess(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
-                    }
+                    const today = getTodayISO();
+                    const alreadyLoggedToday = isAlreadyLoggedToday(matchingGoal, today);
+                    const newStreak = calculateNewStreak(matchingGoal, today);
+                    const newProgress = calculateNewProgress(matchingGoal);
+                    await updateHabitStreak(token, {
+                        goalId: matchingGoal.id,
+                        goalTitle: matchingGoal.title,
+                        streak: newStreak,
+                        progress: newProgress,
+                        lastLogged: today,
+                        alreadyLoggedToday
+                    }, (streak) => showSuccess("Habit Streak", `🔥 Linked Habit "${matchingGoal.title}" streak is now ${streak}!`));
                 }
             }
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to update subtask");
+            showError("Update Failed", "Failed to update subtask");
         }
     };
 
@@ -707,18 +614,18 @@ export function Tasks() {
             const data = await res.json();
 
             if (isNowCompleted) {
-                showSuccess("Task completed!");
+                showSuccess("Task Completed", "Task completed!");
                 if (data.gamificationUpdates) {
                     const {xpEarned, newBadges, levelUp} = data.gamificationUpdates;
                     if (xpEarned > 0) {
-                        showSuccess(`+${xpEarned} XP Earned!`, {duration: 3000});
+                        showSuccess("XP Earned", `+${xpEarned} XP Earned!`, {duration: 3000});
                     }
                     if (levelUp) {
-                        showSuccess(`Level Up! You reached Level ${levelUp}!`, {duration: 6000});
+                        showSuccess("Level Up", `You reached Level ${levelUp}!`, {duration: 6000});
                     }
                     if (newBadges && newBadges.length > 0) {
                         newBadges.forEach((bId: string) => {
-                            showSuccess(`Achievement Unlocked! ${bId}`, {duration: 6000});
+                            showSuccess("Achievement Unlocked", `Achievement Unlocked! ${bId}`, {duration: 6000});
                         });
                     }
                     if (refreshGamification) refreshGamification();
@@ -726,7 +633,7 @@ export function Tasks() {
 
                 triggerAutonomousPipeline("Task Completed", `Completed task: ${task.title}`, tasks.filter(t => t.id !== task.id));
             } else {
-                showSuccess("Task marked active");
+                showSuccess("Task Active", "Task marked active");
                 triggerAutonomousPipeline("Task Reactivated", `Reactivated task: ${task.title}`, [...tasks, {
                     ...task,
                     status: 'pending'
@@ -737,30 +644,23 @@ export function Tasks() {
             if (goalId) {
                 const matchingGoal = goals.find(g => g.id === goalId);
                 if (matchingGoal && matchingGoal.type === 'habit' && isNowCompleted) {
-                    const currentStreak = matchingGoal.streak || 0;
-                    const today = new Date().toISOString().split('T')[0];
-                    const alreadyLoggedToday = matchingGoal.lastLogged === today;
-                    const newStreak = alreadyLoggedToday ? currentStreak : currentStreak + 1;
-                    await fetch(`/api/goals/${goalId}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            streak: newStreak,
-                            progress: (matchingGoal.progress || 0) + 1,
-                            lastLogged: today
-                        })
-                    });
-                    if (!alreadyLoggedToday) {
-                        showSuccess(`🔥 Linked Habit "${matchingGoal.title}" streak is now ${newStreak}!`);
-                    }
+                    const today = getTodayISO();
+                    const alreadyLoggedToday = isAlreadyLoggedToday(matchingGoal, today);
+                    const newStreak = calculateNewStreak(matchingGoal, today);
+                    const newProgress = calculateNewProgress(matchingGoal);
+                    await updateHabitStreak(token, {
+                        goalId: matchingGoal.id,
+                        goalTitle: matchingGoal.title,
+                        streak: newStreak,
+                        progress: newProgress,
+                        lastLogged: today,
+                        alreadyLoggedToday
+                    }, (streak) => showSuccess("Habit Streak", `🔥 Linked Habit "${matchingGoal.title}" streak is now ${streak}!`));
                 }
             }
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to update task status");
+            showError("Update Failed", "Failed to update task status");
         }
     };
 
@@ -779,10 +679,10 @@ export function Tasks() {
                 },
                 body: JSON.stringify({deadline: newDeadline.toISOString()})
             });
-            showSuccess("Deadline automatically rescued (+1 Day)!");
+            showSuccess("Deadline Rescued", "Deadline automatically rescued (+1 Day)!");
             fetchTasksAndGoals();
         } catch (error) {
-            showError("Failed to rescue deadline");
+            showError("Rescue Failed", "Failed to rescue deadline");
         }
     };
 
@@ -793,7 +693,7 @@ export function Tasks() {
         if (filter === 'completed') return task.status === 'completed';
         if (filter === 'high_risk') return (task.riskScore || 0) > 60 && task.status !== 'completed';
         if (filter === 'due_today') {
-            const today = new Date().toISOString().split('T')[0];
+            const today = getTodayISO();
             return (task.deadline?.startsWith(today) ?? false) && task.status !== 'completed';
         }
         return true;
@@ -832,7 +732,7 @@ export function Tasks() {
                                             className="bg-slate-800/50 border-slate-700 text-slate-400 hover:text-white"
                                             onClick={() => {
                                                 if (!('webkitSpeechRecognition' in window)) {
-                                                    showError("Speech recognition is not supported in this browser.");
+                                                    showError("Not Supported", "Speech recognition is not supported in this browser.");
                                                     return;
                                                 }
                                                 const recognition = new (window as any).webkitSpeechRecognition();
@@ -840,9 +740,9 @@ export function Tasks() {
                                                 recognition.onerror = (err: any) => {
                                                     console.error('Speech recognition error:', err.error);
                                                     if (err.error === 'network') {
-                                                        showError("Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
+                                                        showError("Network Error", "Speech recognition network error. If you are inside the embedded preview, please open the app in a new tab for microphone access.");
                                                     } else {
-                                                        showError(`Speech recognition error: ${err.error}`);
+                                                        showError("Speech Error", `Speech recognition error: ${err.error}`);
                                                     }
                                                 };
                                                 recognition.start();
@@ -934,13 +834,7 @@ export function Tasks() {
                                                         </SelectItem>
                                                         {timetableSessions.map((session, i) => {
                                                             const isRoutine = /sleep|lunch|dinner|breakfast|workout|commute|rest|relax|break/i.test(session.taskTitle);
-                                                            const label = `${new Date(session.startTime).toLocaleTimeString([], {
-                                                                hour: '2-digit',
-                                                                minute: '2-digit'
-                                                            })} - ${new Date(session.endTime).toLocaleTimeString([], {
-                                                                hour: '2-digit',
-                                                                minute: '2-digit'
-                                                            })}: ${session.taskTitle}`;
+                                                            const label = `${formatTime(session.startTime)} - ${formatTime(session.endTime)}: ${session.taskTitle}`;
                                                             return (
                                                                 <SelectItem key={i} value={String(i)}
                                                                             className="focus:bg-slate-800 focus:text-white cursor-pointer text-xs">
@@ -964,13 +858,13 @@ export function Tasks() {
                                             </SelectTrigger>
                                             <SelectContent
                                                 className="bg-slate-900 border-slate-800 text-white max-h-[200px]">
-                                                {Array.from({length: 24 * 2}).map((_, i) => {
+{Array.from({length: 24 * 2}).map((_, i) => {
                                                     const hours = Math.floor(i / 2);
                                                     const mins = i % 2 === 0 ? '00' : '30';
-                                                    const timeStr = `${hours.toString().padStart(2, '0')}:${mins}`;
+                                                    const timeStr = `${pad2(hours)}:${mins}`;
                                                     return (
                                                         <SelectItem key={timeStr} value={timeStr}
-                                                                    className="focus:bg-slate-800 focus:text-white cursor-pointer">
+                                                                        className="focus:bg-slate-800 focus:text-white cursor-pointer">
                                                             {timeStr}
                                                         </SelectItem>
                                                     );

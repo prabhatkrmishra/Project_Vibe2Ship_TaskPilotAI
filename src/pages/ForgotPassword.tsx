@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {Link, Navigate} from 'react-router-dom';
 import {Loader2, LayoutDashboard, Mail, CheckCircle2} from 'lucide-react';
 import {useAuth} from '../lib/AuthContext';
+import {authApi} from '../api/auth';
 
 export default function ForgotPassword() {
     const {user, loading} = useAuth();
@@ -23,16 +24,7 @@ export default function ForgotPassword() {
         }
         try {
             setSubmitting(true);
-            const res = await fetch('/api/auth/forgot-password', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({email}),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                setError(data.error || "Something went wrong.");
-                return;
-            }
+            await authApi.forgotPassword(email);
             setSent(true);
         } catch (err: any) {
             setError(err.message || "Network error. Please try again.");
