@@ -44,7 +44,7 @@ export interface ScheduledSession {
     // sessions generated before subtask-aware scheduling existed.
     subtaskIds?: string[];
     sessionLabel?: string;
-    schedulingMode?: 'WHOLE_TASK' | 'SAME_DAY_SUBTASKS' | 'PACED_SUBTASKS';
+    schedulingMode?: 'SAME_DAY_SUBTASKS' | 'PACED_SUBTASKS';
 }
 
 export interface DailyPlan {

@@ -3,6 +3,8 @@ import {motion, AnimatePresence} from 'motion/react';
 import {Flame, X, ChevronDown, ChevronUp, Check} from 'lucide-react';
 import {Goal} from '../types';
 import {useAuth} from '../lib/AuthContext';
+import {minutesOfDay, getTodayISO} from '@/lib/time.ts';
+import {incrementHabitProgress, incrementHabitStreak} from '@/lib/goals.ts';
 
 interface HabitQuickLogProps {
     goals: Goal[];
@@ -15,9 +17,9 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
     const [collapsed, setCollapsed] = useState(false);
     const [dismissed, setDismissed] = useState(false);
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayISO();
     const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentMinutes = minutesOfDay(now);
 
     const unloggedHabits = useMemo(() => {
         return goals.filter(g => g.type === 'habit' && !g.completed && g.lastLogged !== today);
@@ -49,8 +51,8 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
         setLogging(goal.id);
         try {
             const token = await user.getIdToken();
-            const newProgress = (goal.progress || 0) + 1;
-            const newStreak = goal.lastLogged !== today ? (goal.streak || 0) + 1 : (goal.streak || 0);
+            const newProgress = incrementHabitProgress(goal);
+            const newStreak = incrementHabitStreak(goal, today);
 
             const res = await fetch(`/api/goals/${goal.id}`, {
                 method: 'PUT',
@@ -62,7 +64,7 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
                 const data = await res.json();
                 if (data.habitGamification?.xpEarned) {
                     const {showSuccess} = await import('../lib/toastTheme');
-                    showSuccess(`+${data.habitGamification.xpEarned} XP for habit`);
+                    showSuccess("Habit Logged", `+${data.habitGamification.xpEarned} XP for habit`);
                 }
             }
             onLogged(goal.id);

@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import {Clock, Flame, Target, TrendingUp, BarChart3} from 'lucide-react';
 import type {FocusStats as FocusStatsType, FocusMethod} from '../types';
+import {getTodayISO, formatDate} from '@/lib/time.ts';
 
 const METHOD_COLORS: Record<FocusMethod, string> = {
     pomodoro: 'bg-indigo-500', flowtime: 'bg-violet-500',
@@ -10,16 +11,12 @@ const METHOD_LABELS: Record<FocusMethod, string> = {
     pomodoro: 'Pomodoro', flowtime: 'Flowtime', '52-17': '52/17', ultradian: 'Ultradian', custom: 'Custom'
 };
 
-function toLocalDateStr(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 export default function FocusStats({refreshKey = 0}: { refreshKey?: number }) {
     const [stats, setStats] = useState<FocusStatsType | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('taskpilot_jwt');
         fetch('/api/focus-sessions/stats', {headers: {Authorization: `Bearer ${token}`}})
             .then(r => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -40,7 +37,7 @@ export default function FocusStats({refreshKey = 0}: { refreshKey?: number }) {
 
     // Generate heatmap grid using local dates
     const today = new Date();
-    const todayStr = toLocalDateStr(today);
+    const todayStr = getTodayISO();
     const heatmapWeeks: { date: string; mins: number }[][] = [];
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - (12 * 7) - startDate.getDay() + 1);
@@ -49,7 +46,7 @@ export default function FocusStats({refreshKey = 0}: { refreshKey?: number }) {
         for (let d = 0; d < 7; d++) {
             const dt = new Date(startDate);
             dt.setDate(dt.getDate() + w * 7 + d);
-            const dateStr = toLocalDateStr(dt);
+            const dateStr = formatDate(dt.toISOString());
             week.push({date: dateStr, mins: stats.heatmap[dateStr] || 0});
         }
         heatmapWeeks.push(week);

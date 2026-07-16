@@ -2,7 +2,16 @@ import {useState, useMemo} from 'react';
 import {Task, Goal} from '../types';
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter} from './ui/dialog';
 import {Button} from './ui/button';
-import {Loader2, Swords, ListTodo, ChevronRight, ChevronLeft, CheckCircle2, ListTree} from 'lucide-react';
+import {
+    Loader2,
+    Swords,
+    ListTodo,
+    ChevronRight,
+    ChevronLeft,
+    CheckCircle2,
+    ListTree,
+    AlertTriangle
+} from 'lucide-react';
 
 interface TaskSelectionModalProps {
     open: boolean;
@@ -13,9 +22,10 @@ interface TaskSelectionModalProps {
     isGenerating: boolean;
     title?: string;
     description?: string;
+    scheduledTaskTitles?: Set<string>;
 }
 
-type Step = 'choose-type' | 'select-quest' | 'select-quest-tasks' | 'select-tasks';
+type Step = 'choose-type' | 'select-quest' | 'select-quest-tasks' | 'select-tasks' | 'confirm-reschedule';
 
 export function TaskSelectionModal({
                                        open,
@@ -25,11 +35,15 @@ export function TaskSelectionModal({
                                        onConfirm,
                                        isGenerating,
                                        title,
-                                       description
+                                       description,
+                                       scheduledTaskTitles
                                    }: TaskSelectionModalProps) {
     const [step, setStep] = useState<Step>('choose-type');
     const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+    const [pendingSelectedTasks, setPendingSelectedTasks] = useState<Task[]>([]);
+    const [overlappingTasks, setOverlappingTasks] = useState<Task[]>([]);
+    const [preOverlapStep, setPreOverlapStep] = useState<'select-quest-tasks' | 'select-tasks'>('select-quest-tasks');
 
     const activeQuests = useMemo(() =>
             goals.filter(g => g.type === 'quest' && !g.completed),
@@ -37,7 +51,12 @@ export function TaskSelectionModal({
     );
 
     const independentTasks = useMemo(() =>
-            tasks.filter(t => !t.goalId && (t.status === 'pending' || t.status === 'in_progress')),
+            tasks.filter(t => !t.goalId && (t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo') && (t.subtasks?.length || 0) > 0),
+        [tasks]
+    );
+
+    const independentTasksNoSubtasks = useMemo(() =>
+            tasks.filter(t => !t.goalId && (t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo') && (!t.subtasks || t.subtasks.length === 0)),
         [tasks]
     );
 
@@ -61,16 +80,18 @@ export function TaskSelectionModal({
     const questTasksForSelection = useMemo(() => {
         if (!selectedQuestId) return [];
         return (questTasksMap.get(selectedQuestId) || [])
-            .filter(t => t.status === 'pending' || t.status === 'in_progress');
+            .filter(t => (t.status === 'pending' || t.status === 'in_progress' || t.status === 'todo') && (t.subtasks?.length || 0) > 0);
     }, [questTasksMap, selectedQuestId]);
 
     const getQuestStats = (questId: string) => {
         const questTasks = questTasksMap.get(questId) || [];
-        const totalSubtasks = questTasks.reduce((sum, t) => sum + (t.subtasks?.length || 0), 0);
-        const completedSubtasks = questTasks.reduce((sum, t) =>
+        const schedulableTasks = questTasks.filter(t => (t.subtasks?.length || 0) > 0);
+        const totalSubtasks = schedulableTasks.reduce((sum, t) => sum + (t.subtasks?.length || 0), 0);
+        const completedSubtasks = schedulableTasks.reduce((sum, t) =>
             sum + (t.subtasks?.filter(st => st.completed).length || 0), 0
         );
-        return {taskCount: questTasks.length, totalSubtasks, completedSubtasks};
+        const noSubtaskCount = questTasks.length - schedulableTasks.length;
+        return {taskCount: schedulableTasks.length, totalSubtasks, completedSubtasks, noSubtaskCount};
     };
 
     const handleSelectQuest = (questId: string) => {
@@ -94,17 +115,38 @@ export function TaskSelectionModal({
         setSelectedTaskIds(allIds);
     };
 
+    const checkOverlapAndProceed = (selected: Task[], sourceStep: 'select-quest-tasks' | 'select-tasks') => {
+        if (!scheduledTaskTitles || scheduledTaskTitles.size === 0) {
+            onConfirm(selected);
+            reset();
+            return;
+        }
+        const overlapping = selected.filter(t => scheduledTaskTitles.has(t.title));
+        if (overlapping.length > 0) {
+            setPreOverlapStep(sourceStep);
+            setPendingSelectedTasks(selected);
+            setOverlappingTasks(overlapping);
+            setStep('confirm-reschedule');
+        } else {
+            onConfirm(selected);
+            reset();
+        }
+    };
+
     const handleConfirmQuestTasks = () => {
         const selected = questTasksForSelection.filter(t => selectedTaskIds.has(t.id));
         if (selected.length === 0) return;
-        onConfirm(selected);
-        reset();
+        checkOverlapAndProceed(selected, 'select-quest-tasks');
     };
 
     const handleConfirmIndependent = () => {
         const selected = independentTasks.filter(t => selectedTaskIds.has(t.id));
         if (selected.length === 0) return;
-        onConfirm(selected);
+        checkOverlapAndProceed(selected, 'select-tasks');
+    };
+
+    const handleProceedWithOverlap = () => {
+        onConfirm(pendingSelectedTasks);
         reset();
     };
 
@@ -112,6 +154,8 @@ export function TaskSelectionModal({
         setStep('choose-type');
         setSelectedQuestId(null);
         setSelectedTaskIds(new Set());
+        setPendingSelectedTasks([]);
+        setOverlappingTasks([]);
     };
 
     const handleClose = (v: boolean) => {
@@ -125,6 +169,10 @@ export function TaskSelectionModal({
             setStep('select-quest');
         } else if (step === 'select-quest' || step === 'select-tasks') {
             reset();
+        } else if (step === 'confirm-reschedule') {
+            setPendingSelectedTasks([]);
+            setOverlappingTasks([]);
+            setStep(preOverlapStep);
         }
     };
 
@@ -140,7 +188,8 @@ export function TaskSelectionModal({
                             step === 'choose-type' ? 'Assign Tasks to Timetable' :
                                 step === 'select-quest' ? 'Select a Quest' :
                                     step === 'select-quest-tasks' ? `Tasks in "${selectedQuest?.title || ''}"` :
-                                        'Select Independent Tasks'
+                                        step === 'confirm-reschedule' ? 'Already Scheduled' :
+                                            'Select Independent Tasks'
                         )}
                     </DialogTitle>
                     <DialogDescription className="text-slate-400 text-sm">
@@ -148,7 +197,8 @@ export function TaskSelectionModal({
                             step === 'choose-type' ? 'Choose what to schedule into your timetable.' :
                                 step === 'select-quest' ? 'Pick a quest, then choose which tasks to schedule.' :
                                     step === 'select-quest-tasks' ? 'Select tasks — each task will be broken into subtask-level sessions.' :
-                                        'Select tasks to schedule — each will be broken into subtask-level sessions.'
+                                        step === 'confirm-reschedule' ? 'Some of your selected tasks already exist in the current timetable.' :
+                                            'Select tasks to schedule — each will be broken into subtask-level sessions.'
                         )}
                     </DialogDescription>
                 </DialogHeader>
@@ -209,6 +259,7 @@ export function TaskSelectionModal({
                             ) : (
                                 activeQuests.map(quest => {
                                     const stats = getQuestStats(quest.id);
+                                    const allScheduled = stats.taskCount > 0 && questTasksMap.get(quest.id)?.every(t => scheduledTaskTitles?.has(t.title));
                                     return (
                                         <button
                                             key={quest.id}
@@ -222,8 +273,11 @@ export function TaskSelectionModal({
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-medium text-white truncate">{quest.title}</p>
                                                 <p className="text-xs text-slate-400">
-                                                    {stats.taskCount} task{stats.taskCount !== 1 ? 's' : ''}
+                                                    {stats.taskCount} schedulable task{stats.taskCount !== 1 ? 's' : ''}
                                                     {stats.totalSubtasks > 0 && ` · ${stats.completedSubtasks}/${stats.totalSubtasks} subtasks`}
+                                                    {stats.noSubtaskCount > 0 && <span
+                                                        className="ml-1.5 text-amber-400">· {stats.noSubtaskCount} without subtasks</span>}
+                                                    {allScheduled && <span className="ml-1.5 text-emerald-400">· All scheduled</span>}
                                                 </p>
                                             </div>
                                             {stats.taskCount > 0 ? (
@@ -249,7 +303,9 @@ export function TaskSelectionModal({
                             {questTasksForSelection.length === 0 ? (
                                 <div className="text-center py-8 text-slate-500">
                                     <ListTodo className="w-8 h-8 mx-auto mb-2 opacity-50"/>
-                                    <p className="text-sm">No pending tasks in this quest.</p>
+                                    <p className="text-sm">No schedulable tasks in this quest.</p>
+                                    <p className="text-xs mt-1">Tasks need subtasks to be scheduled into timetable
+                                        sessions.</p>
                                 </div>
                             ) : (
                                 <>
@@ -325,8 +381,15 @@ export function TaskSelectionModal({
                             {independentTasks.length === 0 ? (
                                 <div className="text-center py-8 text-slate-500">
                                     <ListTodo className="w-8 h-8 mx-auto mb-2 opacity-50"/>
-                                    <p className="text-sm">No independent tasks found.</p>
-                                    <p className="text-xs mt-1">Add tasks in the Mission Board page.</p>
+                                    <p className="text-sm">No schedulable independent tasks found.</p>
+                                    <p className="text-xs mt-1">Tasks need subtasks to be scheduled into timetable
+                                        sessions.</p>
+                                    {independentTasksNoSubtasks.length > 0 && (
+                                        <p className="text-xs mt-2 text-amber-400/70">
+                                            {independentTasksNoSubtasks.length} task{independentTasksNoSubtasks.length !== 1 ? 's' : ''} without
+                                            subtasks excluded.
+                                        </p>
+                                    )}
                                 </div>
                             ) : (
                                 independentTasks.map(task => {
@@ -375,6 +438,51 @@ export function TaskSelectionModal({
                             )}
                         </>
                     )}
+
+                    {/* Confirm reschedule: warn about overlapping tasks */}
+                    {step === 'confirm-reschedule' && (
+                        <>
+                            <button onClick={() => {
+                                setPendingSelectedTasks([]);
+                                setOverlappingTasks([]);
+                                setStep(preOverlapStep);
+                            }}
+                                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-white mb-2 transition-colors">
+                                <ChevronLeft className="w-3 h-3"/> Back to selection
+                            </button>
+
+                            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-3">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5"/>
+                                    <div>
+                                        <p className="text-sm font-semibold text-amber-300">
+                                            {overlappingTasks.length} task{overlappingTasks.length !== 1 ? 's' : ''} already
+                                            scheduled
+                                        </p>
+                                        <p className="text-xs text-amber-400/70 mt-1">
+                                            These tasks have sessions in the current timetable. Rescheduling will
+                                            regenerate the timetable including them.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {overlappingTasks.map(task => (
+                                <div key={task.id}
+                                     className="flex items-center gap-3 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 mb-1">
+                                    <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0"/>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-amber-200 truncate">{task.title}</p>
+                                        <p className="text-xs text-amber-400/60">Currently in timetable</p>
+                                    </div>
+                                </div>
+                            ))}
+
+                            <p className="text-xs text-slate-500 mt-3">
+                                You can go back to adjust your selection, or proceed to reschedule.
+                            </p>
+                        </>
+                    )}
                 </div>
 
                 <DialogFooter>
@@ -396,6 +504,16 @@ export function TaskSelectionModal({
                         >
                             {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : null}
                             Schedule {selectedTaskIds.size} Task{selectedTaskIds.size !== 1 ? 's' : ''}
+                        </Button>
+                    )}
+                    {step === 'confirm-reschedule' && (
+                        <Button
+                            onClick={handleProceedWithOverlap}
+                            disabled={isGenerating}
+                            className="bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold"
+                        >
+                            {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : null}
+                            Proceed Anyway
                         </Button>
                     )}
                     <Button variant="ghost" onClick={() => handleClose(false)}

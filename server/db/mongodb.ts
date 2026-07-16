@@ -1,8 +1,5 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI;
-const MONGODB_DB = process.env.MONGODB_DB || 'taskpilot-ai';
-
 // Cache the connection *promise* (not just a boolean) on the global object.
 // This survives warm serverless invocations and, critically, ensures that
 // concurrent cold-start requests share a single in-flight connect() call
@@ -15,6 +12,9 @@ if (!cached) {
 
 export const connectDB = async () => {
     if (cached.conn) return cached.conn;
+
+    const MONGODB_URI = process.env.MONGODB_URI;
+    const MONGODB_DB = process.env.MONGODB_DB || 'taskpilot-ai';
 
     if (!MONGODB_URI) {
         throw new Error("MONGODB_URI environment variable is not set.");
@@ -61,6 +61,11 @@ const UserSchema = new mongoose.Schema({
     passwordResetTokenHash: {type: String, index: true},
     passwordResetExpiry: {type: Date},
 
+    // Email verification — SHA-256 hash of the raw token
+    emailVerified: {type: Boolean, default: false},
+    emailVerificationTokenHash: {type: String, index: true},
+    emailVerificationExpiry: {type: Date},
+
     // Session invalidation — bumped on password reset to invalidate all existing JWTs
     tokenVersion: {type: Number, default: 0},
     passwordChangedAt: {type: Date},
@@ -88,6 +93,7 @@ const UserSchema = new mongoose.Schema({
         currency: {type: String, default: 'INR'},
         orderId: {type: String},
         paymentId: {type: String},
+        paymentLinkId: {type: String},
         startedAt: {type: Date},
         expiry: {type: Date},
         status: {type: String, enum: ['active', 'pending', 'cancelled', 'expired'], default: 'active'},
@@ -207,13 +213,14 @@ const ScheduledSessionSchema = new mongoose.Schema({
     started: {type: Boolean, default: false},
     subtaskIds: {type: [String], default: []},
     sessionLabel: {type: String},
-    schedulingMode: {type: String, enum: ['WHOLE_TASK', 'SAME_DAY_SUBTASKS', 'PACED_SUBTASKS']}
+    schedulingMode: {type: String, enum: ['SAME_DAY_SUBTASKS', 'PACED_SUBTASKS']}
 });
 
 const DailyPlanSchema = new mongoose.Schema({
     userId: {type: String, required: true, index: true},
     date: {type: String, required: true, index: true}, // YYYY-MM-DD
     sessions: {type: [ScheduledSessionSchema], default: []},
+    carryForwardSubtasks: {type: [{taskId: String, taskTitle: String, subtaskIds: [String]}], default: []},
     updatedAt: {type: Date, default: Date.now}
 });
 
@@ -271,13 +278,19 @@ const PricingConfigSchema = new mongoose.Schema({
 
 PricingConfigSchema.index({enabled: 1});
 
-// Helper to handle compilation with hot reloading/re-importing
-export const User = mongoose.models.User || mongoose.model('User', UserSchema);
-export const Goal = mongoose.models.Goal || mongoose.model('Goal', GoalSchema);
-export const Task = mongoose.models.Task || mongoose.model('Task', TaskSchema);
-export const ChatMessage = mongoose.models.ChatMessage || mongoose.model('ChatMessage', ChatMessageSchema);
-export const AIDecision = mongoose.models.AIDecision || mongoose.model('AIDecision', AIDecisionSchema);
-export const DailyPlanModel = mongoose.models.DailyPlan || mongoose.model('DailyPlan', DailyPlanSchema);
-export const FocusSession = mongoose.models.FocusSession || mongoose.model('FocusSession', FocusSessionSchema);
-export const AIUsage = mongoose.models.AIUsage || mongoose.model('AIUsage', AIUsageSchema);
-export const PricingConfig = mongoose.models.PricingConfig || mongoose.model('PricingConfig', PricingConfigSchema);
+// Helper to handle compilation with hot reloading/re-importing.
+// NOTE: each export is explicitly typed as mongoose.Model<any>. Without this,
+// TS infers `mongoose.models.X || mongoose.model('X', Schema)` as a UNION of
+// two different Model<...> generic instantiations, and then rejects valid
+// filter/update objects (e.g. `{ email: ... }`) because it type-checks
+// against the loose branch of that union. Casting to Model<any> collapses it
+// to one concrete type and restores normal query typing.
+export const User: mongoose.Model<any> = mongoose.models.User || mongoose.model('User', UserSchema);
+export const Goal: mongoose.Model<any> = mongoose.models.Goal || mongoose.model('Goal', GoalSchema);
+export const Task: mongoose.Model<any> = mongoose.models.Task || mongoose.model('Task', TaskSchema);
+export const ChatMessage: mongoose.Model<any> = mongoose.models.ChatMessage || mongoose.model('ChatMessage', ChatMessageSchema);
+export const AIDecision: mongoose.Model<any> = mongoose.models.AIDecision || mongoose.model('AIDecision', AIDecisionSchema);
+export const DailyPlanModel: mongoose.Model<any> = mongoose.models.DailyPlan || mongoose.model('DailyPlan', DailyPlanSchema);
+export const FocusSession: mongoose.Model<any> = mongoose.models.FocusSession || mongoose.model('FocusSession', FocusSessionSchema);
+export const AIUsage: mongoose.Model<any> = mongoose.models.AIUsage || mongoose.model('AIUsage', AIUsageSchema);
+export const PricingConfig: mongoose.Model<any> = mongoose.models.PricingConfig || mongoose.model('PricingConfig', PricingConfigSchema);

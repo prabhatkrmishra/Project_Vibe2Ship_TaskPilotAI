@@ -3,6 +3,8 @@ import {Flame, X, Bell, AlertTriangle, Clock} from 'lucide-react';
 import {useHabitReminders, type ReminderStage} from '../lib/HabitReminderContext';
 import {useAuth} from '../lib/AuthContext';
 import {useState} from 'react';
+import {incrementHabitProgress, incrementHabitStreak} from '@/lib/goals.ts';
+import {formatMinutes, getTodayISO} from '@/lib/time.ts';
 
 const stageStyles: Record<ReminderStage, {
     bg: string;
@@ -41,16 +43,6 @@ const stageStyles: Record<ReminderStage, {
     },
 };
 
-const formatMinutes = (mins: number) => {
-    const abs = Math.abs(mins);
-    if (abs < 60) return `${abs} min`;
-    const hours = Math.floor(abs / 60);
-    const remaining = abs % 60;
-    const hourText = `${hours} hour${hours !== 1 ? 's' : ''}`;
-    if (remaining === 0) return hourText;
-    return `${hourText} and ${remaining} minute${remaining !== 1 ? 's' : ''}`;
-};
-
 export function HabitReminderBanner() {
     const {activeReminder, dismissReminder, snoozeReminder} = useHabitReminders();
     const {user} = useAuth();
@@ -75,9 +67,9 @@ export function HabitReminderBanner() {
         try {
             const {goal} = activeReminder;
             const token = await user.getIdToken();
-            const today = new Date().toISOString().split('T')[0];
-            const newProgress = (goal.progress || 0) + 1;
-            const newStreak = goal.lastLogged !== today ? (goal.streak || 0) + 1 : (goal.streak || 0);
+            const today = getTodayISO();
+            const newProgress = incrementHabitProgress(goal);
+            const newStreak = incrementHabitStreak(goal, today);
 
             const res = await fetch(`/api/goals/${goal.id}`, {
                 method: 'PUT',
@@ -89,7 +81,7 @@ export function HabitReminderBanner() {
                 const data = await res.json();
                 if (data.habitGamification?.xpEarned) {
                     const {showSuccess} = await import('../lib/toastTheme');
-                    showSuccess(`+${data.habitGamification.xpEarned} XP for habit`);
+                    showSuccess("Habit Logged", `+${data.habitGamification.xpEarned} XP for habit`);
                 }
             }
             dismissReminder(goalId);

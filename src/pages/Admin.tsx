@@ -20,6 +20,7 @@ import PageHeader from '../components/PageHeader';
 import {Button} from '../components/ui/button';
 import {Link} from 'react-router-dom';
 import {ArrowLeft} from 'lucide-react';
+import {adminApi} from '../api/admin';
 
 interface PlanConfig {
     _id: string;
@@ -79,14 +80,10 @@ export function Admin() {
     const fetchPlans = async () => {
         setLoading(true);
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/admin/pricing', {headers: {'Authorization': `Bearer ${token}`}});
-            if (res.ok) {
-                const data = await res.json();
-                setPlans(data.plans);
-            }
+            const data = await adminApi.getPricing();
+            setPlans(data.plans);
         } catch {
-            showError('Failed to load pricing plans');
+            showError('Load Failed', 'Failed to load pricing plans');
         } finally {
             setLoading(false);
         }
@@ -94,29 +91,20 @@ export function Admin() {
 
     const fetchStats = async () => {
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/admin/subscriptions', {headers: {'Authorization': `Bearer ${token}`}});
-            if (res.ok) {
-                const data = await res.json();
-                setStats(data.stats);
-                setPremiumUsers(data.users);
-            }
+            const data = await adminApi.getSubscriptions();
+            setStats(data.stats);
+            setPremiumUsers(data.users);
         } catch {
-            showError('Failed to load subscription data');
+            showError('Load Failed', 'Failed to load subscription data');
         }
     };
 
     const updatePlan = async (planId: string, updates: Partial<PlanConfig>) => {
         setSaving(planId);
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch(`/api/admin/pricing/${planId}`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
-                body: JSON.stringify(updates)
-            });
-            if (res.ok) {
-                showSuccess('Plan updated');
+            const res = await adminApi.updatePricing(planId, updates);
+            if (res) {
+                showSuccess('Plan Updated', 'The pricing plan has been updated successfully.');
                 setEdits(prev => {
                     const next = {...prev};
                     delete next[planId];
@@ -124,11 +112,10 @@ export function Admin() {
                 });
                 fetchPlans();
             } else {
-                const err = await res.json();
-                showError(err.error || 'Failed to update');
+                showError('Update Failed', 'Failed to update plan');
             }
-        } catch {
-            showError('Failed to update plan');
+        } catch (err: any) {
+            showError('Update Failed', err?.body?.error || err?.message || 'Failed to update plan');
         } finally {
             setSaving(null);
         }
@@ -176,21 +163,11 @@ export function Admin() {
         if (!newAdminEmail) return;
         setMakeAdminLoading(true);
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/admin/make-admin', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
-                body: JSON.stringify({email: newAdminEmail})
-            });
-            const data = await res.json();
-            if (res.ok) {
-                showSuccess(data.message);
-                setNewAdminEmail('');
-            } else {
-                showError(data.error || 'Failed');
-            }
-        } catch {
-            showError('Failed');
+            const data = await adminApi.makeAdmin(newAdminEmail);
+            showSuccess('Admin Granted', data.message);
+            setNewAdminEmail('');
+        } catch (err: any) {
+            showError('Action Failed', err?.body?.error || err?.message || 'Failed to grant admin access');
         } finally {
             setMakeAdminLoading(false);
         }

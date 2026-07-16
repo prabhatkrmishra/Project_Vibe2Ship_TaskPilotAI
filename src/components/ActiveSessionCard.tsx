@@ -4,21 +4,18 @@ import {Link} from 'react-router-dom';
 import {DailyPlan} from '../types';
 import {Clock, Zap} from 'lucide-react';
 import {CircularProgress} from './CircularProgress';
+import {formatTime, pad2} from '@/lib/time.ts';
 
 interface ActiveSessionCardProps {
     plan: DailyPlan | null;
 }
-
-const formatClock = (isoString: string) =>
-    new Date(isoString).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
 
 const formatCountdown = (ms: number) => {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    return h > 0 ? `${pad2(h)}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
 };
 
 // Same base panel chrome as the "Today's Execution" card right below it (dark
@@ -80,7 +77,7 @@ export function ActiveSessionCard({plan}: ActiveSessionCardProps) {
                     <p className="text-xs text-slate-400 break-words">
                         {nextSession
                             ? <>No session in progress &middot; Next: <span
-                                className="text-slate-300 font-medium">{nextSession.sessionLabel || nextSession.taskTitle}</span> at {formatClock(nextSession.startTime)}</>
+                                className="text-slate-300 font-medium">{nextSession.sessionLabel || nextSession.taskTitle}</span> at {formatTime(nextSession.startTime)}</>
                             : 'No session in progress · Nothing else scheduled today'}
                     </p>
                 </div>

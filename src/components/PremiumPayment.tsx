@@ -52,6 +52,15 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
     const unmountedRef = useRef(false);
     const [plans, setPlans] = useState<PlanConfig[]>(FALLBACK_PLANS);
     const [pricingError, setPricingError] = useState(false);
+    const [paymentError, setPaymentError] = useState<string | null>(null);
+    const [paymentSuccess, setPaymentSuccess] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setPaymentSuccess(false);
+            setPaymentError(null);
+        }
+    }, [isOpen]);
 
     useEffect(() => {
         fetch('/api/pricing')
@@ -116,7 +125,7 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
         try {
             const token = await user?.getIdToken();
             if (!token) {
-                showError('Please login first');
+                showError('Authentication Required', 'Please login first');
                 setLoading(false);
                 return;
             }
@@ -156,7 +165,7 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
                 order_id: order.orderId,
                 name: 'TaskPilot AI',
                 description: `${order.plan || selectedPlan} Subscription`,
-                image: `${window.location.origin}/taskpilot-logo.png`,
+                // image: `${window.location.origin}/taskpilot-logo.png`, // Razorpay blocks localhost origins; restore with full domain URL in production
                 retry: {enabled: true, max_count: 4},
                 handler: async (response: any) => {
                     console.log('Razorpay response:', response);
@@ -177,16 +186,15 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
                         });
                         const data = await verifyRes.json();
                         if (data.success) {
-                            showSuccess('Subscription activated successfully!');
                             await refreshPremiumStatus();
-                            closeTimeoutRef.current = setTimeout(() => {
-                                if (!unmountedRef.current) onClose();
-                            }, 1000);
+                            setLoading(false);
+                            setPaymentSuccess(true);
+                            setTimeout(() => onClose(), 4000);
                         } else {
-                            showError(data.error || 'Subscription verification failed');
+                            showError('Verification Failed', data.error || 'Subscription verification failed');
                         }
                     } catch {
-                        showError('Payment verification failed. Contact support if money was deducted.');
+                        showError('Payment Failed', 'Payment verification failed. Contact support if money was deducted.');
                     } finally {
                         setLoading(false);
                     }
@@ -205,14 +213,14 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
             const razorpay = new window.Razorpay(options);
             razorpay.on('payment.failed', (response: any) => {
                 console.error('Payment failed:', response);
-                showError(response?.error?.description || 'Payment failed. Please try again.');
                 setLoading(false);
+                setPaymentError('Payment verification failed, if money deducted then wait for some time');
             });
             razorpay.open();
         } catch (error: any) {
             console.error('Payment error:', error);
-            showError(error.message || 'Payment failed');
             setLoading(false);
+            setPaymentError(error.message || 'Payment failed');
         }
     };
 
@@ -315,17 +323,52 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
                         })}
                     </div>
 
-                    <Button
-                        onClick={handlePayment}
-                        disabled={loading}
-                        className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold h-11 rounded-xl">
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Continue to Payment'}
-                    </Button>
+                    {paymentSuccess && (
+                        <div
+                            className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center space-y-2">
+                            <p className="text-sm font-bold text-emerald-400">Payment Successful!</p>
+                            <p className="text-xs text-slate-400">Welcome to TaskPilot AI family! Wishing you a happy
+                                journey 🫡</p>
+                        </div>
+                    )}
 
-                    <button onClick={onClose}
-                            className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                        {isPremium ? 'Close' : 'Maybe later'}
-                    </button>
+                    {paymentError && (
+                        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-center space-y-3">
+                            <p className="text-sm font-bold text-rose-400">Payment Failed</p>
+                            <p className="text-xs text-slate-400">{paymentError}</p>
+                            <button onClick={onClose}
+                                    className="text-xs bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 px-4 py-1.5 rounded-lg transition-colors font-medium">Dismiss
+                            </button>
+                        </div>
+                    )}
+
+                    {!paymentError && (
+                        paymentSuccess ? (
+                            <div
+                                className="w-full flex items-center justify-center gap-2 text-emerald-400 font-medium h-11">
+                                <Loader2 className="w-4 h-4 animate-spin text-emerald-400"/>
+                                Activating your subscription...
+                            </div>
+                        ) : (
+                            <>
+                                <Button
+                                    onClick={handlePayment}
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold h-11 rounded-xl">
+                                    {loading ? (
+                                        <span className="flex items-center justify-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin"/>
+                                            Waiting for payment verification...
+                                        </span>
+                                    ) : 'Select this Subscription'}
+                                </Button>
+                                <button onClick={onClose}
+                                        className="w-full text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                                    {isPremium ? 'Close' : 'Maybe later'}
+                                </button>
+                            </>
+                        )
+                    )}
                 </div>
             </DialogContent>
         </Dialog>

@@ -4,6 +4,9 @@ import {useAuth} from '../lib/AuthContext';
 import {Goal, Task} from '../types';
 import {Sparkles, CheckCircle2, Clock, ListTree, Award, Route} from 'lucide-react';
 import {getDelayText, getGoalCompletionDate} from '../lib/utils';
+import {formatDate} from '../lib/time.ts';
+import {goalsApi} from '../api/goals';
+import {tasksApi} from '../api/tasks';
 import PageHeader from '../components/PageHeader';
 
 export function Completions() {
@@ -17,22 +20,13 @@ export function Completions() {
     const fetchGoalsAndTasks = async () => {
         if (!user) return;
         try {
-            const token = await user.getIdToken();
-            const headers = {'Authorization': `Bearer ${token}`};
-
             // Fetch goals
-            const resGoals = await fetch('/api/goals', {headers});
-            if (resGoals.ok) {
-                const goalsData = await resGoals.json() as Goal[];
-                setGoals(goalsData);
-            }
+            const goalsData = await goalsApi.list() as Goal[];
+            setGoals(goalsData);
 
             // Fetch tasks
-            const resTasks = await fetch('/api/tasks', {headers});
-            if (resTasks.ok) {
-                const tasksData = await resTasks.json() as Task[];
-                setLinkedTasks(tasksData);
-            }
+            const tasksData = await tasksApi.list() as Task[];
+            setLinkedTasks(tasksData);
         } catch (err) {
             console.error("Failed to load completions data:", err);
         } finally {
@@ -238,7 +232,7 @@ export function Completions() {
                                                                 <div
                                                                     className="text-[10px] text-slate-500 font-mono flex items-center justify-between pt-2">
                                                                     <span>Completed on:</span>
-                                                                    <span>{new Date(compDate).toLocaleDateString(undefined, {dateStyle: 'medium'})}</span>
+                                                                    <span>{formatDate(compDate)}</span>
                                                                 </div>
                                                             )}
 
@@ -260,18 +254,15 @@ export function Completions() {
                                                                                 </div>
                                                                                 <div className="flex-1 min-w-0">
                                                                                     <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
-                                                                                    <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
-                                                                                        {new Date(entry.date).toLocaleDateString(undefined, {
-                                                                                            month: 'short',
-                                                                                            day: 'numeric'
-                                                                                        })} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, {
-                                                                                        hour: '2-digit',
-                                                                                        minute: '2-digit'
-                                                                                    })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, {
-                                                                                        hour: '2-digit',
-                                                                                        minute: '2-digit'
-                                                                                    })}` : ''}
-                                                                                    </p>
+<p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                        {formatDate(entry.date)} &middot; {entry.startTime && entry.endTime ? `${new Date(entry.startTime).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })} — ${new Date(entry.endTime).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    })}` : ''}
+                    </p>
                                                                                 </div>
                                                                             </div>
                                                                         ))}
@@ -349,12 +340,9 @@ export function Completions() {
                                                                         </div>
                                                                         <div className="flex-1 min-w-0">
                                                                             <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
-                                                                            <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
-                                                                                {new Date(entry.date).toLocaleDateString(undefined, {
-                                                                                    month: 'short',
-                                                                                    day: 'numeric'
-                                                                                })}
-                                                                            </p>
+<p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                {formatDate(entry.date)}
+            </p>
                                                                         </div>
                                                                     </div>
                                                                 ))}

@@ -20,8 +20,10 @@ import AmbientMixer from '../components/AmbientMixer';
 import FocusSessionSummary from '../components/FocusSessionSummary';
 import FocusStats from '../components/FocusStats';
 import {useAuth} from '../lib/AuthContext';
+import {formatDate} from '@/lib/time.ts';
 import type {FocusMethod, FocusSession} from '../types';
 import PageHeader from '../components/PageHeader';
+import {focusApi} from '../api/focusSessions';
 
 const METHODS: { id: FocusMethod; name: string; science: string; desc: string; ratio: string; premium: boolean }[] = [
     {
@@ -123,16 +125,12 @@ export default function Focus() {
         };
     }, [methodOpen]);
 
-    const fetchHistory = useCallback(() => {
-        const token = localStorage.getItem('token');
-        fetch('/api/focus-sessions?limit=20', {headers: {Authorization: `Bearer ${token}`}})
-            .then(r => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.json();
-            })
-            .then(d => setHistory(d.sessions || []))
-            .catch(() => {
-            });
+    const fetchHistory = useCallback(async () => {
+        try {
+            const data = await focusApi.list({limit: 20});
+            setHistory(data.sessions || []);
+        } catch {
+        }
     }, []);
 
     useEffect(() => {
@@ -403,7 +401,7 @@ export default function Focus() {
                                     <div key={s._id || s.id || idx}
                                          className="flex items-center gap-3 bg-slate-800/30 rounded-lg px-4 py-2.5">
                                         <div
-                                            className="text-xs text-slate-500 w-20">{new Date(s.startedAt).toLocaleDateString()}</div>
+                                            className="text-xs text-slate-500 w-20">{formatDate(s.startedAt)}</div>
                                         <div
                                             className="text-xs font-medium text-slate-300 w-20">{METHOD_CONFIGS[s.method]?.label || s.method}</div>
                                         <div

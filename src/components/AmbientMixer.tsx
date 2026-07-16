@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import {motion, AnimatePresence} from 'motion/react';
 import {useAuth} from '../lib/AuthContext';
-import {showInfo} from '../lib/toastTheme';
+import {showInfo, showError} from '../lib/toastTheme';
 import {PremiumPaymentModal} from './PremiumPayment';
 import soundSources from '../data/soundSources.json';
 
@@ -428,7 +428,11 @@ export default function AmbientMixer() {
             // Server-side premium verification (obfuscated check)
             const hasAccess = await verifyPremiumAccess();
             if (!hasAccess) {
-                showInfo('Binaural beats require Premium. Upgrade to unlock!');
+                if (!user?.emailVerified) {
+                    showError('Email Required', 'Please verify your email address before upgrading.');
+                    return;
+                }
+                showInfo('Premium Required', 'Binaural beats require Premium. Upgrade to unlock!');
                 setShowPremiumModal(true);
                 return;
             }

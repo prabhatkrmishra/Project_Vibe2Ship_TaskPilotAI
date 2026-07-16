@@ -1,6 +1,8 @@
 import {useState, useEffect, useCallback, useRef} from 'react';
 import {useAuth} from '../lib/AuthContext';
-import {showSuccess, showError} from '../lib/toastTheme';
+import {authApi} from '../api/auth';
+import {subscriptionsApi} from '../api/subscriptions';
+import {showSuccess, showError, showWarning, showInfo} from '../lib/toastTheme';
 import {
     User as UserIcon,
     Mail,
@@ -65,40 +67,33 @@ export function Profile() {
     const [isModelModalOpen, setIsModelModalOpen] = useState(false);
 
     // 2FA state
+    const [twoFACode, setTwoFACode] = useState('');
     const [twoFAEnabled, setTwoFAEnabled] = useState(false);
     const [twoFASetupStep, setTwoFASetupStep] = useState<'idle' | 'qr' | 'verify' | 'done'>('idle');
     const [twoFASecret, setTwoFASecret] = useState('');
     const [twoFAQRCode, setTwoFAQRCode] = useState('');
-    const [twoFACode, setTwoFACode] = useState('');
-    const [twoFADisableCode, setTwoFADisableCode] = useState('');
-    const [twoFASetupLoading, setTwoFASetupLoading] = useState(false);
     const [twoFADialogOpen, setTwoFADialogOpen] = useState(false);
     const [twoFADisableDialogOpen, setTwoFADisableDialogOpen] = useState(false);
+    const [twoFADisableCode, setTwoFADisableCode] = useState('');
+    const [isSendingVerification, setIsSendingVerification] = useState(false);
+    const [twoFASetupLoading, setTwoFASetupLoading] = useState(false);
 
     useEffect(() => {
         const fetchModels = async () => {
             if (!user) return;
             setIsLoadingModels(true);
             try {
-                const token = await user.getIdToken();
-                const res = await fetch('/api/models', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setModelsList(data);
+                const data = await authApi.models();
+                setModelsList(data);
 
-                    // Ensure valid selection — prefer an available model
-                    const isSelectedAvailable = data.some((m: any) => m.name === defaultModel && m.available);
-                    if (!isSelectedAvailable && data.length > 0) {
-                        const fallbackModel = data.find((m: any) => m.available && m.name.includes('gemini-3.1-flash-lite'))?.name
-                            || data.find((m: any) => m.available)?.name
-                            || defaultModel;
-                        setDefaultModel(fallbackModel);
-                        localStorage.setItem('default_gemini_model', fallbackModel);
-                    }
+                // Ensure valid selection — prefer an available model
+                const isSelectedAvailable = data.some((m: any) => m.name === defaultModel && m.available);
+                if (!isSelectedAvailable && data.length > 0) {
+                    const fallbackModel = data.find((m: any) => m.available && m.name.includes('gemini-3.1-flash-lite'))?.name
+                        || data.find((m: any) => m.available)?.name
+                        || defaultModel;
+                    setDefaultModel(fallbackModel);
+                    localStorage.setItem('default_gemini_model', fallbackModel);
                 }
             } catch (error) {
                 console.error("Failed to load models:", error);
@@ -117,15 +112,8 @@ export function Profile() {
         const check2FA = async () => {
             if (!user) return;
             try {
-                const token = await user.getIdToken();
-                const res = await fetch('/api/auth/2fa/status', {
-                    method: 'POST',
-                    headers: {'Authorization': `Bearer ${token}`}
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setTwoFAEnabled(data.enabled);
-                }
+                const data = await authApi.twoFactorStatus();
+                setTwoFAEnabled(data.enabled);
             } catch {
             }
         };
@@ -135,13 +123,13 @@ export function Profile() {
     const handleDefaultModelChange = (value: string) => {
         const model = models.find(m => m.name === value);
         if (model && !model.available) {
-            showError('That model is not available. Set the API key for this provider in .env.');
+            showError('Model Unavailable', 'That model is not available. Set the API key for this provider in .env.');
             return;
         }
         setDefaultModel(value);
         localStorage.setItem('default_gemini_model', value);
         const displayName = model?.displayName || value;
-        showSuccess(`Default AI Model updated to: ${displayName}`);
+        showSuccess('Model Updated', `Default AI Model updated to: ${displayName}`);
         setIsModelModalOpen(false);
     };
 
@@ -161,34 +149,33 @@ export function Profile() {
         }
     }, [user]);
 
+    const handleSendVerification = async () => {
+        try {
+            setIsSendingVerification(true);
+            const data = await authApi.sendVerification();
+            showSuccess('Email Sent', data.message || 'Verification email sent! Check your inbox.');
+        } catch (err: any) {
+            showError('Send Failed', err.message || 'Failed to send verification email');
+        } finally {
+            setIsSendingVerification(false);
+        }
+    };
+
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) {
-            showError('Name cannot be empty');
+            showError('Missing Name', 'Name cannot be empty');
             return;
         }
 
         try {
             setIsUpdatingProfile(true);
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/auth/profile', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({name, address})
-            });
-
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to update profile');
-            }
+            const data = await authApi.profile({name, address});
 
             updateUser({name: data.name, address: data.address});
-            showSuccess('Profile updated successfully!');
+            showSuccess('Profile Updated', 'Profile updated successfully!');
         } catch (err: any) {
-            showError(err.message || 'An error occurred while updating profile');
+            showError('Update Failed', err.message || 'An error occurred while updating profile');
         } finally {
             setIsUpdatingProfile(false);
         }
@@ -197,43 +184,30 @@ export function Profile() {
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentPassword || !newPassword || !retypeNewPassword) {
-            showError('Please fill in all password fields');
+            showError('Missing Fields', 'Please fill in all password fields');
             return;
         }
 
         if (newPassword !== retypeNewPassword) {
-            showError('New passwords do not match');
+            showError('Password Mismatch', 'New passwords do not match');
             return;
         }
 
         if (newPassword.length < 8) {
-            showError('New password must be at least 8 characters long');
+            showError('Password Too Short', 'New password must be at least 8 characters long');
             return;
         }
 
         try {
             setIsChangingPassword(true);
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/auth/change-password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({currentPassword, newPassword})
-            });
+            await authApi.changePassword({currentPassword, newPassword});
 
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to change password');
-            }
-
-            showSuccess('Password changed successfully!');
+            showSuccess('Password Changed', 'Password changed successfully!');
             setCurrentPassword('');
             setNewPassword('');
             setRetypeNewPassword('');
         } catch (err: any) {
-            showError(err.message || 'An error occurred while changing password');
+            showError('Change Failed', err.message || 'An error occurred while changing password');
         } finally {
             setIsChangingPassword(false);
         }
@@ -242,21 +216,19 @@ export function Profile() {
     // ─── 2FA Handlers ──────────────────────────────────────────────────────────
     const handle2FASetup = useCallback(async () => {
         if (!user) return;
+        if (!user.emailVerified) {
+            showError('Email Not Verified', 'Please verify your email address before setting up 2FA.');
+            return;
+        }
         try {
             setTwoFASetupLoading(true);
             setTwoFADialogOpen(true);
-            const token = await user.getIdToken();
-            const res = await fetch('/api/auth/2fa/setup', {
-                method: 'POST',
-                headers: {'Authorization': `Bearer ${token}`}
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to start 2FA setup');
+            const data = await authApi.twoFactorSetup();
             setTwoFASecret(data.secret);
             setTwoFAQRCode(data.qrCodeDataUrl);
             setTwoFASetupStep('qr');
         } catch (err: any) {
-            showError(err.message || 'Failed to start 2FA setup');
+            showError('2FA Setup Failed', err.message || 'Failed to start 2FA setup');
         } finally {
             setTwoFASetupLoading(false);
         }
@@ -266,27 +238,17 @@ export function Profile() {
         if (!user || twoFACode.length !== 6) return;
         try {
             setTwoFASetupLoading(true);
-            const token = await user.getIdToken();
-            const res = await fetch('/api/auth/2fa/verify', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({code: twoFACode})
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Invalid code');
+            await authApi.twoFactorVerify(twoFACode);
             setTwoFAEnabled(true);
             setTwoFASetupStep('done');
             setTwoFACode('');
-            showSuccess('Two-factor authentication enabled!');
+            showSuccess('2FA Enabled', 'Two-factor authentication enabled!');
             setTimeout(() => {
                 setTwoFADialogOpen(false);
                 setTwoFASetupStep('idle');
             }, 2000);
         } catch (err: any) {
-            showError(err.message || 'Invalid code');
+            showError('Verification Failed', err.message || 'Invalid code');
         } finally {
             setTwoFASetupLoading(false);
         }
@@ -296,25 +258,15 @@ export function Profile() {
         if (!user || twoFADisableCode.length !== 6) return;
         try {
             setTwoFASetupLoading(true);
-            const token = await user.getIdToken();
-            const res = await fetch('/api/auth/2fa/disable', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({code: twoFADisableCode})
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Invalid code');
+            await authApi.twoFactorDisable(twoFADisableCode);
             setTwoFAEnabled(false);
             setTwoFADisableDialogOpen(false);
             setTwoFADisableCode('');
             setTwoFASecret('');
             setTwoFAQRCode('');
-            showSuccess('Two-factor authentication disabled');
+            showSuccess('2FA Disabled', 'Two-factor authentication disabled');
         } catch (err: any) {
-            showError(err.message || 'Invalid code');
+            showError('Disable Failed', err.message || 'Invalid code');
         } finally {
             setTwoFASetupLoading(false);
         }
@@ -322,7 +274,7 @@ export function Profile() {
 
     const copySecret = useCallback(() => {
         navigator.clipboard.writeText(twoFASecret);
-        showSuccess('Secret copied to clipboard');
+        showSuccess('Copied', 'Secret copied to clipboard');
     }, [twoFASecret]);
 
     return (
@@ -449,10 +401,10 @@ export function Profile() {
                                 onClick={async () => {
                                     try {
                                         await logout();
-                                        showSuccess("Logged out successfully");
+                                        showSuccess("Logged Out", "Logged out successfully");
                                         navigate("/login");
                                     } catch (err: any) {
-                                        showError("Failed to log out");
+                                        showError("Logout Failed", "Failed to log out");
                                     }
                                 }}
                                 className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-rose-600/10 hover:bg-rose-600 border border-rose-500/20 hover:border-rose-500 text-rose-400 hover:text-white font-medium text-sm transition-all"
@@ -487,7 +439,7 @@ export function Profile() {
                                 className={`w-full sm:flex-1 py-2 text-sm font-bold rounded-xl sm:rounded-r-none transition-all flex items-center justify-center gap-2 ${activeTab === 'personalities' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5 sm:rounded-xl'}`}
                             >
                                 <Target className="w-4 h-4"/>
-                                <span className="sm:inline">AI Personalities</span>
+                                <span className="sm:inline">AI Settings</span>
                             </button>
                             <button
                                 onClick={() => setActiveTab('premium')}
@@ -497,6 +449,29 @@ export function Profile() {
                                 <span>Premium</span>
                             </button>
                         </div>
+
+                        {user?.emailVerified === false && (
+                            <div
+                                className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-red-500/10 border border-red-500/30">
+                                <div className="flex items-center gap-3">
+                                    <AlertTriangle className="h-5 w-5 text-red-400 shrink-0"/>
+                                    <span className="text-sm font-medium text-red-300">Your email has not been verified yet!</span>
+                                </div>
+                                <Button
+                                    onClick={handleSendVerification}
+                                    disabled={isSendingVerification}
+                                    size="sm"
+                                    className="h-8 text-xs bg-red-600 hover:bg-red-500 text-white rounded-lg px-4 shrink-0"
+                                >
+                                    {isSendingVerification ? (
+                                        <>
+                                            <Loader2 className="h-3 w-3 animate-spin mr-1"/>
+                                            Sending...
+                                        </>
+                                    ) : 'Verify Email'}
+                                </Button>
+                            </div>
+                        )}
 
                         {activeTab === 'settings' && (
                             <div className="space-y-8">
@@ -737,7 +712,72 @@ export function Profile() {
                                     </div>
                                 )}
 
-                                {/* Default AI Brain Model Selector Card */}
+                            </div>
+                        )}
+
+                        {activeTab === 'achievements' && (
+                            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
+                                <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                    <Trophy className="h-6 w-6 text-yellow-500"/>
+                                    <h3 className="text-xl font-bold text-[#f0f6fc]">Achievement Badges</h3>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {ACHIEVEMENTS.map((achievement) => {
+                                        const isEarned = user?.gamification?.earnedBadges?.includes(achievement.id);
+                                        let Icon = Trophy;
+                                        if (achievement.icon === 'Flame') Icon = Flame;
+                                        if (achievement.icon === 'CheckCircle') Icon = CheckCircle;
+                                        if (achievement.icon === 'Clock') Icon = Clock;
+                                        if (achievement.icon === 'Headphones') Icon = Headphones;
+
+                                        const tierColors = {
+                                            'Common': 'from-slate-500 to-slate-400 border-slate-500 text-slate-100',
+                                            'Rare': 'from-indigo-600 to-indigo-400 border-indigo-500 text-indigo-100',
+                                            'Epic': 'from-purple-600 to-purple-400 border-purple-500 text-purple-100',
+                                            'Legendary': 'from-orange-500 to-yellow-400 border-yellow-500 text-yellow-100'
+                                        };
+
+                                        return (
+                                            <div
+                                                key={achievement.id}
+                                                className={`relative flex flex-col items-center p-5 rounded-2xl border transition-all ${
+                                                    isEarned
+                                                        ? 'bg-[#161b22] border-[#30363d] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:border-indigo-500/50'
+                                                        : 'bg-[#0a0d14] border-[#161b22] opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`w-14 h-14 rounded-full bg-gradient-to-br ${tierColors[achievement.tier]} flex items-center justify-center mb-4 shadow-lg border-2 ${isEarned ? 'animate-pulse-slow' : ''}`}>
+                                                    <Icon
+                                                        className={`h-7 w-7 ${isEarned ? 'drop-shadow-md' : 'opacity-50'}`}/>
+                                                </div>
+                                                <h4 className="text-sm font-bold text-white text-center mb-1">{achievement.name}</h4>
+                                                <p className="text-xs text-slate-400 text-center mb-3">{achievement.description}</p>
+
+                                                <div
+                                                    className="mt-auto w-full flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
+                                                    <span className="text-indigo-400">{achievement.category}</span>
+                                                    <span
+                                                        className={`${isEarned ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {isEarned ? 'Unlocked' : 'Locked'}
+                        </span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/** Premium Subscription Tab */}
+                        {activeTab === 'premium' && (
+                            <PremiumTabContent/>
+                        )}
+
+                        {activeTab === 'personalities' && (
+                            <div className="space-y-8">
+                                {/* AI Brain Configuration */}
                                 <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
                                     <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
                                         <Cpu className="h-5 w-5 text-indigo-400"/>
@@ -861,208 +901,124 @@ export function Profile() {
                                         </Dialog>
                                     </div>
                                 </div>
-                            </div>
-                        )}
 
-                        {activeTab === 'achievements' && (
-                            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
-                                <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
-                                    <Trophy className="h-6 w-6 text-yellow-500"/>
-                                    <h3 className="text-xl font-bold text-[#f0f6fc]">Achievement Badges</h3>
-                                </div>
+                                {/* AI Personalities */}
+                                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
+                                    <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                        <Target className="h-6 w-6 text-cyan-500"/>
+                                        <h3 className="text-xl font-bold text-[#f0f6fc]">AI Personalities</h3>
+                                    </div>
+                                    <p className="text-sm text-slate-400">Unlock different AI personalities for Mission
+                                        Control using your Gamification XP.</p>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {ACHIEVEMENTS.map((achievement) => {
-                                        const isEarned = user?.gamification?.earnedBadges?.includes(achievement.id);
-                                        let Icon = Trophy;
-                                        if (achievement.icon === 'Flame') Icon = Flame;
-                                        if (achievement.icon === 'CheckCircle') Icon = CheckCircle;
-                                        if (achievement.icon === 'Clock') Icon = Clock;
-                                        if (achievement.icon === 'Headphones') Icon = Headphones;
-
-                                        const tierColors = {
-                                            'Common': 'from-slate-500 to-slate-400 border-slate-500 text-slate-100',
-                                            'Rare': 'from-blue-600 to-blue-400 border-blue-500 text-blue-100',
-                                            'Epic': 'from-purple-600 to-purple-400 border-purple-500 text-purple-100',
-                                            'Legendary': 'from-orange-500 to-yellow-400 border-yellow-500 text-yellow-100'
-                                        };
-
-                                        return (
-                                            <div
-                                                key={achievement.id}
-                                                className={`relative flex flex-col items-center p-5 rounded-2xl border transition-all ${
-                                                    isEarned
-                                                        ? 'bg-[#161b22] border-[#30363d] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:border-indigo-500/50'
-                                                        : 'bg-[#0a0d14] border-[#161b22] opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
-                                                }`}
-                                            >
-                                                <div
-                                                    className={`w-14 h-14 rounded-full bg-gradient-to-br ${tierColors[achievement.tier]} flex items-center justify-center mb-4 shadow-lg border-2 ${isEarned ? 'animate-pulse-slow' : ''}`}>
-                                                    <Icon
-                                                        className={`h-7 w-7 ${isEarned ? 'drop-shadow-md' : 'opacity-50'}`}/>
-                                                </div>
-                                                <h4 className="text-sm font-bold text-white text-center mb-1">{achievement.name}</h4>
-                                                <p className="text-xs text-slate-400 text-center mb-3">{achievement.description}</p>
-
-                                                <div
-                                                    className="mt-auto w-full flex items-center justify-between text-[10px] uppercase font-bold tracking-wider">
-                                                    <span className="text-indigo-400">{achievement.category}</span>
-                                                    <span
-                                                        className={`${isEarned ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {isEarned ? 'Unlocked' : 'Locked'}
-                        </span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {/** Premium Subscription Tab */}
-                        {activeTab === 'premium' && (
-                            <PremiumTabContent/>
-                        )}
-
-                        {activeTab === 'personalities' && (
-                            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
-                                <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
-                                    <Target className="h-6 w-6 text-cyan-500"/>
-                                    <h3 className="text-xl font-bold text-[#f0f6fc]">AI Personalities</h3>
-                                </div>
-                                <p className="text-sm text-slate-400">Unlock different AI personalities for Mission
-                                    Control using your Gamification XP.</p>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {[
-                                        {
-                                            id: 'default',
-                                            name: 'Standard Assistant',
-                                            desc: 'Helpful, concise, and professional.',
-                                            cost: 0,
-                                            icon: UserIcon
-                                        },
-                                        {
-                                            id: 'drill_sergeant',
-                                            name: 'Strict Drill Sergeant',
-                                            desc: 'Tough love, demanding, no excuses.',
-                                            cost: 500,
-                                            icon: Flame
-                                        },
-                                        {
-                                            id: 'zen_guide',
-                                            name: 'Zen Guide',
-                                            desc: 'Calm, mindful, focus on process.',
-                                            cost: 1000,
-                                            icon: Target
-                                        },
-                                        {
-                                            id: 'executive',
-                                            name: 'Executive Assistant',
-                                            desc: 'Hyper-organized, business-focused.',
-                                            cost: 2000,
-                                            icon: Briefcase
-                                        }
-                                    ].map((personality) => {
-                                        const isUnlocked = user?.gamification?.unlockedPersonalities?.includes(personality.id) || personality.cost === 0;
-                                        const isActive = user?.gamification?.activePersonality === personality.id || (!user?.gamification?.activePersonality && personality.id === 'default');
-                                        const Icon = personality.icon;
-
-                                        const handleUnlock = async () => {
-                                            try {
-                                                const token = await user?.getIdToken();
-                                                const res = await fetch('/api/user/personalities/unlock', {
-                                                    method: 'POST',
-                                                    headers: {
-                                                        'Content-Type': 'application/json',
-                                                        'Authorization': `Bearer ${token}`
-                                                    },
-                                                    body: JSON.stringify({
-                                                        personalityId: personality.id,
-                                                        cost: personality.cost
-                                                    })
-                                                });
-                                                const data = await res.json();
-                                                if (!res.ok) throw new Error(data.error);
-                                                updateUser({gamification: data.gamification});
-                                                showSuccess(`Unlocked ${personality.name}!`);
-                                            } catch (err: any) {
-                                                showError(err.message || 'Failed to unlock');
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {[
+                                            {
+                                                id: 'default',
+                                                name: 'Standard Assistant',
+                                                desc: 'Helpful, concise, and professional.',
+                                                cost: 0,
+                                                icon: UserIcon
+                                            },
+                                            {
+                                                id: 'drill_sergeant',
+                                                name: 'Strict Drill Sergeant',
+                                                desc: 'Tough love, demanding, no excuses.',
+                                                cost: 500,
+                                                icon: Flame
+                                            },
+                                            {
+                                                id: 'zen_guide',
+                                                name: 'Zen Guide',
+                                                desc: 'Calm, mindful, focus on process.',
+                                                cost: 1000,
+                                                icon: Target
+                                            },
+                                            {
+                                                id: 'executive',
+                                                name: 'Executive Assistant',
+                                                desc: 'Hyper-organized, business-focused.',
+                                                cost: 2000,
+                                                icon: Briefcase
                                             }
-                                        };
+                                        ].map((personality) => {
+                                            const isUnlocked = user?.gamification?.unlockedPersonalities?.includes(personality.id) || personality.cost === 0;
+                                            const isActive = user?.gamification?.activePersonality === personality.id || (!user?.gamification?.activePersonality && personality.id === 'default');
+                                            const Icon = personality.icon;
 
-                                        const handleSelect = async () => {
-                                            try {
-                                                const token = await user?.getIdToken();
-                                                const res = await fetch('/api/user/personalities/active', {
-                                                    method: 'PUT',
-                                                    headers: {
-                                                        'Content-Type': 'application/json',
-                                                        'Authorization': `Bearer ${token}`
-                                                    },
-                                                    body: JSON.stringify({personalityId: personality.id})
-                                                });
-                                                const data = await res.json();
-                                                if (!res.ok) throw new Error(data.error);
-                                                updateUser({gamification: data.gamification});
-                                                showSuccess(`Active personality changed to ${personality.name}!`);
-                                            } catch (err: any) {
-                                                showError(err.message || 'Failed to set active personality');
-                                            }
-                                        };
+                                            const handleUnlock = async () => {
+                                                try {
+                                                    const data = await authApi.unlockPersonality(personality.id, personality.cost);
+                                                    updateUser({gamification: data.gamification});
+                                                    showSuccess('Personality Unlocked', `Unlocked ${personality.name}!`);
+                                                } catch (err: any) {
+                                                    showError('Unlock Failed', err.message || 'Failed to unlock');
+                                                }
+                                            };
 
-                                        return (
-                                            <div
-                                                key={personality.id}
-                                                className={`relative flex flex-col p-5 rounded-2xl border transition-all ${
-                                                    isActive ? 'bg-indigo-500/10 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' :
-                                                        isUnlocked ? 'bg-[#161b22] border-[#30363d] hover:border-indigo-500/50' : 'bg-[#0a0d14] border-[#161b22] opacity-80'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3 mb-3">
-                                                    <div
-                                                        className={`p-2 rounded-full ${isActive ? 'bg-indigo-500 text-white' : isUnlocked ? 'bg-slate-800 text-slate-300' : 'bg-slate-900 text-slate-600'}`}>
-                                                        <Icon className="w-5 h-5"/>
+                                            const handleSelect = async () => {
+                                                try {
+                                                    const data = await authApi.setActivePersonality(personality.id);
+                                                    updateUser({gamification: data.gamification});
+                                                    showSuccess('Personality Changed', `Active personality changed to ${personality.name}!`);
+                                                } catch (err: any) {
+                                                    showError('Selection Failed', err.message || 'Failed to set active personality');
+                                                }
+                                            };
+
+                                            return (
+                                                <div
+                                                    key={personality.id}
+                                                    className={`relative flex flex-col p-5 rounded-2xl border transition-all ${
+                                                        isActive ? 'bg-indigo-500/10 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' :
+                                                            isUnlocked ? 'bg-[#161b22] border-[#30363d] hover:border-indigo-500/50' : 'bg-[#0a0d14] border-[#161b22] opacity-80'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <div
+                                                            className={`p-2 rounded-full ${isActive ? 'bg-indigo-500 text-white' : isUnlocked ? 'bg-slate-800 text-slate-300' : 'bg-slate-900 text-slate-600'}`}>
+                                                            <Icon className="w-5 h-5"/>
+                                                        </div>
+                                                        <h4 className="font-bold text-[#f0f6fc]">{personality.name}</h4>
                                                     </div>
-                                                    <h4 className="font-bold text-[#f0f6fc]">{personality.name}</h4>
-                                                </div>
-                                                <p className="text-xs text-slate-400 flex-1 mb-4">{personality.desc}</p>
+                                                    <p className="text-xs text-slate-400 flex-1 mb-4">{personality.desc}</p>
 
-                                                <div className="mt-auto flex items-center justify-between">
-                                                    {!isUnlocked ? (
-                                                        <span
-                                                            className="text-xs font-bold text-yellow-500">{personality.cost} XP</span>
-                                                    ) : (
-                                                        <span
-                                                            className="text-xs font-bold text-emerald-500">Unlocked</span>
-                                                    )}
+                                                    <div className="mt-auto flex items-center justify-between">
+                                                        {!isUnlocked ? (
+                                                            <span
+                                                                className="text-xs font-bold text-yellow-500">{personality.cost} XP</span>
+                                                        ) : (
+                                                            <span
+                                                                className="text-xs font-bold text-emerald-500">Unlocked</span>
+                                                        )}
 
-                                                    {!isUnlocked ? (
-                                                        <Button
-                                                            onClick={handleUnlock}
-                                                            disabled={!user?.gamification?.xp || user.gamification.xp < personality.cost}
-                                                            size="sm"
-                                                            className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3"
-                                                        >
-                                                            Unlock
-                                                        </Button>
-                                                    ) : isActive ? (
-                                                        <span
-                                                            className="text-xs font-bold text-indigo-400 uppercase tracking-wider px-2">Active</span>
-                                                    ) : (
-                                                        <Button
-                                                            onClick={handleSelect}
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="h-7 text-xs border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 rounded-lg px-3"
-                                                        >
-                                                            Select
-                                                        </Button>
-                                                    )}
+                                                        {!isUnlocked ? (
+                                                            <Button
+                                                                onClick={handleUnlock}
+                                                                disabled={!user?.gamification?.xp || user.gamification.xp < personality.cost}
+                                                                size="sm"
+                                                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3"
+                                                            >
+                                                                Unlock
+                                                            </Button>
+                                                        ) : isActive ? (
+                                                            <span
+                                                                className="text-xs font-bold text-indigo-400 uppercase tracking-wider px-2">Active</span>
+                                                        ) : (
+                                                            <Button
+                                                                onClick={handleSelect}
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="h-7 text-xs border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 rounded-lg px-3"
+                                                            >
+                                                                Select
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -1083,6 +1039,7 @@ export function Profile() {
                     setTwoFAQRCode('');
                 }
             }}>
+                <DialogTrigger className="hidden"/>
                 <DialogContent
                     className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
                     <DialogHeader>
@@ -1159,6 +1116,7 @@ export function Profile() {
                 setTwoFADisableDialogOpen(open);
                 if (!open) setTwoFADisableCode('');
             }}>
+                <DialogTrigger className="hidden"/>
                 <DialogContent
                     className="sm:max-w-[420px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
                     <DialogHeader>
@@ -1195,6 +1153,7 @@ export function Profile() {
             <Dialog open={twoFADialogOpen && twoFASetupStep === 'idle'} onOpenChange={(open) => {
                 setTwoFADialogOpen(open);
             }}>
+                <DialogTrigger className="hidden"/>
                 <DialogContent
                     className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
                     <DialogHeader>
@@ -1229,19 +1188,14 @@ function PremiumTabContent() {
         }
         setCancelling(true);
         try {
-            const token = await user?.getIdToken();
-            const res = await fetch('/api/subscriptions/cancel', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`}
-            });
-            const data = await res.json();
+            const data = await subscriptionsApi.cancel();
             if (data.success) {
-                showSuccess(data.message || 'Subscription cancelled');
+                showSuccess('Subscription Cancelled', data.message || 'Subscription cancelled');
                 await refreshPremiumStatus();
                 setConfirmCancel(false);
-            } else showError(data.error || 'Failed to cancel');
+            } else showError('Cancellation Failed', data.error || 'Failed to cancel');
         } catch {
-            showError('Failed to cancel subscription');
+            showError('Cancellation Failed', 'Failed to cancel subscription');
         } finally {
             setCancelling(false);
         }
@@ -1321,7 +1275,13 @@ function PremiumTabContent() {
             {/* ── Switch to Premium / Manage Subscription ── */}
             {!isPremium ? (
                 <Button
-                    onClick={() => setShowPaymentModal(true)}
+                    onClick={() => {
+                        if (!user?.emailVerified) {
+                            showError('Email Not Verified', 'Please verify your email address before upgrading.');
+                            return;
+                        }
+                        setShowPaymentModal(true);
+                    }}
                     className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-bold h-12 rounded-xl"
                 >
                     <Crown className="w-4 h-4 mr-2"/>

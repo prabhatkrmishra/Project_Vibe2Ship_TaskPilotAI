@@ -1,4 +1,5 @@
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
+import {formatDate, getTodayISO} from '@/lib/time.ts';
 
 export interface Task {
     id: string;
@@ -283,7 +284,7 @@ export async function exportToDrive(data: any) {
 
     const content = JSON.stringify(data, null, 2);
     const metadata = {
-        name: `TaskPilot_Backup_${new Date().toISOString().split('T')[0]}.json`,
+        name: `TaskPilot_Backup_${getTodayISO()}.json`,
         mimeType: 'application/json'
     };
 
@@ -316,7 +317,7 @@ export async function exportToDocs(tasks: Task[]) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            title: `TaskPilot Summary - ${new Date().toLocaleDateString()}`
+            title: `TaskPilot Summary - ${formatDate(new Date().toISOString())}`
         })
     });
 
@@ -329,7 +330,7 @@ export async function exportToDocs(tasks: Task[]) {
     tasks.forEach(t => {
         text += `[${t.status}] ${t.priority} Priority: ${t.title}\n`;
         if (t.description) text += `Description: ${t.description}\n`;
-        if (t.dueDate) text += `Due: ${new Date(t.dueDate).toLocaleDateString()}\n`;
+        if (t.dueDate) text += `Due: ${formatDate(t.dueDate.toISOString())}\n`;
         text += "\n";
     });
 
@@ -359,7 +360,7 @@ export async function exportToSlides(tasks: Task[]) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-            title: `TaskPilot Tasks - ${new Date().toLocaleDateString()}`
+            title: `TaskPilot Tasks - ${formatDate(new Date().toISOString())}`
         })
     });
 
@@ -372,7 +373,7 @@ export async function exportToSlides(tasks: Task[]) {
     tasks.forEach(t => {
         text += `[${t.status}] ${t.priority} Priority: ${t.title}\n`;
         if (t.description) text += `Description: ${t.description}\n`;
-        if (t.dueDate) text += `Due: ${new Date(t.dueDate).toLocaleDateString()}\n`;
+        if (t.dueDate) text += `Due: ${formatDate(t.dueDate.toISOString())}\n`;
         text += "\n";
     });
 
@@ -439,7 +440,7 @@ export async function exportToSheets(tasks: Task[]) {
         headers,
         body: JSON.stringify({
             properties: {
-                title: `TaskPilot Tasks - ${new Date().toLocaleDateString()}`
+                title: `TaskPilot Tasks - ${formatDate(new Date().toISOString())}`
             }
         })
     });
@@ -456,7 +457,7 @@ export async function exportToSheets(tasks: Task[]) {
             t.title,
             t.priority,
             t.status,
-            t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "",
+            t.dueDate ? formatDate(t.dueDate.toISOString()) : "",
             t.description || ""
         ])
     ];

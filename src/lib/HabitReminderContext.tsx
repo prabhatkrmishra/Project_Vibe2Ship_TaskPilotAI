@@ -1,5 +1,6 @@
 import {createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode} from 'react';
 import {Goal} from '../types';
+import {minutesOfDay, getTodayISO} from '@/lib/time.ts';
 
 export type ReminderStage = 'approaching' | 'soon' | 'logging' | 'overdue';
 
@@ -38,7 +39,7 @@ export function HabitReminderProvider({children}: { children: ReactNode }) {
     const snoozedUntilRef = useRef<Record<string, number>>({});
 
     const dismissReminder = useCallback((goalId: string) => {
-        dismissedRef.current.add(`${goalId}-${new Date().toISOString().split('T')[0]}`);
+        dismissedRef.current.add(`${goalId}-${getTodayISO()}`);
         setActiveReminder(null);
     }, []);
 
@@ -50,8 +51,8 @@ export function HabitReminderProvider({children}: { children: ReactNode }) {
     useEffect(() => {
         const checkReminders = () => {
             const now = new Date();
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
-            const today = now.toISOString().split('T')[0];
+            const currentMinutes = minutesOfDay(now);
+            const today = getTodayISO();
 
             const timeBasedHabits = habits.filter(h => {
                 if (!h.scheduledTime || h.completed || h.lastLogged === today) return false;

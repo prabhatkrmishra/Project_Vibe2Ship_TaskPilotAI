@@ -1,6 +1,7 @@
 import {useState, useEffect, useRef, useCallback, useMemo} from 'react';
 import {Play, Pause, RotateCcw, SkipForward, Square} from 'lucide-react';
 import type {FocusMethod} from '../types';
+import {pad2} from '@/lib/time.ts';
 
 export type TimerPhase = 'ready' | 'focus' | 'break';
 export type TimerMode = 'countdown' | 'stopwatch';
@@ -111,8 +112,8 @@ export default function FocusTimer({
         const h = Math.floor(secs / 3600);
         const m = Math.floor((secs % 3600) / 60);
         const s = secs % 60;
-        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        if (h > 0) return `${h}:${pad2(m)}:${pad2(s)}`;
+        return `${pad2(m)}:${pad2(s)}`;
     };
 
     // Build result object for callbacks
