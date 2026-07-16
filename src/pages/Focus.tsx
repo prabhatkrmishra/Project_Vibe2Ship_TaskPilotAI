@@ -95,7 +95,7 @@ interface SessionResult {
 
 export default function Focus() {
     const {user} = useAuth();
-    const isPremium = !!user?.isPremium;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
     const [selectedMethod, setSelectedMethod] = useState<FocusMethod | null>(null);
     const [sessionActive, setSessionActive] = useState(false);
     const [sessionResult, setSessionResult] = useState<SessionResult | null>(null);
@@ -124,7 +124,7 @@ export default function Focus() {
     }, [methodOpen]);
 
     const fetchHistory = useCallback(() => {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('taskpilot_jwt');
         fetch('/api/focus-sessions?limit=20', {headers: {Authorization: `Bearer ${token}`}})
             .then(r => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -162,7 +162,7 @@ export default function Focus() {
     const currentMethod = selectedMethod ? METHODS.find(m => m.id === selectedMethod) : null;
 
     return (
-        <div className="h-full overflow-y-auto bg-[#0a0d12]">
+        <div className="h-full overflow-y-auto bg-[var(--graphite-950)]">
             {/* Session Summary Modal */}
             {sessionResult && selectedMethod && (
                 <FocusSessionSummary
@@ -366,7 +366,7 @@ export default function Focus() {
                     <div className="py-24 text-center">
                         <div
                             className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-900/80 border border-slate-800/80 shadow-lg shadow-black/30">
-                            <Timer className="h-8 w-8 text-violet-400 animate-pulse"/>
+                            <Timer className="h-8 w-8 text-violet-400"/>
                         </div>
                         <h3 className="text-sm font-semibold text-slate-200">Select a Focus Protocol</h3>
                         <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">

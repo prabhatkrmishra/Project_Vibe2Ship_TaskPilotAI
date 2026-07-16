@@ -34,6 +34,7 @@ import {useAIJobs} from '../lib/AIJobContext';
 
 import {safeJson} from '../lib/utils';
 import PageHeader from '../components/PageHeader';
+import DayTimelineView from '../components/DayTimelineView';
 
 // Every plain toast (info/success/error/warning) on this page renders through the shared
 // SessionToastCard shell from ../lib/toastTheme — the same dark-glass style originally
@@ -1070,8 +1071,8 @@ export function Timetable() {
                             size="sm"
                             className={`rounded-xl font-bold text-xs uppercase tracking-widest transition-colors shadow-lg px-4 py-2.5 h-auto cursor-pointer flex items-center gap-2 ${
                                 actionsMenuOpen
-                                    ? 'bg-slate-800 border border-[#30363d] text-slate-300 hover:text-white'
-                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/10'
+                                    ? 'bg-slate-800 border border-[var(--panel-line)] text-slate-300 hover:text-white'
+                                    : 'bg-[var(--violet)] hover:brightness-110 text-white shadow-[var(--violet)]/10'
                             }`}
                         >
                             {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> :
@@ -1081,7 +1082,7 @@ export function Timetable() {
 
                         {actionsMenuOpen && (
                             <div
-                                className="absolute right-0 top-full mt-2 w-64 bg-[#0d1117] border border-[#30363d] rounded-2xl shadow-2xl z-20 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                                className="absolute right-0 top-full mt-2 w-64 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl shadow-2xl z-20 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
                                 {plan && (
                                     <button
                                         type="button"
@@ -1089,7 +1090,7 @@ export function Timetable() {
                                             setActionsMenuOpen(false);
                                             handleStartAdd();
                                         }}
-                                        className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest"
+                                        className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[var(--graphite-900)] border border-transparent hover:border-[var(--panel-line)] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest"
                                     >
                                         <Plus className="w-3.5 h-3.5 shrink-0"/>
                                         Add Session
@@ -1102,7 +1103,7 @@ export function Timetable() {
                                         setShowConfig(!showConfig);
                                     }}
                                     disabled={isGenerating}
-                                    className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[var(--graphite-900)] border border-transparent hover:border-[var(--panel-line)] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400"/>
                                     {plan ? (showConfig ? "Close Customizer" : "Customize Routine") : (showConfig ? "Close Settings" : "Set Day Rhythm")}
@@ -1115,7 +1116,7 @@ export function Timetable() {
                                             setShowRescheduleModal(true);
                                         }}
                                         disabled={isRescheduling || isGenerating || isJobActive}
-                                        className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[#161b22] border border-transparent hover:border-[#30363d] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-[var(--graphite-900)] border border-transparent hover:border-[var(--panel-line)] transition-all cursor-pointer text-xs font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {(isRescheduling || isJobActive) ?
                                             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin"/> :
@@ -1162,7 +1163,7 @@ export function Timetable() {
             <motion.div
                 initial={{opacity: 0, y: 15}}
                 animate={{opacity: 1, y: 0}}
-                className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 shadow-xl"
+                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 shadow-xl"
             >
                 {loading ? (
                     <div className="text-center py-20 flex flex-col items-center justify-center">
@@ -1195,7 +1196,7 @@ export function Timetable() {
                                             className={`text-left p-4 rounded-xl border transition-all cursor-pointer ${
                                                 dayDescription === preset.prompt
                                                     ? 'bg-indigo-600/15 border-indigo-500 shadow-md shadow-indigo-500/15'
-                                                    : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
+                                                    : 'bg-[var(--graphite-900)] border-[var(--panel-line)] hover:border-slate-700'
                                             }`}
                                         >
                                             <h4 className="text-xs font-bold text-white mb-1">{preset.title}</h4>
@@ -1213,7 +1214,7 @@ export function Timetable() {
                                         value={dayDescription}
                                         onChange={(e) => setDayDescription(e.target.value)}
                                         placeholder="e.g. I wake up at 7:00 AM, have a run at 7:30 AM, eat breakfast at 8:30 AM, work until 4 PM, spend family time until 8 PM, and sleep at 10:30 PM."
-                                        className="w-full h-24 bg-[#161b22] border border-[#30363d] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+                                        className="w-full h-24 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
                                     />
                                 </div>
 
@@ -1230,7 +1231,7 @@ export function Timetable() {
                                     )}
                                     <Button
                                         onClick={() => regenerateFullTimetable()}
-                                        className="ml-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-6 py-3 shadow-lg cursor-pointer flex items-center gap-2"
+                                        className="ml-auto bg-gradient-to-r from-[var(--violet)] to-[var(--horizon-blue)] hover:brightness-110 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-6 py-3 shadow-lg cursor-pointer flex items-center gap-2"
                                     >
                                         <Sparkles className="w-4 h-4"/>
                                         {plan ? "Update Timetable" : "Generate Discipline Timetable"}
@@ -1261,9 +1262,9 @@ export function Timetable() {
                                 )}
 
                                 <div
-                                    className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[#161b22] border border-[#21262d] rounded-2xl mb-2">
+                                    className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl mb-2">
                                     <div className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                                        <span className="w-2 h-2 rounded-full bg-[var(--violet)]"></span>
                                         <span className="text-xs font-semibold text-slate-300 font-mono">EXPORT UTILITIES ACTIVE</span>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
@@ -1272,7 +1273,7 @@ export function Timetable() {
                                             disabled={isSyncingCalendar}
                                             variant="outline"
                                             size="sm"
-                                            className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                                            className="border-[var(--panel-line)] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
                                         >
                                             {isSyncingCalendar ?
                                                 <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin"/> :
@@ -1283,7 +1284,7 @@ export function Timetable() {
                                             onClick={printTimetable}
                                             variant="outline"
                                             size="sm"
-                                            className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                                            className="border-[var(--panel-line)] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
                                         >
                                             <Printer className="w-3.5 h-3.5 text-indigo-400"/>
                                             Print View
@@ -1292,7 +1293,7 @@ export function Timetable() {
                                             onClick={exportToICS}
                                             variant="outline"
                                             size="sm"
-                                            className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                                            className="border-[var(--panel-line)] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
                                         >
                                             <Download className="w-3.5 h-3.5 text-cyan-400"/>
                                             Calendar (.ics)
@@ -1301,7 +1302,7 @@ export function Timetable() {
                                             onClick={exportToDoc}
                                             variant="outline"
                                             size="sm"
-                                            className="border-[#30363d] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
+                                            className="border-[var(--panel-line)] text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer h-auto"
                                         >
                                             <FileText className="w-3.5 h-3.5 text-pink-400"/>
                                             Document (.doc)
@@ -1320,7 +1321,7 @@ export function Timetable() {
                                                     Timetable.</p>
                                                 <Button
                                                     onClick={() => regenerateFullTimetable()}
-                                                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2"
+                                                    className="bg-[var(--violet)] hover:brightness-110 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2"
                                                 >
                                                     <Sparkles className="w-3.5 h-3.5 mr-2"/>
                                                     Generate General Timetable
@@ -1330,7 +1331,11 @@ export function Timetable() {
                                     }
 
                                     return (
-                                        <div
+                                        <>
+                                            {user?.tier && user.tier !== 'free' && (
+                                                <DayTimelineView sessions={visibleSessions}/>
+                                            )}
+                                            <div
                                             className="relative border-l-2 border-slate-800 pl-6 ml-4 sm:ml-8 space-y-6">
                                             {visibleSessions.map((session, i) => {
                                                 const now = new Date().getTime();
@@ -1400,7 +1405,7 @@ export function Timetable() {
                                                         >
                                                             {/* Timeline node */}
                                                             <div
-                                                                className={`absolute -left-[33px] top-6 w-4 h-4 rounded-full border-4 bg-[#0d1117] transition-all duration-300 ${
+                                                                className={`absolute -left-[33px] top-6 w-4 h-4 rounded-full border-4 bg-[var(--graphite-900)] transition-all duration-300 ${
                                                                     isCompleted
                                                                         ? 'border-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
                                                                         : isActive
@@ -1415,7 +1420,7 @@ export function Timetable() {
                                                                     isDragged ? 'opacity-30' : ''
                                                                 } ${
                                                                     highlightedIdx === i
-                                                                        ? 'ring-2 ring-amber-400/70 border-amber-400/50 shadow-[0_0_24px_rgba(251,191,36,0.35)] scale-[1.01]'
+                                                                        ? 'ring-2 ring-violet-400/70 border-violet-400/50 shadow-[0_0_24px_rgba(139,92,246,0.35)] scale-[1.01]'
                                                                         : ''
                                                                 } ${
                                                                     isDragOver && !isDragged
@@ -1429,8 +1434,8 @@ export function Timetable() {
                                                                                     : isNotAttended
                                                                                         ? 'bg-red-500/[0.03] border-red-500/20 opacity-50'
                                                                                         : isPast
-                                                                                            ? 'bg-[#161b22] border-[#21262d] opacity-50'
-                                                                                            : 'bg-[#161b22] border-[#21262d] hover:border-slate-700'
+                                                                                            ? 'bg-[var(--graphite-900)] border-[var(--panel-line)] opacity-50'
+                                                                                            : 'bg-[var(--graphite-900)] border-[var(--panel-line)] hover:border-slate-700'
                                                                 }`}
                                                             >
                                                                 {/* Risk bar or active progress bar */}
@@ -1478,7 +1483,7 @@ export function Timetable() {
 
                                                                 {/* Time block */}
                                                                 <div
-                                                                    className="text-xs font-mono font-bold text-slate-400 text-left shrink-0 sm:border-r sm:border-[#21262d] sm:pr-4 uppercase">
+                                                                    className="text-xs font-mono font-bold text-slate-400 text-left shrink-0 sm:border-r sm:border-[var(--panel-line)] sm:pr-4 uppercase">
                                                                     <span
                                                                         className={isActive ? 'text-indigo-400 font-extrabold' : ''}>{formatTime(session.startTime)}</span>
                                                                     <span
@@ -1491,7 +1496,7 @@ export function Timetable() {
 
                                                                 {/* Task information */}
                                                                 <div className="flex-grow min-w-0">
-                                                                    <h4 className={`font-medium text-sm break-words ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
+                                                                    <h4 className={`font-medium text-sm break-words ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-white'}`}>
                                                                         {session.sessionLabel || session.taskTitle}
                                                                     </h4>
                                                                     <div className="flex items-center gap-2 mt-1">
@@ -1561,7 +1566,7 @@ export function Timetable() {
                                                                             e.stopPropagation();
                                                                             handleStartEdit(i, session);
                                                                         }}
-                                                                        className="opacity-0 group-hover/card:opacity-100 text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-transparent hover:border-[#30363d] transition-all ml-2 shrink-0 cursor-pointer hidden sm:block"
+                                                                        className="opacity-0 group-hover/card:opacity-100 text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[var(--graphite-900)] border border-transparent hover:border-[var(--panel-line)] transition-all ml-2 shrink-0 cursor-pointer hidden sm:block"
                                                                         title="Edit Session"
                                                                     >
                                                                         <Pencil className="w-3.5 h-3.5"/>
@@ -1619,7 +1624,7 @@ export function Timetable() {
                                                                             e.stopPropagation();
                                                                             handleStartEdit(i, session);
                                                                         }}
-                                                                        className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[#1f242c] border border-[#21262d] transition-all mt-3 w-full text-xs font-bold uppercase tracking-wider sm:hidden flex items-center justify-center gap-1.5 cursor-pointer"
+                                                                        className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-[var(--graphite-900)] border border-[var(--panel-line)] transition-all mt-3 w-full text-xs font-bold uppercase tracking-wider sm:hidden flex items-center justify-center gap-1.5 cursor-pointer"
                                                                     >
                                                                         <Pencil className="w-3.5 h-3.5"/> Edit Session
                                                                     </button>
@@ -1640,7 +1645,7 @@ export function Timetable() {
                                                                         const nextStart = isoToTimeStr(visibleSessions[i + 1].startTime);
                                                                         handleStartAdd(prevEnd, nextStart);
                                                                     }}
-                                                                    className="opacity-100 sm:opacity-0 sm:group-hover/divider:opacity-100 bg-[#0d1117] border border-[#30363d] hover:border-indigo-500 text-slate-400 hover:text-white rounded-full px-3 py-1 text-[10px] font-bold flex items-center gap-1 shadow-lg transition-all z-10 cursor-pointer"
+                                                                    className="opacity-100 sm:opacity-0 sm:group-hover/divider:opacity-100 bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-indigo-500 text-slate-400 hover:text-white rounded-full px-3 py-1 text-[10px] font-bold flex items-center gap-1 shadow-lg transition-all z-10 cursor-pointer"
                                                                 >
                                                                     <Plus className="w-3 h-3 text-indigo-400"/>
                                                                     Insert Session Here
@@ -1651,6 +1656,7 @@ export function Timetable() {
                                                 );
                                             })}
                                         </div>
+                                        </>
                                     );
                                 })()}
                             </div>
@@ -1663,7 +1669,7 @@ export function Timetable() {
             {pendingReplan && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
                     <div
-                        className="bg-[#0d1117] border border-amber-500/25 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                        className="bg-[var(--graphite-900)] border border-amber-500/25 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
                         <div className="flex items-start gap-3">
                             <div
                                 className="shrink-0 w-10 h-10 rounded-xl border border-amber-400/40 bg-amber-500/15 flex items-center justify-center text-amber-300">
@@ -1680,7 +1686,7 @@ export function Timetable() {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#21262d]">
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--panel-line)]">
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -1709,8 +1715,8 @@ export function Timetable() {
             {editingIndex !== null && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
                     <div
-                        className="bg-[#0d1117] border border-[#30363d] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-                        <div className="flex items-center justify-between border-b border-[#21262d] pb-3">
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-center justify-between border-b border-[var(--panel-line)] pb-3">
                             <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                                 {editingIndex === -1 ? "✨ Add New Session" : "✏️ Edit Daily Session"}
                             </h3>
@@ -1733,7 +1739,7 @@ export function Timetable() {
                                     value={editTitle}
                                     onChange={(e) => setEditTitle(e.target.value)}
                                     placeholder="e.g. Morning Cardio, Deep Work, Reading"
-                                    className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                                    className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                                 />
                             </div>
 
@@ -1747,7 +1753,7 @@ export function Timetable() {
                                         type="time"
                                         value={editStartTime}
                                         onChange={(e) => setEditStartTime(e.target.value)}
-                                        className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                                        className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -1759,13 +1765,13 @@ export function Timetable() {
                                         type="time"
                                         value={editEndTime}
                                         onChange={(e) => setEditEndTime(e.target.value)}
-                                        className="w-full bg-[#161b22] border border-[#30363d] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                                        className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-3 border-t border-[#21262d]">
+                        <div className="flex items-center justify-between pt-3 border-t border-[var(--panel-line)]">
                             {editingIndex !== -1 ? (
                                 <button
                                     type="button"
@@ -1794,7 +1800,7 @@ export function Timetable() {
                                 <Button
                                     size="sm"
                                     onClick={handleSaveSlot}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2 transition-colors cursor-pointer"
+                                    className="bg-[var(--violet)] hover:brightness-110 text-white rounded-xl font-bold text-xs uppercase tracking-widest px-4 py-2 transition-colors cursor-pointer"
                                 >
                                     Save Session
                                 </Button>

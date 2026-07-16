@@ -1,14 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
-
-@plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
+    --font-heading: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
     --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
@@ -84,7 +84,18 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
-    /* New premium color palette */
+    /* Instrument panel tokens - blue/violet palette */
+    --graphite-950: oklch(0.145 0 0);
+    --graphite-900: oklch(0.205 0 0);
+    --panel-line: oklch(0.922 0 0);
+    --signal-violet: oklch(0.62 0.243 264.376);
+    --signal-violet-foreground: oklch(0.985 0 0);
+    --horizon-violet: oklch(0.704 0.194 264.376);
+    --horizon-violet-foreground: oklch(0.145 0 0);
+    --status-on-track: oklch(0.62 0.243 264.376);
+    --status-attention: oklch(0.704 0.194 264.376);
+    --status-risk: oklch(0.556 0.25 265);
+    /* Legacy premium palette */
     --violet: oklch(0.62 0.243 264.376);
     --violet-foreground: oklch(0.985 0 0);
     --cyan: oklch(0.704 0.191 22.216);
@@ -100,7 +111,6 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    /* Updated primary to violet for premium feel */
     --primary: oklch(0.62 0.243 264.376);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.269 0 0);
@@ -133,6 +143,12 @@
         @apply border-border outline-ring/50;
     }
 
+    *:focus-visible {
+        outline: 2px solid var(--violet);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+
     body {
         @apply bg-background text-foreground;
     }
@@ -154,13 +170,13 @@
 /* Smooth scrollbar */
 * {
     scrollbar-width: thin;
-    scrollbar-color: #21262d transparent;
+    scrollbar-color: var(--panel-line) transparent;
 }
 
 /* Login page dot-grid */
 .login-bg {
-    background-color: #030712;
-    background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
+    background-color: var(--graphite-950);
+    background-image: radial-gradient(circle, oklch(0.32 0 0) 1px, transparent 1px);
     background-size: 28px 28px;
 }
 
@@ -171,14 +187,75 @@
 
 .card-lift:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.12);
+    box-shadow: 0 8px 30px oklch(0.62 0.243 264.376 / 0.12);
 }
 
 .font-data {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-/* Premium color utilities */
+.font-display {
+    font-family: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Instrument panel color utilities */
+.bg-surface {
+    background-color: var(--graphite-900);
+}
+
+.border-panel {
+    border-color: var(--panel-line);
+}
+
+.bg-signal-violet {
+    background-color: var(--signal-violet);
+}
+
+.text-signal-violet-foreground {
+    color: var(--signal-violet-foreground);
+}
+
+.border-signal-violet {
+    border-color: var(--signal-violet);
+}
+
+.bg-horizon-violet {
+    background-color: var(--horizon-violet);
+}
+
+.text-horizon-violet-foreground {
+    color: var(--horizon-violet-foreground);
+}
+
+.border-horizon-violet {
+    border-color: var(--horizon-violet);
+}
+
+.bg-status-on-track {
+    background-color: var(--status-on-track);
+}
+
+.bg-status-attention {
+    background-color: var(--status-attention);
+}
+
+.bg-status-risk {
+    background-color: var(--status-risk);
+}
+
+.text-status-on-track {
+    color: var(--status-on-track);
+}
+
+.text-status-attention {
+    color: var(--status-attention);
+}
+
+.text-status-risk {
+    color: var(--status-risk);
+}
+
+/* Premium color utilities (legacy compat) */
 .bg-violet {
     background-color: oklch(0.62 0.243 264.376);
 }
@@ -240,7 +317,7 @@
     }
 }
 
-/* Violet gradient button */
+/* Violet gradient button (primary) */
 .violet-gradient {
     background: linear-gradient(135deg, oklch(0.62 0.243 264.376) 0%, oklch(0.556 0.25 265) 100%);
 }
@@ -249,11 +326,41 @@
     background: linear-gradient(135deg, oklch(0.704 0.194 264.376) 0%, oklch(0.62 0.243 264.376) 100%);
 }
 
-/* Gold premium button */
-.gold-gradient {
-    background: linear-gradient(135deg, oklch(0.72 0.13 55) 0%, oklch(0.87 0.14 55) 100%);
+/* Violet premium button */
+.violet-premium-gradient {
+    background: linear-gradient(135deg, oklch(0.62 0.243 264.376) 0%, oklch(0.704 0.194 264.376) 100%);
 }
 
-.gold-gradient-hover {
-    background: linear-gradient(135deg, oklch(0.87 0.14 55) 0%, oklch(0.72 0.13 55) 100%);
+.violet-premium-gradient-hover {
+    background: linear-gradient(135deg, oklch(0.704 0.194 264.376) 0%, oklch(0.62 0.243 264.376) 100%);
+}
+
+/* Flight Line animation */
+@keyframes flight-pulse {
+    0%, 100% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+.flight-pulse {
+    animation: flight-pulse 2s ease-in-out infinite;
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .flight-pulse {
+        animation: none;
+        opacity: 0.8;
+    }
 }

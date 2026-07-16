@@ -226,7 +226,7 @@ export function Goals() {
                   className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-widest rounded-full">
                 Goal Accomplished
               </span>
-                            <h4 className="font-black text-[#f0f6fc] text-sm uppercase tracking-wide mt-0.5">Mission
+                            <h4 className="font-black text-white text-sm uppercase tracking-wide mt-0.5">Mission
                                 Complete</h4>
                         </div>
                     </div>
@@ -652,7 +652,7 @@ export function Goals() {
                             animate={{scale: 1, opacity: 1}}
                             exit={{scale: 0.9, opacity: 0}}
                             transition={{type: "spring", damping: 20}}
-                            className="relative flex flex-col items-center text-center p-8 rounded-3xl bg-[#0d1117]/90 border border-cyan-500/30 shadow-[0_0_50px_rgba(34,211,238,0.2)] max-w-sm w-full"
+                            className="relative flex flex-col items-center text-center p-8 rounded-3xl bg-[var(--graphite-900)]/90 border border-cyan-500/30 shadow-[0_0_50px_rgba(34,211,238,0.2)] max-w-sm w-full"
                         >
                             {/* Pulsing & Rotating futuristic radar core with elegant flying plane */}
                             <div className="relative w-32 h-32 mb-6">
@@ -747,7 +747,7 @@ export function Goals() {
                                 <Plus className="mr-2 h-4 w-4"/> New Objective
                             </Button>
                         }/>
-                        <DialogContent className="bg-[#0d1117] border border-[#21262d] text-[#f0f6fc]">
+                        <DialogContent className="bg-[var(--graphite-900)] border border-[var(--panel-line)] text-white">
                             <DialogHeader>
                                 <DialogTitle className="text-white">Create New Objective</DialogTitle>
                             </DialogHeader>
@@ -896,7 +896,7 @@ export function Goals() {
                                     )}
                                 </div>
                                 <Button type="submit"
-                                        className={`w-full text-white font-bold tracking-widest uppercase text-xs rounded-xl h-12 transition-all shadow-lg ${type === 'habit' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20'}`}
+                                        className={`w-full text-white font-bold tracking-widest uppercase text-xs rounded-xl h-12 transition-all shadow-lg ${type === 'habit' ? 'bg-[var(--violet)] hover:brightness-110 shadow-violet-900/20' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20'}`}
                                         disabled={isCreating}>
                                     {isCreating ? (type === 'quest' ? "AI is planning your quest..." : "Creating...") : (type === 'habit' ? "Save Habit" : "Schedule new quest with AI")}
                                 </Button>
@@ -911,7 +911,7 @@ export function Goals() {
                     <div className="flex items-center gap-2 px-1">
                         <Bell className="w-3.5 h-3.5 text-indigo-400"/>
                         <span
-                            className="text-[10px] font-bold uppercase tracking-widest text-[#8b949e]">Smart Reminders</span>
+                            className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Smart Reminders</span>
                     </div>
                     <AnimatePresence>
                         {reminders.map(r => (
@@ -941,47 +941,47 @@ export function Goals() {
                     </AnimatePresence>
                 </div>
             )}
-            <div className="flex gap-3 mb-2 border-b border-[#21262d] pb-4">
+            <div className="flex gap-3 mb-2 border-b border-[var(--panel-line)] pb-4">
                 <button
                     onClick={() => setActiveTab('goals')}
-                    className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'goals' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
+                    className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'goals' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10' : 'bg-[var(--graphite-900)] text-slate-400 border border-[var(--panel-line)] hover:bg-slate-800'}`}
                 >
                     <Sparkles className="w-3.5 h-3.5"/> Quests
                 </button>
                 <button
                     onClick={() => setActiveTab('habits')}
-                    className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'habits' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10' : 'bg-[#161b22] text-[#8b949e] border border-[#21262d] hover:bg-[#21262d]'}`}
+                    className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5 ${activeTab === 'habits' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-lg shadow-orange-500/10' : 'bg-[var(--graphite-900)] text-slate-400 border border-[var(--panel-line)] hover:bg-slate-800'}`}
                 >
                     <Flame className="w-3.5 h-3.5"/> Daily Habits
                 </button>
             </div>
 
             {loading ? (
-                <div className="text-center text-[#8b949e] py-12">Loading...</div>
+                <div className="text-center text-slate-400 py-12">Loading...</div>
             ) : filteredGoals.length === 0 ? (
-                <div className="text-center py-24 bg-[#0d1117] rounded-3xl border border-dashed border-[#21262d]">
+                <div className="text-center py-24 bg-[var(--graphite-900)] rounded-3xl border border-dashed border-[var(--panel-line)]">
                     {activeTab === 'goals' ? (
                         <>
                             <Sparkles className="mx-auto h-12 w-12 text-cyan-400/50 mb-4"/>
                             {goals.some(g => g.type === 'quest' && g.completed) ? (
                                 <>
-                                    <h3 className="text-lg font-medium text-[#f0f6fc]">All Quests Completed!</h3>
-                                    <p className="text-[#8b949e] max-w-md mx-auto mt-1">You have completed all active
+                                    <h3 className="text-lg font-medium text-white">All Quests Completed!</h3>
+                                    <p className="text-slate-400 max-w-md mx-auto mt-1">You have completed all active
                                         quests. Check the <strong className="text-emerald-400">Completions</strong> page
                                         in the sidebar to celebrate your journey!</p>
                                 </>
                             ) : (
                                 <>
-                                    <h3 className="text-lg font-medium text-[#f0f6fc]">No active quests yet</h3>
-                                    <p className="text-[#8b949e]">Set a quest to start tracking progress.</p>
+                                    <h3 className="text-lg font-medium text-white">No active quests yet</h3>
+                                    <p className="text-slate-400">Set a quest to start tracking progress.</p>
                                 </>
                             )}
                         </>
                     ) : (
                         <>
                             <Flame className="mx-auto h-12 w-12 text-orange-400/50 mb-4"/>
-                            <h3 className="text-lg font-medium text-[#f0f6fc]">No active habits yet</h3>
-                            <p className="text-[#8b949e]">Set a habit to start tracking progress.</p>
+                            <h3 className="text-lg font-medium text-white">No active habits yet</h3>
+                            <p className="text-slate-400">Set a habit to start tracking progress.</p>
                         </>
                     )}
                 </div>
@@ -997,7 +997,7 @@ export function Goals() {
                             const completedTasks = tasks.filter(t => t.status === 'completed').length;
 
                             let countdownText = '';
-                            let countdownColor = 'text-[#8b949e]';
+                            let countdownColor = 'text-slate-400';
                             if (goal.type === 'quest' && goal.targetDate) {
                                 const hoursLeft = (new Date(goal.targetDate).getTime() - Date.now()) / 36e5;
                                 countdownText = goal.completed ? 'COMPLETE' : hoursLeft < 0 ? 'OVERDUE'
@@ -1005,7 +1005,7 @@ export function Goals() {
                                         : `${Math.floor(hoursLeft / 24)}d left`;
                                 countdownColor = goal.completed ? 'text-emerald-400' : hoursLeft < 0 ? 'text-red-400'
                                     : hoursLeft < 24 ? 'text-orange-400'
-                                        : 'text-[#8b949e]';
+                                        : 'text-slate-400';
                             }
 
                             return (
@@ -1019,7 +1019,7 @@ export function Goals() {
                                             toggleGoalExpand(goal.id);
                                         }
                                     }}
-                                    className={`bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 relative overflow-hidden group card-lift flex flex-col ${goal.completed ? 'opacity-50' : ''} ${goal.type === 'quest' ? 'cursor-pointer' : ''}`}
+                                    className={`bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 relative overflow-hidden group card-lift flex flex-col ${goal.completed ? 'opacity-50' : ''} ${goal.type === 'quest' ? 'cursor-pointer' : ''}`}
                                 >
                                     {goal.type === 'quest' && goal.targetDate && (
                                         <div className={`absolute top-0 left-0 w-full h-1 ${
@@ -1038,16 +1038,16 @@ export function Goals() {
                       Deadline Passed
                     </span>
                                             )}
-                                            <h3 className={`text-lg font-medium text-[#f0f6fc] leading-tight ${goal.completed ? 'line-through text-[#8b949e]' : ''}`}>{goal.title}</h3>
+                                            <h3 className={`text-lg font-medium text-white leading-tight ${goal.completed ? 'line-through text-slate-400' : ''}`}>{goal.title}</h3>
                                             {goal.type === 'quest' && goal.targetDate && (
                                                 <p className={`text-[10px] font-mono font-bold ${countdownColor} mt-1 mb-2 uppercase tracking-wider`}>{countdownText}</p>
                                             )}
                                             {(goal.type !== 'quest' || isExpanded) && (
-                                                <p className="text-xs text-[#8b949e] line-clamp-2">{goal.description}</p>
+                                                <p className="text-xs text-slate-400 line-clamp-2">{goal.description}</p>
                                             )}
                                         </div>
                                         <Button variant="ghost" size="icon"
-                                                className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
+                                                className="h-6 w-6 text-slate-400 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     deleteGoal(goal);
@@ -1059,7 +1059,7 @@ export function Goals() {
                                     <div className="flex gap-2 mb-4 flex-wrap">
                                         {goal.type === 'habit' ? (
                                             <span
-                                                className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${(goal.streak || 0) >= 7 ? 'bg-red-500/15 text-red-400 border-red-500/25' : (goal.streak || 0) >= 3 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-[#161b22] text-[#8b949e] border-[#21262d]'}`}>
+                                                className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${(goal.streak || 0) >= 7 ? 'bg-red-500/15 text-red-400 border-red-500/25' : (goal.streak || 0) >= 3 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-[var(--graphite-900)] text-slate-400 border-[var(--panel-line)]'}`}>
                     <Flame className="w-3.5 h-3.5 mr-1"/>
                                                 {goal.streak || 0} Day Streak
                   </span>
@@ -1085,15 +1085,15 @@ export function Goals() {
                                                 <div className="space-y-4">
                                                     <div className="flex items-center gap-4">
                                                         <div
-                                                            className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[#161b22] border border-[#21262d] shrink-0">
+                                                            className="flex items-center justify-center w-14 h-14 rounded-2xl bg-[var(--graphite-900)] border border-[var(--panel-line)] shrink-0">
                                                             <span
-                                                                className={`text-xl font-black ${(goal.streak || 0) >= 7 ? 'text-red-400' : (goal.streak || 0) >= 3 ? 'text-orange-400' : 'text-[#f0f6fc]'}`}>{goal.streak || 0}</span>
+                                                                className={`text-xl font-black ${(goal.streak || 0) >= 7 ? 'text-red-400' : (goal.streak || 0) >= 3 ? 'text-orange-400' : 'text-white'}`}>{goal.streak || 0}</span>
                                                         </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-[10px] uppercase tracking-widest font-bold text-[#8b949e] mb-1.5">Progress
+                                                            <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1.5">Progress
                                                                 to next badge</p>
                                                             <div
-                                                                className="h-1.5 bg-[#161b22] rounded-full overflow-hidden">
+                                                                className="h-1.5 bg-[var(--graphite-900)] rounded-full overflow-hidden">
                                                                 <div
                                                                     className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500"
                                                                     style={{width: `${((goal.streak || 0) % 7) / 7 * 100}%`}}></div>
@@ -1102,12 +1102,12 @@ export function Goals() {
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <Button variant="outline" size="sm"
-                                                                className="flex-1 bg-[#161b22] border-[#21262d] text-emerald-400 hover:text-white hover:bg-emerald-600 hover:border-emerald-600 transition-colors"
+                                                                className="flex-1 bg-[var(--graphite-900)] border-[var(--panel-line)] text-emerald-400 hover:text-white hover:bg-emerald-600 hover:border-emerald-600 transition-colors"
                                                                 onClick={() => updateProgress(goal.id, true)}>
                                                             <CheckCircle2 className="w-4 h-4 mr-2"/> Log Habit
                                                         </Button>
                                                         <Button variant="outline" size="sm"
-                                                                className="bg-[#161b22] border-[#21262d] text-[#8b949e] hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors"
+                                                                className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-slate-400 hover:text-white hover:bg-red-600 hover:border-red-600 transition-colors"
                                                                 onClick={() => updateProgress(goal.id, false)}>
                                                             <X className="w-4 h-4 mr-2"/> Missed
                                                         </Button>
@@ -1117,7 +1117,7 @@ export function Goals() {
                                                 <div className="w-full space-y-3">
                                                     <div className="flex items-center gap-4">
                                                         <div
-                                                            className="flex-1 h-2 bg-[#161b22] rounded-full overflow-hidden">
+                                                            className="flex-1 h-2 bg-[var(--graphite-900)] rounded-full overflow-hidden">
                                                             <div
                                                                 className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-500"
                                                                 style={{width: `${goal.progress}%`}}></div>
@@ -1134,7 +1134,7 @@ export function Goals() {
                                                                     e.stopPropagation();
                                                                     toggleGoalExpand(goal.id);
                                                                 }}
-                                                                className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                                                                className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-slate-400 hover:text-white transition-colors py-1 cursor-pointer focus:outline-none"
                                                             >
                           <span className="flex items-center gap-1.5">
                             <ListTree className="w-3.5 h-3.5"/> Scheduled Tasks <span
@@ -1167,7 +1167,7 @@ export function Goals() {
                                                                                             toggleLinkedTask(t.id, t.status);
                                                                                         }
                                                                                     }}
-                                                                                    className="flex items-center justify-between gap-2 group/task cursor-pointer p-2 bg-[#161b22]/50 rounded-xl border border-transparent hover:border-[#21262d] hover:bg-[#161b22] transition-colors"
+                                                                                    className="flex items-center justify-between gap-2 group/task cursor-pointer p-2 bg-[var(--graphite-900)]/50 rounded-xl border border-transparent hover:border-[var(--panel-line)] hover:bg-[var(--graphite-900)] transition-colors"
                                                                                 >
                                                                                     <div
                                                                                         className="flex items-start gap-2 flex-1 min-w-0">
@@ -1176,7 +1176,7 @@ export function Goals() {
                                                                                                 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5"/>
                                                                                         ) : (
                                                                                             <Circle
-                                                                                                className={`w-4 h-4 flex-shrink-0 mt-0.5 ${overdue ? 'text-red-400' : 'text-[#8b949e] group-hover/task:text-cyan-400'}`}/>
+                                                                                                className={`w-4 h-4 flex-shrink-0 mt-0.5 ${overdue ? 'text-red-400' : 'text-slate-400 group-hover/task:text-cyan-400'}`}/>
                                                                                         )}
                                                                                         <div className="flex-1 min-w-0">
                                                                                             {editingTaskId === t.id ? (
@@ -1194,7 +1194,7 @@ export function Goals() {
                                                                                                         }
                                                                                                     }}
                                                                                                     onBlur={() => handleSaveTaskTitle(t.id)}
-                                                                                                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-[#f0f6fc]"
+                                                                                                    className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-white"
                                                                                                 />
                                                                                             ) : (
                                                                                                 <span
@@ -1216,7 +1216,7 @@ export function Goals() {
                                                                                     {editingTaskId !== t.id && t.status !== 'completed' && (
                                                                                         <button
                                                                                             onClick={(e) => handleStartEditTask(t.id, t.title, e)}
-                                                                                            className="opacity-0 group-hover/task:opacity-100 transition-opacity text-[#8b949e] hover:text-cyan-400 p-1 rounded shrink-0"
+                                                                                            className="opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-400 hover:text-cyan-400 p-1 rounded shrink-0"
                                                                                             title="Edit Task Title"
                                                                                         >
                                                                                             <Pencil
@@ -1231,7 +1231,7 @@ export function Goals() {
                                                             </AnimatePresence>
                                                         </div>
                                                     ) : (
-                                                        <p className="text-xs text-[#8b949e] italic flex items-center gap-1.5 mb-2">
+                                                        <p className="text-xs text-slate-400 italic flex items-center gap-1.5 mb-2">
                                                             {isGeneratingTasks && <Sparkles
                                                                 className="w-3 h-3 text-cyan-400 animate-pulse shrink-0"/>}
                                                             {isGeneratingTasks ? 'AI is planning your quest...' : 'No tasks generated yet.'}
@@ -1239,13 +1239,13 @@ export function Goals() {
                                                     )}
 
                                                     {questTrails[goal.id] && questTrails[goal.id].length > 0 && (
-                                                        <div className="mt-3 pt-3 border-t border-[#21262d]/50">
+                                                        <div className="mt-3 pt-3 border-t border-[var(--panel-line)]/50">
                                                             <button
                                                                 type="button"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                 }}
-                                                                className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                                                                className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-slate-400 hover:text-white transition-colors py-1 cursor-pointer focus:outline-none"
                                                             >
                           <span className="flex items-center gap-1.5">
                             <Route className="w-3.5 h-3.5"/> Quest Trail <span
@@ -1259,13 +1259,13 @@ export function Goals() {
                                                                     <div key={idx}
                                                                          className="flex items-start gap-3 py-2 pl-0">
                                                                         <div
-                                                                            className="w-[15px] h-[15px] rounded-full bg-[#161b22] border-2 border-cyan-500/60 flex items-center justify-center shrink-0 mt-0.5 z-10">
+                                                                            className="w-[15px] h-[15px] rounded-full bg-[var(--graphite-900)] border-2 border-cyan-500/60 flex items-center justify-center shrink-0 mt-0.5 z-10">
                                                                             <div
                                                                                 className="w-1.5 h-1.5 rounded-full bg-cyan-400"></div>
                                                                         </div>
                                                                         <div className="flex-1 min-w-0">
-                                                                            <p className="text-[11px] text-[#f0f6fc] font-medium leading-snug">{entry.sessionLabel}</p>
-                                                                            <p className="text-[9px] text-[#8b949e] font-mono mt-0.5">
+                                                                            <p className="text-[11px] text-white font-medium leading-snug">{entry.sessionLabel}</p>
+                                                                            <p className="text-[9px] text-slate-400 font-mono mt-0.5">
                                                                                 {new Date(entry.date).toLocaleDateString(undefined, {
                                                                                     month: 'short',
                                                                                     day: 'numeric'
@@ -1284,7 +1284,7 @@ export function Goals() {
                                                         </div>
                                                     )}
 
-                                                    <div className="mt-3 pt-3 border-t border-[#21262d]/50">
+                                                    <div className="mt-3 pt-3 border-t border-[var(--panel-line)]/50">
                                                         <div className="flex gap-2">
                                                             <input
                                                                 type="text"
@@ -1297,10 +1297,10 @@ export function Goals() {
                                                                 onClick={(e) => e.stopPropagation()}
                                                                 onKeyDown={async (e: any) => {
                                                                     if (e.key === 'Enter' && e.target.value.trim() !== '') {
-                                                                        await handleAddManualTaskToQuest(goal.id, goal.targetDate);
+                                                                        await handleAddManualTaskToQuest(goal.id, goal.targetDate ?? null);
                                                                     }
                                                                 }}
-                                                                className="bg-[#161b22] border border-[#21262d] rounded-xl text-xs h-8 px-3 text-[#f0f6fc] placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 min-w-0"
+                                                                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl text-xs h-8 px-3 text-white placeholder:text-slate-600 focus:ring-1 focus:ring-indigo-500 focus:outline-none flex-1 min-w-0"
                                                             />
                                                             <Button
                                                                 type="button"
@@ -1308,7 +1308,7 @@ export function Goals() {
                                                                 size="sm"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    handleAddManualTaskToQuest(goal.id, goal.targetDate);
+                                                                    handleAddManualTaskToQuest(goal.id, goal.targetDate ?? null);
                                                                 }}
                                                                 className="h-8 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/50 text-[11px] font-bold px-3 rounded-xl shrink-0"
                                                             >

@@ -4,9 +4,9 @@ import {ArrowLeft, Shield, Lock, Eye, Server, RefreshCw} from 'lucide-react';
 export function PrivacyPolicy() {
     return (
         <div
-            className="min-h-screen bg-[#030712] text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-indigo-500 selection:text-white">
+            className="min-h-screen bg-[var(--graphite-950)] text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-indigo-500 selection:text-white">
             <div
-                className="max-w-4xl mx-auto bg-[#0d1117] border border-[#21262d] rounded-3xl p-8 sm:p-12 shadow-2xl relative overflow-hidden">
+                className="max-w-4xl mx-auto bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-8 sm:p-12 shadow-2xl relative overflow-hidden">
                 {/* Ambient background glow */}
                 <div
                     className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"/>
@@ -14,7 +14,7 @@ export function PrivacyPolicy() {
                     className="absolute bottom-0 left-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"/>
 
                 <div
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#21262d] pb-8 mb-8 relative z-10">
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--panel-line)] pb-8 mb-8 relative z-10">
                     <div>
                         <Link to="/"
                               className="inline-flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors mb-4 group">
@@ -22,7 +22,7 @@ export function PrivacyPolicy() {
                                 className="h-4 w-4 transform group-hover:-translate-x-1 transition-transform"/> Back to
                             Homepage
                         </Link>
-                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#f0f6fc]">
+                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
                             Privacy Policy
                         </h1>
                         <p className="text-slate-400 mt-2 text-sm">
@@ -40,7 +40,7 @@ export function PrivacyPolicy() {
                 <div className="space-y-8 text-slate-300 leading-relaxed relative z-10">
                     {/* Section 1 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">1.</span> Introduction
                         </h2>
                         <p>
@@ -56,7 +56,7 @@ export function PrivacyPolicy() {
 
                     {/* Section 2 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">2.</span> How We Use Google User Data
                         </h2>
                         <p className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl text-slate-300 text-sm">
@@ -110,14 +110,14 @@ export function PrivacyPolicy() {
 
                     {/* Section 3 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">3.</span> Information We Collect
                         </h2>
                         <p>
                             We collect information that you directly provide to us, including:
                         </p>
                         <div className="grid sm:grid-cols-2 gap-4">
-                            <div className="bg-[#161b22] border border-[#21262d] p-4 rounded-2xl flex gap-3">
+                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-4 rounded-2xl flex gap-3">
                                 <div className="p-2 bg-indigo-500/10 rounded-xl h-fit">
                                     <Eye className="h-5 w-5 text-indigo-400"/>
                                 </div>
@@ -127,7 +127,7 @@ export function PrivacyPolicy() {
                                         picture retrieved via Google Sign-In to personalize your dashboard.</p>
                                 </div>
                             </div>
-                            <div className="bg-[#161b22] border border-[#21262d] p-4 rounded-2xl flex gap-3">
+                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-4 rounded-2xl flex gap-3">
                                 <div className="p-2 bg-indigo-500/10 rounded-xl h-fit">
                                     <Server className="h-5 w-5 text-indigo-400"/>
                                 </div>
@@ -142,10 +142,10 @@ export function PrivacyPolicy() {
 
                     {/* Section 4 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">4.</span> Data Security & Storage
                         </h2>
-                        <div className="flex gap-4 bg-[#161b22] border border-[#21262d] p-5 rounded-2xl">
+                        <div className="flex gap-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] p-5 rounded-2xl">
                             <Lock className="h-6 w-6 text-emerald-400 flex-shrink-0"/>
                             <div className="space-y-1">
                                 <p className="text-sm font-semibold text-slate-200">Industry-Standard Encryption</p>
@@ -161,7 +161,7 @@ export function PrivacyPolicy() {
 
                     {/* Section 5 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">5.</span> Data Sharing & Retention
                         </h2>
                         <p>
@@ -174,7 +174,7 @@ export function PrivacyPolicy() {
 
                     {/* Section 6 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-indigo-400">6.</span> Contact Us
                         </h2>
                         <p>
@@ -182,14 +182,14 @@ export function PrivacyPolicy() {
                             out to our team at:
                         </p>
                         <div
-                            className="bg-slate-900/60 border border-[#21262d] px-5 py-4 rounded-2xl w-fit font-mono text-sm text-indigo-300">
+                            className="bg-slate-900/60 border border-[var(--panel-line)] px-5 py-4 rounded-2xl w-fit font-mono text-sm text-indigo-300">
                             taskpilot.ai.support@gmail.com
                         </div>
                     </section>
                 </div>
 
                 <div
-                    className="border-t border-[#21262d] mt-12 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    className="border-t border-[var(--panel-line)] mt-12 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <p>© 2026 TaskPilot AI. All rights reserved.</p>
                     <div className="flex gap-4">
                         <Link to="/terms" className="hover:text-indigo-400 transition-colors">Terms of Service</Link>

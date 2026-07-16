@@ -20,7 +20,7 @@ export function Home() {
 
     return (
         <div
-            className="min-h-screen bg-[#030712] text-slate-200 font-sans selection:bg-indigo-500 selection:text-white relative overflow-x-hidden">
+            className="min-h-screen bg-[var(--graphite-950)] text-slate-200 font-sans selection:bg-indigo-500 selection:text-white relative overflow-x-hidden">
 
             {/* Background visual art */}
             <div
@@ -36,14 +36,14 @@ export function Home() {
 
             {/* Sleek Premium Navbar */}
             <header
-                className="sticky top-0 z-50 backdrop-blur-md bg-[#030712]/75 border-b border-slate-900 px-4 sm:px-6 lg:px-8">
+                className="sticky top-0 z-50 backdrop-blur-md bg-[var(--graphite-950)]/75 border-b border-slate-900 px-4 sm:px-6 lg:px-8">
                 <div className="max-w-7xl mx-auto h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div
                             className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
                             <LayoutDashboard className="h-5 w-5 text-white"/>
                         </div>
-                        <span className="text-xl font-bold tracking-tight text-[#f0f6fc]">
+                        <span className="text-xl font-bold tracking-tight text-white">
               TaskPilot <span className="text-indigo-400 font-semibold italic">AI</span>
             </span>
                     </div>
@@ -60,7 +60,7 @@ export function Home() {
                         {user ? (
                             <Link
                                 to="/dashboard"
-                                className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
+                                className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[var(--violet)] hover:brightness-110 text-white font-medium text-sm transition-all shadow-[0_0_20px_rgba(251,191,36,0.3)] hover:scale-[1.02]"
                             >
                                 Launch App <ArrowRight className="h-4 w-4"/>
                             </Link>
@@ -94,7 +94,7 @@ export function Home() {
                     </div>
 
                     {/* Heading */}
-                    <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold text-[#f0f6fc] tracking-tight leading-none">
+                    <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold text-white tracking-tight leading-none">
                         Your Productivity. <br/>
                         On <span
                         className="bg-gradient-to-r from-indigo-400 via-cyan-400 to-violet-400 bg-clip-text text-transparent">AI Autopilot</span>
@@ -108,7 +108,7 @@ export function Home() {
                     <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
                         <Link
                             to={user ? "/dashboard" : "/login"}
-                            className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base transition-all shadow-[0_0_30px_rgba(99,102,241,0.4)] hover:scale-[1.03]"
+                            className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-2xl bg-[var(--violet)] hover:brightness-110 text-white font-semibold text-base transition-all shadow-[0_0_30px_rgba(251,191,36,0.4)] hover:scale-[1.03]"
                         >
                             {user ? "Enter Dashboard" : "Get Started Now"} <ArrowRight className="h-5 w-5"/>
                         </Link>
@@ -123,14 +123,14 @@ export function Home() {
 
                 {/* Dashboard Visual Mockup Container */}
                 <div
-                    className="max-w-5xl mx-auto mt-16 p-3 rounded-3xl bg-slate-900/40 border border-[#21262d] shadow-2xl relative">
+                    className="max-w-5xl mx-auto mt-16 p-3 rounded-3xl bg-slate-900/40 border border-[var(--panel-line)] shadow-2xl relative">
                     <div
                         className="absolute inset-0 bg-gradient-to-t from-[#030712] via-transparent to-transparent pointer-events-none rounded-3xl z-10"/>
                     <div
-                        className="bg-[#0d1117] rounded-2xl border border-[#21262d] overflow-hidden p-6 aspect-[16/9] flex flex-col gap-6 relative">
+                        className="bg-[var(--graphite-900)] rounded-2xl border border-[var(--panel-line)] overflow-hidden p-6 aspect-[16/9] flex flex-col gap-6 relative">
 
                         {/* Mock Header */}
-                        <div className="flex items-center justify-between border-b border-[#21262d] pb-4">
+                        <div className="flex items-center justify-between border-b border-[var(--panel-line)] pb-4">
                             <div className="flex items-center gap-2">
                                 <div className="w-3 h-3 rounded-full bg-red-500"/>
                                 <div className="w-3 h-3 rounded-full bg-yellow-500"/>
@@ -146,7 +146,7 @@ export function Home() {
                         {/* Mock Grid */}
                         <div className="grid grid-cols-12 gap-4 flex-1">
                             {/* Sidebar */}
-                            <div className="col-span-3 border-r border-[#21262d] pr-4 space-y-3">
+                            <div className="col-span-3 border-r border-[var(--panel-line)] pr-4 space-y-3">
                                 <div className="h-8 bg-slate-800/40 rounded-xl"/>
                                 <div className="h-8 bg-indigo-500/10 border-l-2 border-indigo-500 rounded-xl"/>
                                 <div className="h-8 bg-slate-800/20 rounded-xl"/>
@@ -160,12 +160,12 @@ export function Home() {
                                         <div className="h-5 w-32 bg-slate-800 rounded-lg"/>
                                         <div className="h-3 w-48 bg-slate-800/50 rounded-md"/>
                                     </div>
-                                    <div className="h-8 w-24 bg-[#161b22] border border-[#21262d] rounded-xl"/>
+                                    <div className="h-8 w-24 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl"/>
                                 </div>
 
                                 {/* Visual Task Cards */}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-[#161b22] border border-[#21262d] p-4 rounded-xl space-y-3">
+                                    <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-4 rounded-xl space-y-3">
                                         <div className="flex justify-between">
                                             <div className="h-4 w-24 bg-slate-800 rounded"/>
                                             <div className="h-4 w-12 bg-red-500/10 border border-red-500/30 rounded"/>
@@ -173,7 +173,7 @@ export function Home() {
                                         <div className="h-3 w-full bg-slate-800/50 rounded"/>
                                         <div className="h-3 w-3/4 bg-slate-800/50 rounded"/>
                                     </div>
-                                    <div className="bg-[#161b22] border border-[#21262d] p-4 rounded-xl space-y-3">
+                                    <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-4 rounded-xl space-y-3">
                                         <div className="flex justify-between">
                                             <div className="h-4 w-20 bg-slate-800 rounded"/>
                                             <div
@@ -185,7 +185,7 @@ export function Home() {
                                 </div>
 
                                 <div
-                                    className="bg-[#161b22] border border-[#21262d] p-4 rounded-xl h-24 flex items-center justify-center">
+                                    className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-4 rounded-xl h-24 flex items-center justify-center">
                                     <div className="text-center space-y-2">
                                         <div className="inline-flex h-2 w-2 rounded-full bg-indigo-500 animate-ping"/>
                                         <p className="text-xs font-mono text-indigo-300">TaskPilot AI is online & synced
@@ -204,7 +204,7 @@ export function Home() {
                     <div className="text-center space-y-4">
                         <h2 className="font-mono text-sm tracking-widest text-indigo-400 font-semibold uppercase">Engine
                             Matrix</h2>
-                        <p className="text-3xl sm:text-4xl font-extrabold text-[#f0f6fc] tracking-tight">Advanced
+                        <p className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Advanced
                             Autopilot Capabilities</p>
                         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
                             A comprehensive suite of autonomous intelligence modules built to keep you on schedule and
@@ -216,12 +216,12 @@ export function Home() {
 
                         {/* Feature 1 */}
                         <div
-                            className="bg-[#0d1117] border border-[#21262d] p-6 rounded-2xl hover:border-indigo-500/50 transition-all group">
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-6 rounded-2xl hover:border-indigo-500/50 transition-all group">
                             <div
                                 className="p-3 bg-indigo-500/10 rounded-xl w-fit text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
                                 <CheckSquare className="h-6 w-6"/>
                             </div>
-                            <h3 className="text-lg font-bold text-[#f0f6fc] mt-4 mb-2">Smart Tasks</h3>
+                            <h3 className="text-lg font-bold text-white mt-4 mb-2">Smart Tasks</h3>
                             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                                 Add quests, assign direct priorities, and evaluate security risk matrices for every
                                 project.
@@ -230,12 +230,12 @@ export function Home() {
 
                         {/* Feature 2 */}
                         <div
-                            className="bg-[#0d1117] border border-[#21262d] p-6 rounded-2xl hover:border-cyan-500/50 transition-all group">
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-6 rounded-2xl hover:border-cyan-500/50 transition-all group">
                             <div
                                 className="p-3 bg-cyan-500/10 rounded-xl w-fit text-cyan-400 group-hover:bg-cyan-600 group-hover:text-white transition-colors">
                                 <Calendar className="h-6 w-6"/>
                             </div>
-                            <h3 className="text-lg font-bold text-[#f0f6fc] mt-4 mb-2">Workspace Autopilot</h3>
+                            <h3 className="text-lg font-bold text-white mt-4 mb-2">Workspace Autopilot</h3>
                             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                                 Connect your Google Calendar, Docs, and Drive to draft briefs, resolve conflicts, and
                                 create agendas automatically.
@@ -244,12 +244,12 @@ export function Home() {
 
                         {/* Feature 3 */}
                         <div
-                            className="bg-[#0d1117] border border-[#21262d] p-6 rounded-2xl hover:border-violet-500/50 transition-all group">
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-6 rounded-2xl hover:border-violet-500/50 transition-all group">
                             <div
                                 className="p-3 bg-violet-500/10 rounded-xl w-fit text-violet-400 group-hover:bg-violet-600 group-hover:text-white transition-colors">
                                 <Bot className="h-6 w-6"/>
                             </div>
-                            <h3 className="text-lg font-bold text-[#f0f6fc] mt-4 mb-2">AI Copilot</h3>
+                            <h3 className="text-lg font-bold text-white mt-4 mb-2">AI Copilot</h3>
                             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                                 An integrated chat helper capable of creating, analyzing, and structuring your tasks in
                                 real time.
@@ -258,12 +258,12 @@ export function Home() {
 
                         {/* Feature 4 */}
                         <div
-                            className="bg-[#0d1117] border border-[#21262d] p-6 rounded-2xl hover:border-emerald-500/50 transition-all group">
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-6 rounded-2xl hover:border-emerald-500/50 transition-all group">
                             <div
                                 className="p-3 bg-emerald-500/10 rounded-xl w-fit text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                                 <Cpu className="h-6 w-6"/>
                             </div>
-                            <h3 className="text-lg font-bold text-[#f0f6fc] mt-4 mb-2">Cloud-Isolated DB</h3>
+                            <h3 className="text-lg font-bold text-white mt-4 mb-2">Cloud-Isolated DB</h3>
                             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
                                 Your credentials and lists are isolated inside Google Cloud Firestore, protected by
                                 granular security rules.
@@ -276,7 +276,7 @@ export function Home() {
 
             {/* Google Integration Details Section */}
             <section id="workspace"
-                     className="py-20 bg-[#0d1117]/50 border-t border-b border-slate-900 px-4 sm:px-6 lg:px-8">
+                     className="py-20 bg-[var(--graphite-900)]/50 border-t border-b border-slate-900 px-4 sm:px-6 lg:px-8">
                 <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-12 items-center">
                     <div className="space-y-6">
                         <div
@@ -284,7 +284,7 @@ export function Home() {
                             <Globe2 className="h-3.5 w-3.5"/>
                             <span>Full Google API Verification</span>
                         </div>
-                        <h2 className="text-3xl sm:text-4xl font-extrabold text-[#f0f6fc] tracking-tight">
+                        <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
                             Seamlessly sync with your Google Workspace
                         </h2>
                         <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
@@ -305,8 +305,8 @@ export function Home() {
                         </div>
                     </div>
 
-                    <div className="p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl space-y-6 shadow-xl relative">
-                        <h3 className="text-lg font-bold text-[#f0f6fc]">Authorized Google Scopes</h3>
+                    <div className="p-8 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl space-y-6 shadow-xl relative">
+                        <h3 className="text-lg font-bold text-white">Authorized Google Scopes</h3>
                         <div className="space-y-3 font-mono text-xs text-slate-400">
                             <div
                                 className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
@@ -338,7 +338,7 @@ export function Home() {
             {/* Indian Regulatory Compliance Section */}
             <section id="compliance" className="py-24 px-4 sm:px-6 lg:px-8">
                 <div
-                    className="max-w-4xl mx-auto bg-gradient-to-br from-[#0d1117] to-[#161b22] border border-[#21262d] rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden">
+                    className="max-w-4xl mx-auto bg-gradient-to-br from-[#0d1117] to-[#161b22] border border-[var(--panel-line)] rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden">
 
                     {/* Subtle Glow Flag colors mapping */}
                     <div
@@ -347,7 +347,7 @@ export function Home() {
                         className="absolute bottom-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none"/>
 
                     <div
-                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 border-b border-[#21262d] pb-8 mb-8">
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 border-b border-[var(--panel-line)] pb-8 mb-8">
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
                                 <span className="w-2.5 h-1.5 bg-[#FF9933] rounded-full"/>
@@ -356,7 +356,7 @@ export function Home() {
                                 <span
                                     className="text-xs font-mono font-semibold tracking-wider text-indigo-400 uppercase">National Standard</span>
                             </div>
-                            <h2 className="text-2xl sm:text-3xl font-bold text-[#f0f6fc]">
+                            <h2 className="text-2xl sm:text-3xl font-bold text-white">
                                 Indian Cyber Compliance & Safety
                             </h2>
                         </div>
@@ -396,14 +396,14 @@ export function Home() {
             </section>
 
             {/* Footer */}
-            <footer className="border-t border-slate-900 bg-[#0d1117] py-12 px-4 sm:px-6 lg:px-8">
+            <footer className="border-t border-slate-900 bg-[var(--graphite-900)] py-12 px-4 sm:px-6 lg:px-8">
                 <div
                     className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-slate-500">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                             <LayoutDashboard className="h-4 w-4 text-white"/>
                         </div>
-                        <span className="text-[#f0f6fc] font-bold">TaskPilot AI</span>
+                        <span className="text-white font-bold">TaskPilot AI</span>
                     </div>
 
                     <div className="flex gap-6">

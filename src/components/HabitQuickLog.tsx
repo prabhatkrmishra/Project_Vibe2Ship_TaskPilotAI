@@ -86,7 +86,7 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
                         type="button"
                         onClick={() => handleLog(h)}
                         disabled={logging === h.id}
-                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-[#0d1117] hover:bg-[#161b22] border border-[#21262d] hover:border-slate-700 transition-all group cursor-pointer disabled:opacity-50 text-left"
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-[var(--graphite-900)] hover:bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-slate-700 transition-all group cursor-pointer disabled:opacity-50 text-left"
                     >
                         <div
                             className="shrink-0 w-7 h-7 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
@@ -97,7 +97,7 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
                             )}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-[#f0f6fc] truncate">{h.title}</p>
+                            <p className="text-xs font-semibold text-white truncate">{h.title}</p>
                             {h.scheduledTime && (
                                 <p className="text-[10px] text-slate-500 font-mono">{h.scheduledTime}</p>
                             )}
@@ -117,9 +117,9 @@ export function HabitQuickLog({goals, onLogged}: HabitQuickLogProps) {
                 initial={{opacity: 0, y: 20, scale: 0.95}}
                 animate={{opacity: 1, y: 0, scale: 1}}
                 exit={{opacity: 0, y: 20, scale: 0.9}}
-                className="fixed bottom-[88px] right-6 z-40 w-64 bg-[#161b22] border border-[#21262d] rounded-2xl shadow-2xl overflow-hidden"
+                className="fixed bottom-[88px] right-6 z-40 w-64 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl shadow-2xl overflow-hidden"
             >
-                <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#21262d]">
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--panel-line)]">
                     <div className="flex items-center gap-2">
                         <Flame className="w-3.5 h-3.5 text-orange-400"/>
                         <span className="text-[11px] font-bold text-white uppercase tracking-wider">Daily Habits</span>

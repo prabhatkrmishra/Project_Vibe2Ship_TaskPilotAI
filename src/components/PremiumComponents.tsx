@@ -18,8 +18,8 @@ function daysRemaining(dateStr: string | null | undefined): number {
 
 export function PremiumSubscriptionCard() {
     const {user, refreshPremiumStatus} = useAuth();
-    const isPremium = user?.isPremium;
-    const expiry = user?.premiumExpiry;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
+    const expiry = user?.tierExpiry || user?.premiumExpiry;
     const plan = user?.subscriptionPlan;
     const remaining = daysRemaining(expiry);
     const [cancelling, setCancelling] = useState(false);
@@ -63,13 +63,13 @@ export function PremiumSubscriptionCard() {
                     <Crown className="w-6 h-6"/>
                 </div>
                 <div>
-                    <h3 className="text-xl font-bold text-[#f0f6fc]">Premium Subscription</h3>
+                    <h3 className="text-xl font-bold text-white">Premium Subscription</h3>
                     <p className="text-sm text-slate-400">Unlock unlimited AI-powered productivity features</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                         <Zap className="w-5 h-5 text-amber-400"/>
                         <span className="text-sm font-bold text-white">Current Status</span>
@@ -172,7 +172,7 @@ export function PremiumSubscriptionCard() {
 
             {/* Payment History */}
             {user?.subscriptionPlan && (
-                <div className="mt-4 pt-4 border-t border-[#21262d]">
+                <div className="mt-4 pt-4 border-t border-[var(--panel-line)]">
                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Subscription
                         Details</h4>
                     <div className="space-y-2 text-xs">
@@ -199,46 +199,46 @@ export function PremiumSubscriptionCard() {
 
 export function PremiumPaymentInfo() {
     const {user} = useAuth();
-    const isPremium = user?.isPremium;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
 
     return (
-        <div className="bg-[#161b22] border border-[#21262d] rounded-3xl p-6 md:p-8">
+        <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8">
             <div className="flex items-center gap-3 mb-4">
                 <BarChart3 className="w-5 h-5 text-cyan-400"/>
-                <h3 className="text-lg font-bold text-[#f0f6fc]">Plan Comparison</h3>
+                <h3 className="text-lg font-bold text-white">Plan Comparison</h3>
             </div>
 
             <div>
                 <table className="w-full text-sm">
                     <thead>
-                        <tr className="border-b border-[#21262d]">
+                        <tr className="border-b border-[var(--panel-line)]">
                             <th className="text-left py-3 text-xs text-slate-400 font-medium">Feature</th>
                             <th className="text-center py-3 text-xs text-slate-400 font-medium">Free</th>
                             <th className="text-center py-3 text-xs text-violet-400 font-medium">Premium</th>
                         </tr>
                     </thead>
                     <tbody className="text-xs">
-                        <tr className="border-b border-[#21262d]/50">
+                        <tr className="border-b border-[var(--panel-line)]/50">
                             <td className="py-3 text-slate-300">AI Scheduling Sessions</td>
                             <td className="py-3 text-center text-slate-500">3/day</td>
                             <td className="py-3 text-center text-violet-400 font-bold">Unlimited</td>
                         </tr>
-                        <tr className="border-b border-[#21262d]/50">
+                        <tr className="border-b border-[var(--panel-line)]/50">
                             <td className="py-3 text-slate-300">AI Chat Messages</td>
                             <td className="py-3 text-center text-slate-500">20/day</td>
                             <td className="py-3 text-center text-violet-400 font-bold">Unlimited</td>
                         </tr>
-                        <tr className="border-b border-[#21262d]/50">
+                        <tr className="border-b border-[var(--panel-line)]/50">
                             <td className="py-3 text-slate-300">Task Analysis & Subtasks</td>
                             <td className="py-3 text-center text-slate-500">5/day</td>
                             <td className="py-3 text-center text-violet-400 font-bold">Unlimited</td>
                         </tr>
-                        <tr className="border-b border-[#21262d]/50">
+                        <tr className="border-b border-[var(--panel-line)]/50">
                             <td className="py-3 text-slate-300">Autonomous Daily Planner</td>
                             <td className="py-3 text-center text-slate-500">1/day</td>
                             <td className="py-3 text-center text-violet-400 font-bold">Unlimited</td>
                         </tr>
-                        <tr className="border-b border-[#21262d]/50">
+                        <tr className="border-b border-[var(--panel-line)]/50">
                             <td className="py-3 text-slate-300">Focus Protocols</td>
                             <td className="py-3 text-center text-slate-500">2 modes</td>
                             <td className="py-3 text-center text-violet-400 font-bold">Included</td>
@@ -269,7 +269,7 @@ interface PremiumFeaturesCardProps {
 
 export function PremiumFeaturesCard({onUpgradeClick}: PremiumFeaturesCardProps) {
     const {user} = useAuth();
-    const isPremium = user?.isPremium;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
 
     if (isPremium) return null;
 
@@ -277,26 +277,26 @@ export function PremiumFeaturesCard({onUpgradeClick}: PremiumFeaturesCardProps) 
         <div className="bg-violet-500/10 border border-violet-500/20 rounded-3xl p-6 md:p-8 space-y-6">
             <div className="flex items-center gap-3 mb-6">
                 <Crown className="w-5 h-5 text-violet-400"/>
-                <h3 className="text-lg font-bold text-[#f0f6fc]">Why Upgrade?</h3>
+                <h3 className="text-lg font-bold text-white">Why Upgrade?</h3>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                     <h4 className="text-sm font-bold text-violet-300 mb-2">Unlimited Sessions</h4>
                     <p className="text-xs text-slate-400">No limits on AI-powered scheduling sessions per day.</p>
                 </div>
 
-                <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                     <h4 className="text-sm font-bold text-violet-300 mb-2">Advanced Analytics</h4>
                     <p className="text-xs text-slate-400">Detailed insights and productivity reports.</p>
                 </div>
 
-                <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                     <h4 className="text-sm font-bold text-violet-300 mb-2">All Focus Protocols</h4>
                     <p className="text-xs text-slate-400">Unlock 52/17, Ultradian, and Custom focus modes.</p>
                 </div>
 
-                <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                     <h4 className="text-sm font-bold text-violet-300 mb-2">Priority Support</h4>
                     <p className="text-xs text-slate-400">Get faster help from our productivity team.</p>
                 </div>

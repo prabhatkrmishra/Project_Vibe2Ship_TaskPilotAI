@@ -133,7 +133,7 @@ export function TaskSelectionModal({
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="sm:max-w-md bg-[#0d1117] border-[#21262d] text-white">
+            <DialogContent className="sm:max-w-md bg-[var(--graphite-900)] border-[var(--panel-line)] text-white">
                 <DialogHeader>
                     <DialogTitle className="text-white text-lg">
                         {title || (
@@ -159,7 +159,7 @@ export function TaskSelectionModal({
                         <>
                             <button
                                 onClick={() => setStep('select-quest')}
-                                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[#21262d] bg-[#161b22] hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-left group"
+                                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--panel-line)] bg-[var(--graphite-900)] hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-left group"
                             >
                                 <div
                                     className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
@@ -176,7 +176,7 @@ export function TaskSelectionModal({
 
                             <button
                                 onClick={() => setStep('select-tasks')}
-                                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[#21262d] bg-[#161b22] hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all text-left group"
+                                className="w-full flex items-center gap-4 p-4 rounded-xl border border-[var(--panel-line)] bg-[var(--graphite-900)] hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all text-left group"
                             >
                                 <div
                                     className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
@@ -214,7 +214,7 @@ export function TaskSelectionModal({
                                             key={quest.id}
                                             onClick={() => handleSelectQuest(quest.id)}
                                             disabled={stats.taskCount === 0}
-                                            className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#21262d] bg-[#161b22] hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed group"
+                                            className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--panel-line)] bg-[var(--graphite-900)] hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed group"
                                         >
                                             <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
                                                 <Swords className="w-4 h-4"/>
@@ -255,11 +255,11 @@ export function TaskSelectionModal({
                                 <>
                                     <button
                                         onClick={allQuestSelected ? () => setSelectedTaskIds(new Set()) : handleSelectAllQuestTasks}
-                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[#30363d] hover:border-indigo-500/40 text-xs text-slate-400 hover:text-indigo-300 transition-all mb-1"
+                                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-[var(--panel-line)] hover:border-indigo-500/40 text-xs text-slate-400 hover:text-indigo-300 transition-all mb-1"
                                     >
                                         <div
                                             className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                                                allQuestSelected ? 'border-indigo-500 bg-indigo-500' : 'border-[#30363d]'
+                                                allQuestSelected ? 'border-indigo-500 bg-indigo-500' : 'border-[var(--panel-line)]'
                                             }`}>
                                             {allQuestSelected && <CheckCircle2 className="w-2.5 h-2.5 text-white"/>}
                                         </div>
@@ -276,12 +276,12 @@ export function TaskSelectionModal({
                                                 className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
                                                     isSelected
                                                         ? 'border-indigo-500/50 bg-indigo-500/5'
-                                                        : 'border-[#21262d] bg-[#161b22] hover:border-[#30363d]'
+                                                        : 'border-[var(--panel-line)] bg-[var(--graphite-900)] hover:border-[var(--panel-line)]'
                                                 }`}
                                             >
                                                 <div
                                                     className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
-                                                        isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-[#30363d]'
+                                                        isSelected ? 'border-indigo-500 bg-indigo-500' : 'border-[var(--panel-line)]'
                                                     }`}>
                                                     {isSelected && <CheckCircle2 className="w-3 h-3 text-white"/>}
                                                 </div>
@@ -339,12 +339,12 @@ export function TaskSelectionModal({
                                             className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
                                                 isSelected
                                                     ? 'border-emerald-500/50 bg-emerald-500/5'
-                                                    : 'border-[#21262d] bg-[#161b22] hover:border-[#30363d]'
+                                                    : 'border-[var(--panel-line)] bg-[var(--graphite-900)] hover:border-[var(--panel-line)]'
                                             }`}
                                         >
                                             <div
                                                 className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
-                                                    isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-[#30363d]'
+                                                    isSelected ? 'border-emerald-500 bg-emerald-500' : 'border-[var(--panel-line)]'
                                                 }`}>
                                                 {isSelected && <CheckCircle2 className="w-3 h-3 text-white"/>}
                                             </div>

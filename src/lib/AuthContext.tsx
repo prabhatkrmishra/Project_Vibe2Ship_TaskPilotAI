@@ -8,8 +8,10 @@ export interface CustomUser {
     displayName?: string;
     picture?: string;
     address?: string;
-    gamification?: any; // Ideally import GamificationState but any for now
+    gamification?: any;
     isPremium?: boolean;
+    tier?: string;
+    tierExpiry?: string | null;
     premiumExpiry?: string | null;
     subscriptionPlan?: string | null;
     role?: string;
@@ -60,6 +62,8 @@ export const AuthProvider = ({children}: { children: React.ReactNode }) => {
             address: userData.address,
             gamification: userData.gamification,
             isPremium: userData.isPremium,
+            tier: userData.tier,
+            tierExpiry: userData.tierExpiry,
             premiumExpiry: userData.premiumExpiry,
             subscriptionPlan: userData.subscriptionPlan,
             role: userData.role,

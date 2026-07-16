@@ -25,7 +25,7 @@ export function GoogleWorkspaceAuthCard({
     if (status === 'checking') {
         return (
             <div
-                className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 flex items-center gap-3 text-slate-400">
+                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 flex items-center gap-3 text-slate-400">
                 <Loader2 className="h-5 w-5 animate-spin text-slate-500"/>
                 <span className="text-sm">Checking Google Workspace authorization…</span>
             </div>
@@ -35,7 +35,7 @@ export function GoogleWorkspaceAuthCard({
     if (status === 'connected') {
         return (
             <div
-                className="bg-[#0d1117] border border-emerald-500/30 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                className="bg-[var(--graphite-900)] border border-emerald-500/30 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <div
                         className="w-11 h-11 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 flex items-center justify-center text-emerald-300 shrink-0">
@@ -43,7 +43,7 @@ export function GoogleWorkspaceAuthCard({
                     </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-[#f0f6fc]">Google Workspace Connected</h3>
+                            <h3 className="text-sm font-bold text-white">Google Workspace Connected</h3>
                             <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0"/>
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5 truncate">
@@ -59,7 +59,7 @@ export function GoogleWorkspaceAuthCard({
                 <Button
                     onClick={onDisconnect}
                     variant="ghost"
-                    className="shrink-0 text-slate-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl border border-[#21262d] hover:border-red-500/30 h-10 px-4 font-semibold"
+                    className="shrink-0 text-slate-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl border border-[var(--panel-line)] hover:border-red-500/30 h-10 px-4 font-semibold"
                 >
                     <LogOut className="mr-2 w-4 h-4"/> Disconnect
                 </Button>
@@ -69,14 +69,14 @@ export function GoogleWorkspaceAuthCard({
 
     return (
         <div
-            className="bg-[#0d1117] border border-amber-500/30 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            className="bg-[var(--graphite-900)] border border-amber-500/30 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
                 <div
                     className="w-11 h-11 rounded-2xl border border-amber-400/40 bg-amber-500/15 flex items-center justify-center text-amber-300 shrink-0">
                     <ShieldAlert className="h-5 w-5"/>
                 </div>
                 <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-[#f0f6fc]">Google Account Not Authorized</h3>
+                    <h3 className="text-sm font-bold text-white">Google Account Not Authorized</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
                         Signing in to TaskPilot doesn't grant Workspace access. Connect a Google account to unlock
                         Calendar, Drive, Docs, Sheets, Slides &amp; Tasks actions below.

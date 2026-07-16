@@ -4,9 +4,9 @@ import {ArrowLeft, Scale, FileText, CheckCircle2, AlertOctagon} from 'lucide-rea
 export function TermsOfService() {
     return (
         <div
-            className="min-h-screen bg-[#030712] text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-indigo-500 selection:text-white">
+            className="min-h-screen bg-[var(--graphite-950)] text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-indigo-500 selection:text-white">
             <div
-                className="max-w-4xl mx-auto bg-[#0d1117] border border-[#21262d] rounded-3xl p-8 sm:p-12 shadow-2xl relative overflow-hidden">
+                className="max-w-4xl mx-auto bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-8 sm:p-12 shadow-2xl relative overflow-hidden">
                 {/* Ambient background glow */}
                 <div
                     className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"/>
@@ -14,7 +14,7 @@ export function TermsOfService() {
                     className="absolute bottom-0 left-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none"/>
 
                 <div
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#21262d] pb-8 mb-8 relative z-10">
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--panel-line)] pb-8 mb-8 relative z-10">
                     <div>
                         <Link to="/"
                               className="inline-flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors mb-4 group">
@@ -22,7 +22,7 @@ export function TermsOfService() {
                                 className="h-4 w-4 transform group-hover:-translate-x-1 transition-transform"/> Back to
                             Homepage
                         </Link>
-                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#f0f6fc]">
+                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
                             Terms of Service
                         </h1>
                         <p className="text-slate-400 mt-2 text-sm">
@@ -40,7 +40,7 @@ export function TermsOfService() {
                 <div className="space-y-8 text-slate-300 leading-relaxed relative z-10">
                     {/* Section 1 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">1.</span> Acceptance of Terms
                         </h2>
                         <p>
@@ -53,7 +53,7 @@ export function TermsOfService() {
 
                     {/* Section 2 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">2.</span> Description of Service
                         </h2>
                         <p>
@@ -66,7 +66,7 @@ export function TermsOfService() {
 
                     {/* Section 3 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">3.</span> Use License & Eligibility
                         </h2>
                         <p>
@@ -86,10 +86,10 @@ export function TermsOfService() {
 
                     {/* Section 4 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">4.</span> Google Integration and India Data Privacy Policies
                         </h2>
-                        <div className="bg-[#161b22] border border-[#21262d] p-5 rounded-2xl space-y-3">
+                        <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] p-5 rounded-2xl space-y-3">
                             <p className="text-sm text-slate-300">
                                 Our integrations with Google Workspace APIs require active authentication tokens. By
                                 connecting your Google account, you grant TaskPilot AI the permission to perform tasks
@@ -116,7 +116,7 @@ export function TermsOfService() {
 
                     {/* Section 5 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">5.</span> Disclaimer of Warranties
                         </h2>
                         <div className="flex gap-4 bg-amber-500/5 border border-amber-500/10 p-5 rounded-2xl">
@@ -136,7 +136,7 @@ export function TermsOfService() {
 
                     {/* Section 6 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">6.</span> Limitation of Liability
                         </h2>
                         <p>
@@ -149,7 +149,7 @@ export function TermsOfService() {
 
                     {/* Section 7 */}
                     <section className="space-y-3">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] flex items-center gap-2">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <span className="text-cyan-400">7.</span> Governing Law and Jurisdiction
                         </h2>
                         <p>
@@ -163,7 +163,7 @@ export function TermsOfService() {
                 </div>
 
                 <div
-                    className="border-t border-[#21262d] mt-12 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    className="border-t border-[var(--panel-line)] mt-12 pt-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <p>© 2026 TaskPilot AI. All rights reserved.</p>
                     <div className="flex gap-4">
                         <Link to="/privacy" className="hover:text-cyan-400 transition-colors">Privacy Policy</Link>

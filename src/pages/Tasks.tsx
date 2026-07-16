@@ -129,7 +129,8 @@ export function Tasks() {
         }
     }, [time, selectedSessionIdx, timetableSessions]);
 
-    const handleSessionChange = (val: string) => {
+    const handleSessionChange = (val: string | null) => {
+        if (!val) return;
         setSelectedSessionIdx(val);
         if (val !== 'custom') {
             const idx = Number(val);
@@ -285,6 +286,8 @@ export function Tasks() {
                 category: 'general',
                 estimatedHours: analysis.estimatedHours || 1,
                 riskScore: analysis.riskScore || 0,
+                riskReason: analysis.riskReason || '',
+                confidenceScore: analysis.confidenceScore || 0,
                 subtasks,
                 goalId: selectedGoalId !== 'none' ? selectedGoalId : null,
                 createdAt: new Date().toISOString()
@@ -367,7 +370,7 @@ export function Tasks() {
                   className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-widest rounded-full">
                 Goal Accomplished
               </span>
-                            <h4 className="font-black text-[#f0f6fc] text-sm uppercase tracking-wide mt-0.5">Mission
+                            <h4 className="font-black text-white text-sm uppercase tracking-wide mt-0.5">Mission
                                 Complete</h4>
                         </div>
                     </div>
@@ -814,7 +817,7 @@ export function Tasks() {
                             className="bg-white text-indigo-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-indigo-50 transition-colors shadow-lg px-4 py-2 inline-flex items-center justify-center card-lift">
                             <Plus className="mr-2 h-4 w-4"/> New Task
                         </DialogTrigger>
-                        <DialogContent className="bg-[#0d1117] border border-[#21262d] text-[#f0f6fc]">
+                        <DialogContent className="bg-[var(--graphite-900)] border border-[var(--panel-line)] text-white">
                             <DialogHeader>
                                 <DialogTitle className="text-white">Create Task</DialogTitle>
                             </DialogHeader>
@@ -868,7 +871,7 @@ export function Tasks() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-slate-400">Connect to Goal or Habit (Optional)</Label>
-                                    <Select value={selectedGoalId} onValueChange={setSelectedGoalId}>
+                                    <Select value={selectedGoalId} onValueChange={(v) => setSelectedGoalId(v ?? 'none')}>
                                         <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white w-full">
                                             <SelectValue placeholder="No connection">
                                                 {(value: string) => {
@@ -879,7 +882,7 @@ export function Tasks() {
                                             </SelectValue>
                                         </SelectTrigger>
                                         <SelectContent
-                                            className="bg-[#0d1117] border border-[#21262d] text-[#f0f6fc] max-h-[200px]">
+                                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] text-white max-h-[200px]">
                                             <SelectItem value="none"
                                                         className="focus:bg-slate-800 focus:text-white cursor-pointer">No
                                                 connection</SelectItem>
@@ -916,7 +919,7 @@ export function Tasks() {
                                                 daily timetable...</div>
                                         ) : timetableSessions.length === 0 ? (
                                             <div
-                                                className="text-[11px] text-slate-500 italic bg-slate-900/40 p-2.5 rounded-xl border border-[#21262d]">
+                                                className="text-[11px] text-slate-500 italic bg-slate-900/40 p-2.5 rounded-xl border border-[var(--panel-line)]">
                                                 No active timetable found for this date. Task will be scheduled freely.
                                             </div>
                                         ) : (
@@ -927,7 +930,7 @@ export function Tasks() {
                                                         <SelectValue placeholder="How to reference daily timetable?"/>
                                                     </SelectTrigger>
                                                     <SelectContent
-                                                        className="bg-[#0d1117] border border-[#21262d] text-[#f0f6fc] max-h-[220px]">
+                                                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] text-white max-h-[220px]">
                                                         <SelectItem value="custom"
                                                                     className="focus:bg-slate-800 focus:text-white cursor-pointer font-bold">
                                                             Custom Time (Check Conflicts)
@@ -958,7 +961,7 @@ export function Tasks() {
                                 {date && selectedSessionIdx === 'custom' && (
                                     <div className="space-y-2 flex flex-col">
                                         <Label className="text-slate-400">Custom Time</Label>
-                                        <Select value={time} onValueChange={setTime}>
+                                        <Select value={time} onValueChange={(v) => setTime(v ?? '')}>
                                             <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                                                 <SelectValue placeholder="Select time"/>
                                             </SelectTrigger>
@@ -1000,28 +1003,28 @@ export function Tasks() {
             {/* Filters */}
             <div className="flex flex-wrap gap-2 px-2">
                 <button onClick={() => setFilter('all')}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'all' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>Active
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'all' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-[var(--graphite-900)] text-slate-400 border-[var(--panel-line)] hover:bg-slate-800'}`}>Active
                 </button>
                 <button onClick={() => setFilter('high_risk')}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'high_risk' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>High
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'high_risk' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-[var(--graphite-900)] text-slate-400 border-[var(--panel-line)] hover:bg-slate-800'}`}>High
                     Risk
                 </button>
                 <button onClick={() => setFilter('due_today')}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'due_today' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>Due
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'due_today' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' : 'bg-[var(--graphite-900)] text-slate-400 border-[var(--panel-line)] hover:bg-slate-800'}`}>Due
                     Today
                 </button>
                 <button onClick={() => setFilter('completed')}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>Completed
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-[var(--graphite-900)] text-slate-400 border-[var(--panel-line)] hover:bg-slate-800'}`}>Completed
                 </button>
             </div>
 
             {loading ? (
-                <div className="text-center text-[#8b949e] py-12">Loading tasks...</div>
+                <div className="text-center text-slate-400 py-12">Loading tasks...</div>
             ) : filteredTasks.length === 0 ? (
-                <div className="text-center py-24 bg-[#0d1117] rounded-3xl border border-dashed border-[#21262d]">
+                <div className="text-center py-24 bg-[var(--graphite-900)] rounded-3xl border border-dashed border-[var(--panel-line)]">
                     <Rocket className="mx-auto h-12 w-12 text-indigo-400/50 mb-4"/>
-                    <h3 className="text-lg font-medium text-[#f0f6fc]">Your runway is clear</h3>
-                    <p className="text-[#8b949e]">Add a task and let AI build your execution plan.</p>
+                    <h3 className="text-lg font-medium text-white">Your runway is clear</h3>
+                    <p className="text-slate-400">Add a task and let AI build your execution plan.</p>
                 </div>
             ) : (
                 <motion.div layout className="grid grid-cols-12 gap-4 items-start">
@@ -1033,7 +1036,7 @@ export function Tasks() {
                                     : `${Math.floor(hoursLeft / 24)}d left`;
                             const countdownColor = hoursLeft < 0 ? 'text-red-400'
                                 : hoursLeft < 24 ? 'text-orange-400'
-                                    : 'text-[#8b949e]';
+                                    : 'text-slate-400';
 
                             const done = task.subtasks?.filter(s => s.completed).length || 0;
                             const total = task.subtasks?.length || 0;
@@ -1046,7 +1049,7 @@ export function Tasks() {
                                     initial={{opacity: 0, y: 10}}
                                     animate={{opacity: 1, y: 0}}
                                     exit={{opacity: 0, scale: 0.95}}
-                                    className={`col-span-12 md:col-span-6 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 flex flex-col group transition-all duration-300 hover:border-[#30363d] hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 ${task.status === 'completed' ? 'opacity-50 grayscale' : ''}`}
+                                    className={`col-span-12 md:col-span-6 lg:col-span-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 flex flex-col group transition-all duration-300 hover:border-[var(--panel-line)] hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 ${task.status === 'completed' ? 'opacity-50 grayscale' : ''}`}
                                 >
                                     <div className="flex items-start justify-between mb-4">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -1059,7 +1062,7 @@ export function Tasks() {
                                                         className="w-5 h-5 text-emerald-500 hover:text-emerald-400 transition-colors"/>
                                                 ) : (
                                                     <Circle
-                                                        className="w-5 h-5 text-[#8b949e] hover:text-indigo-400 transition-colors"/>
+                                                        className="w-5 h-5 text-slate-400 hover:text-indigo-400 transition-colors"/>
                                                 )}
                                             </button>
                                             <div className="flex-1 min-w-0 group/task-title">
@@ -1078,15 +1081,15 @@ export function Tasks() {
                                                             }
                                                         }}
                                                         onBlur={() => handleSaveTaskTitle(task.id)}
-                                                        className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-[#f0f6fc] mb-1"
+                                                        className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-white mb-1"
                                                     />
                                                 ) : (
                                                     <div className="flex items-center gap-2">
-                                                        <h3 className={`text-lg font-medium text-[#f0f6fc] leading-tight ${task.status === 'completed' ? 'line-through text-[#8b949e]' : ''}`}>{task.title}</h3>
+                                                        <h3 className={`text-lg font-medium text-white leading-tight ${task.status === 'completed' ? 'line-through text-slate-400' : ''}`}>{task.title}</h3>
                                                         {task.status !== 'completed' && (
                                                             <button
                                                                 onClick={(e) => handleStartEditTask(task.id, task.title, e)}
-                                                                className="opacity-100 sm:opacity-0 sm:group-hover/task-title:opacity-100 transition-opacity text-[#8b949e] hover:text-indigo-400 p-1 rounded shrink-0"
+                                                                className="opacity-100 sm:opacity-0 sm:group-hover/task-title:opacity-100 transition-opacity text-slate-400 hover:text-indigo-400 p-1 rounded shrink-0"
                                                                 title="Edit Task Title"
                                                             >
                                                                 <Pencil className="w-3.5 h-3.5"/>
@@ -1095,11 +1098,11 @@ export function Tasks() {
                                                     </div>
                                                 )}
                                                 <p className={`text-[10px] font-mono font-bold ${countdownColor} mb-2 uppercase tracking-wider`}>{countdownText}</p>
-                                                <p className="text-xs text-[#8b949e] line-clamp-2">{task.description}</p>
+                                                <p className="text-xs text-slate-400 line-clamp-2">{task.description}</p>
                                             </div>
                                         </div>
                                         <Button variant="ghost" size="icon"
-                                                className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                                className="h-6 w-6 text-slate-400 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                                                 onClick={() => deleteTask(task)}>
                                             <Trash2 className="w-3 h-3"/>
                                         </Button>
@@ -1116,8 +1119,14 @@ export function Tasks() {
                   </span>
                                         {task.riskScore !== undefined && (
                                             <span
+                                                title={(task as any).riskReason || undefined}
                                                 className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider flex items-center border ${task.riskScore > 70 ? 'bg-red-500/15 text-red-400 border-red-500/25' : task.riskScore > 30 ? 'bg-orange-500/15 text-orange-400 border-orange-500/25' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'}`}>
                       Risk: {task.riskScore}%
+                    </span>
+                                        )}
+                                        {(task as any).confidenceScore > 0 && (
+                                            <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider bg-slate-500/10 text-slate-400 border border-slate-500/20 font-mono">
+                      Confidence: {(task as any).confidenceScore}%
                     </span>
                                         )}
                                         {(() => {
@@ -1142,7 +1151,7 @@ export function Tasks() {
                                     <div className="space-y-3 mt-auto">
                                         <button
                                             onClick={() => toggleExpand(task.id)}
-                                            className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-[#8b949e] hover:text-[#f0f6fc] transition-colors py-1 cursor-pointer focus:outline-none"
+                                            className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest font-bold text-slate-400 hover:text-white transition-colors py-1 cursor-pointer focus:outline-none"
                                         >
                     <span className="flex items-center gap-1">
                       Subtasks <span className="text-indigo-400 font-mono">({done}/{total})</span>
@@ -1152,7 +1161,7 @@ export function Tasks() {
                       ▼
                     </span>
                                         </button>
-                                        <div className="h-1 bg-[#161b22] rounded-full overflow-hidden">
+                                        <div className="h-1 bg-[var(--graphite-900)] rounded-full overflow-hidden">
                                             <div className="h-full bg-indigo-500 transition-all duration-500"
                                                  style={{width: `${progress}%`}}></div>
                                         </div>
@@ -1171,7 +1180,7 @@ export function Tasks() {
                                                         return (
                                                             <div
                                                                 key={sub.id}
-                                                                className="flex items-start justify-between gap-3 group/sub p-2 bg-[#161b22]/50 rounded-xl border border-transparent hover:border-[#21262d] hover:bg-[#161b22] transition-colors cursor-pointer"
+                                                                className="flex items-start justify-between gap-3 group/sub p-2 bg-[var(--graphite-900)]/50 rounded-xl border border-transparent hover:border-[var(--panel-line)] hover:bg-[var(--graphite-900)] transition-colors cursor-pointer"
                                                                 onClick={() => {
                                                                     if (!isEditing) {
                                                                         toggleSubtask(task.id, sub.id, tasks);
@@ -1184,7 +1193,7 @@ export function Tasks() {
                                                                             className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5"/>
                                                                     ) : (
                                                                         <Circle
-                                                                            className="w-4 h-4 text-[#8b949e] group-hover/sub:text-indigo-400 flex-shrink-0 mt-0.5"/>
+                                                                            className="w-4 h-4 text-slate-400 group-hover/sub:text-indigo-400 flex-shrink-0 mt-0.5"/>
                                                                     )}
 
                                                                     {isEditing ? (
@@ -1202,11 +1211,11 @@ export function Tasks() {
                                                                                 }
                                                                             }}
                                                                             onBlur={() => handleSaveSubtaskTitle(task.id, sub.id)}
-                                                                            className="flex-1 bg-[#0d1117] border border-slate-700 rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-200"
+                                                                            className="flex-1 bg-[var(--graphite-900)] border border-slate-700 rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-slate-200"
                                                                         />
                                                                     ) : (
                                                                         <span
-                                                                            className={`text-xs font-medium leading-relaxed break-words line-clamp-2 ${sub.completed ? 'text-[#8b949e] line-through' : 'text-[#f0f6fc]'}`}>
+                                                                            className={`text-xs font-medium leading-relaxed break-words line-clamp-2 ${sub.completed ? 'text-slate-400 line-through' : 'text-white'}`}>
                                     {sub.title}
                                   </span>
                                                                     )}
@@ -1217,14 +1226,14 @@ export function Tasks() {
                                                                         className="flex items-center gap-1.5 shrink-0 mt-0.5 opacity-100 sm:opacity-0 sm:group-hover/sub:opacity-100 transition-opacity">
                                                                         <button
                                                                             onClick={(e) => handleStartEditSubtask(task.id, sub.id, sub.title, e)}
-                                                                            className="text-[#8b949e] hover:text-indigo-400 p-1 rounded transition-colors cursor-pointer"
+                                                                            className="text-slate-400 hover:text-indigo-400 p-1 rounded transition-colors cursor-pointer"
                                                                             title="Edit Subtask"
                                                                         >
                                                                             <Pencil className="w-3.5 h-3.5"/>
                                                                         </button>
                                                                         <button
                                                                             onClick={(e) => handleDeleteSubtask(task.id, sub.id, e)}
-                                                                            className="text-[#8b949e] hover:text-rose-400 p-1 rounded transition-colors cursor-pointer"
+                                                                            className="text-slate-400 hover:text-rose-400 p-1 rounded transition-colors cursor-pointer"
                                                                             title="Delete Subtask"
                                                                         >
                                                                             <Trash2 className="w-3.5 h-3.5"/>
@@ -1235,15 +1244,15 @@ export function Tasks() {
                                                         );
                                                     })}
                                                     {(!task.subtasks || task.subtasks.length === 0) && (
-                                                        <p className="text-xs text-[#8b949e] italic p-1">No subtasks
+                                                        <p className="text-xs text-slate-400 italic p-1">No subtasks
                                                             generated yet.</p>
                                                     )}
 
                                                     {task.resources && task.resources.length > 0 && (
                                                         <div
-                                                            className="mt-4 pt-4 border-t border-[#21262d]/50 space-y-2">
+                                                            className="mt-4 pt-4 border-t border-[var(--panel-line)]/50 space-y-2">
                                                             <label
-                                                                className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider block">
+                                                                className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                                                 AI Research Resources
                                                             </label>
                                                             <div className="space-y-1">
@@ -1253,7 +1262,7 @@ export function Tasks() {
                                                                         href={link}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors p-2 bg-[#161b22]/50 hover:bg-[#161b22] rounded-lg border border-transparent hover:border-[#21262d] line-clamp-1 overflow-hidden text-ellipsis"
+                                                                        className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors p-2 bg-[var(--graphite-900)]/50 hover:bg-[var(--graphite-900)] rounded-lg border border-transparent hover:border-[var(--panel-line)] line-clamp-1 overflow-hidden text-ellipsis"
                                                                     >
                                                                         🔗 {link}
                                                                     </a>
@@ -1262,11 +1271,11 @@ export function Tasks() {
                                                         </div>
                                                     )}
 
-                                                    <div className="mt-4 pt-4 border-t border-[#21262d]/50 space-y-4">
+                                                    <div className="mt-4 pt-4 border-t border-[var(--panel-line)]/50 space-y-4">
                                                         {/* AI Generator Block */}
                                                         <div className="space-y-1.5">
                                                             <label
-                                                                className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider block">
+                                                                className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                                                 AI Automation
                                                             </label>
                                                             <Button
@@ -1287,7 +1296,7 @@ export function Tasks() {
                                                         {/* Manual Subtask Entry Block */}
                                                         <div className="space-y-1.5 pb-2">
                                                             <label
-                                                                className="text-[10px] font-bold text-[#8b949e] uppercase tracking-wider block">
+                                                                className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                                                                 Manual Creation
                                                             </label>
                                                             <div className="flex flex-col sm:flex-row gap-2">
@@ -1311,7 +1320,7 @@ export function Tasks() {
                                                                             }
                                                                         }
                                                                     }}
-                                                                    className="flex-1 min-w-0 bg-[#161b22] border border-[#21262d] rounded-xl text-xs h-10 px-3 text-[#f0f6fc] placeholder:text-slate-600 outline-none transition-colors focus:bg-[#1f242c] focus:border-indigo-500/60 focus:shadow-[inset_0_0_0_1px_rgba(99,102,241,0.6),0_0_0_3px_rgba(99,102,241,0.15)]"
+                                                                    className="flex-1 min-w-0 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl text-xs h-10 px-3 text-white placeholder:text-slate-600 outline-none transition-colors focus:bg-[var(--graphite-900)] focus:border-indigo-500/60 focus:shadow-[inset_0_0_0_1px_rgba(99,102,241,0.6),0_0_0_3px_rgba(99,102,241,0.15)]"
                                                                 />
                                                                 <Button
                                                                     type="button"
@@ -1326,7 +1335,7 @@ export function Tasks() {
                                                                             }));
                                                                         }
                                                                     }}
-                                                                    className="h-10 bg-indigo-500/10 hover:bg-indigo-600 border border-indigo-500/30 hover:border-indigo-500 text-indigo-300 hover:text-white text-xs font-bold px-4 rounded-xl shrink-0 cursor-pointer flex items-center justify-center gap-1.5 transition-colors hover:shadow-[0_0_16px_rgba(99,102,241,0.35)]"
+                                                                    className="h-10 bg-[var(--violet)]/10 hover:bg-[var(--violet)] border border-[var(--violet)]/30 hover:border-[var(--violet)] text-[var(--violet)] hover:text-white text-xs font-bold px-4 rounded-xl shrink-0 cursor-pointer flex items-center justify-center gap-1.5 transition-colors hover:shadow-[0_0_16px_rgba(251,191,36,0.35)]"
                                                                 >
                                                                     <Plus className="w-3.5 h-3.5"/>
                                                                     Add

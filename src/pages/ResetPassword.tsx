@@ -35,11 +35,11 @@ export default function ResetPassword() {
         return (
             <div className="login-bg flex min-h-screen items-center justify-center text-slate-200 py-10 px-4">
                 <div
-                    className="w-full max-w-md p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl shadow-2xl space-y-6 text-center">
+                    className="w-full max-w-md p-8 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl shadow-2xl space-y-6 text-center">
                     <div className="mx-auto w-14 h-14 bg-rose-600/20 rounded-2xl flex items-center justify-center">
                         <XCircle className="h-7 w-7 text-rose-400"/>
                     </div>
-                    <h1 className="text-2xl font-semibold text-[#f0f6fc]">Invalid or expired link</h1>
+                    <h1 className="text-2xl font-semibold text-white">Invalid or expired link</h1>
                     <p className="text-slate-400 text-sm">
                         This password reset link is invalid or has expired. Please request a new one.
                     </p>
@@ -96,13 +96,13 @@ export default function ResetPassword() {
 
     return (
         <div className="login-bg flex min-h-screen items-center justify-center text-slate-200 py-10 px-4">
-            <div className="w-full max-w-md p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl shadow-2xl space-y-6">
+            <div className="w-full max-w-md p-8 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl shadow-2xl space-y-6">
                 <div className="text-center space-y-2">
                     <div
                         className="mx-auto w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.3)]">
                         <LayoutDashboard className="h-7 w-7 text-white"/>
                     </div>
-                    <h1 className="text-2xl font-semibold text-[#f0f6fc] tracking-tight">
+                    <h1 className="text-2xl font-semibold text-white tracking-tight">
                         {result === 'success' ? "Password reset!" : "Set new password"}
                     </h1>
                     <p className="text-slate-400 text-xs">
@@ -143,7 +143,7 @@ export default function ResetPassword() {
                                     }}
                                     placeholder="••••••••"
                                     required
-                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
                                 />
                                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
                             </div>
@@ -163,7 +163,7 @@ export default function ResetPassword() {
                                     }}
                                     placeholder="••••••••"
                                     required
-                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
                                 />
                                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
                             </div>

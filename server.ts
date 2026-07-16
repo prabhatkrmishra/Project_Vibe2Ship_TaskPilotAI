@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+import helmet from "helmet";
+import cors from "cors";
 import path from "path";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
@@ -24,7 +26,15 @@ import {
     DailyPlanModel as DailyPlanModelSrc,
     FocusSession as FocusSessionSrc,
     AIUsage as AIUsageSrc,
-    PricingConfig as PricingConfigSrc
+    PricingConfig as PricingConfigSrc,
+    AIAction as AIActionSrc,
+    DopamineMenuItem as DopamineMenuItemSrc,
+    BurnoutSignal as BurnoutSignalSrc,
+    EnergyLog as EnergyLogSrc,
+    KnowledgeEntity as KnowledgeEntitySrc,
+    KnowledgeEdge as KnowledgeEdgeSrc,
+    IntegrationConnection as IntegrationConnectionSrc,
+    PersonalAccessToken as PersonalAccessTokenSrc
 } from "./src/db/mongodb.js";
 
 const User = UserSrc as any;
@@ -36,6 +46,14 @@ const DailyPlanModel = DailyPlanModelSrc as any;
 const FocusSessionModel = FocusSessionSrc as any;
 const AIUsage = AIUsageSrc as any;
 const PricingConfig = PricingConfigSrc as any;
+const AIAction = AIActionSrc as any;
+const DopamineMenuItemModel = DopamineMenuItemSrc as any;
+const BurnoutSignal = BurnoutSignalSrc as any;
+const EnergyLog = EnergyLogSrc as any;
+const KnowledgeEntity = KnowledgeEntitySrc as any;
+const KnowledgeEdge = KnowledgeEdgeSrc as any;
+const IntegrationConnection = IntegrationConnectionSrc as any;
+const PersonalAccessTokenModel = PersonalAccessTokenSrc as any;
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) {
     throw new Error(
@@ -536,7 +554,83 @@ async function startServer() {
     app.set('trust proxy', 1);
     const PORT = 3000;
 
-    app.use(express.json());
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    // In prod we still want helmet's other protections, but its *default* CSP
+    // (script-src 'self') blocks every third-party script this app legitimately
+    // loads at runtime: Google Identity Services (accounts.google.com/gsi/client),
+    // the legacy gapi loader (apis.google.com/js/api.js), and the Razorpay
+    // checkout widget (checkout.razorpay.com/v1/checkout.js) — plus the popup/
+    // iframe those two open. Passing `undefined` here (previous behavior) silently
+    // fell back to that default and broke Google login + payments in production
+    // only, since dev disables CSP entirely and never caught it.
+    /*app.use(helmet(isProd ? {
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: [
+                    "'self'",
+                    "https://accounts.google.com",
+                    "https://apis.google.com",
+                    "https://checkout.razorpay.com",
+                ],
+                scriptSrcElem: [
+                    "'self'",
+                    "https://accounts.google.com",
+                    "https://apis.google.com",
+                    "https://checkout.razorpay.com",
+                ],
+                connectSrc: [
+                    "'self'",
+                    "https://accounts.google.com",
+                    "https://www.googleapis.com",
+                    "https://oauth2.googleapis.com",
+                    "https://api.razorpay.com",
+                    "https://lumberjack.razorpay.com",
+                ],
+                frameSrc: [
+                    "'self'",
+                    "https://accounts.google.com",
+                    "https://content.googleapis.com",
+                    "https://api.razorpay.com",
+                    "https://checkout.razorpay.com",
+                ],
+                imgSrc: ["'self'", "data:", "https:"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                fontSrc: ["'self'", "data:", "https:"],
+            },
+        },
+        crossOriginEmbedderPolicy: false,
+        crossOriginResourcePolicy: {policy: "cross-origin"},
+        crossOriginOpenerPolicy: {policy: "same-origin-allow-popups"}, // needed for the Google OAuth popup flow to postMessage back to window.opener
+    } : {
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false,
+        crossOriginResourcePolicy: false,
+        crossOriginOpenerPolicy: false,
+        frameguard: false,
+    }));*/
+    app.use(
+        helmet({
+            contentSecurityPolicy: false,
+            xDownloadOptions: false,
+        }),
+    );
+    app.use(cors({
+        origin: function (origin, callback) {
+            const allowed = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '').split(',').filter(Boolean);
+            if (allowed.length === 0 || !origin || allowed.includes(origin) || allowed.includes('*')) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
+        credentials: true,
+    }));
+    app.use(express.json({
+        limit: '1mb', verify: (req: any, _res, buf) => {
+            req.rawBody = buf;
+        }
+    }));
 
     // --- Rate Limiters ────────────────────────────────────────────────────────────
     // S2: Rate limit auth endpoints to prevent brute-force / credential-stuffing.
@@ -592,36 +686,245 @@ async function startServer() {
     // Max input sizes for AI endpoints (characters)
     const MAX_INPUT = {chat: 20000, journal: 10000, plan: 15000, quest: 5000, analyze: 5000} as const;
 
-    // --- Free-Tier Daily AI Usage Limits ---
-    const FREE_TIER_LIMITS: Record<string, number> = {
-        '/api/chat': 20,
-        '/api/autonomous-pipeline': 1,
-        '/api/generate-plan': 3,
-        '/api/generate-quest-steps': 5,
-        '/api/analyze-task': 5,
-        '/api/generate-subtasks': 5,
-        '/api/audio-journal': 2,
-        '/api/docs/generate-report': 1,
-        '/api/presentations/generate': 1,
+    // --- Tier-Aware AI Usage Limits ---
+    const TIER_LIMITS: Record<'free' | 'pro' | 'pro_plus', Record<string, number>> = {
+        free: {
+            '/api/chat': 20,
+            '/api/autonomous-pipeline': 1,
+            '/api/generate-plan': 3,
+            '/api/generate-quest-steps': 5,
+            '/api/analyze-task': 5,
+            '/api/generate-subtasks': 5,
+            '/api/audio-journal': 2,
+            '/api/docs/generate-report': 1,
+            '/api/presentations/generate': 1,
+            '/api/tasks/micro-steps': 20,
+        },
+        pro: {
+            '/api/chat': 200,
+            '/api/generate-plan': 50,
+            '/api/generate-quest-steps': 50,
+            '/api/analyze-task': 50,
+            '/api/generate-subtasks': 50,
+            '/api/audio-journal': 20,
+            '/api/docs/generate-report': 10,
+            '/api/presentations/generate': 10,
+            '/api/tasks/micro-steps': 100,
+        },
+        pro_plus: {},
     };
+
+    const FEATURE_TIER_REQUIREMENT: Record<string, 'pro' | 'pro_plus'> = {
+        '/api/autonomous-pipeline': 'pro_plus',
+    };
+
+    const DAILY_FAIR_USE_CAP = 500;
+
+    function resolveTier(user: any): 'free' | 'pro' | 'pro_plus' {
+        const now = new Date();
+        if (user.tierExpiry && user.tierExpiry < now) return 'free';
+        return (user.tier || 'free') as 'free' | 'pro' | 'pro_plus';
+    }
+
+    function tierFromPlan(plan: string): 'pro' | 'pro_plus' {
+        return plan.includes('pro_plus') ? 'pro_plus' : 'pro';
+    }
+
+    // Phase 3.1 — Compute velocity profile: actual-to-estimated ratio per category
+    async function getUserVelocityProfile(userId: string): Promise<Map<string, number>> {
+        const completedTasks = await Task.find({
+            userId,
+            status: 'completed',
+            estimatedHours: {$gt: 0},
+            completedAt: {$ne: null}
+        }).select('category estimatedHours createdAt completedAt');
+
+        const categoryData: Record<string, { totalActual: number; totalEstimated: number; count: number }> = {};
+        for (const t of completedTasks) {
+            const cat = t.category || 'Uncategorized';
+            if (!categoryData[cat]) categoryData[cat] = {totalActual: 0, totalEstimated: 0, count: 0};
+            const actualMs = new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime();
+            const actualHours = actualMs / (1000 * 60 * 60);
+            if (actualHours > 0) {
+                categoryData[cat].totalActual += actualHours;
+                categoryData[cat].totalEstimated += t.estimatedHours;
+                categoryData[cat].count++;
+            }
+        }
+
+        const profile = new Map<string, number>();
+        for (const [cat, data] of Object.entries(categoryData)) {
+            if (data.count >= 3) {
+                profile.set(cat, data.totalActual / data.totalEstimated);
+            }
+        }
+        return profile;
+    }
+
+    // Phase 2.1 — Compute energy profile from logs or infer from FocusSession data
+    async function computeEnergyProfile(userId: string): Promise<{ peakWindows: string[], lowWindows: string[] }> {
+        const logs = await EnergyLog.find({userId}).sort({date: -1}).limit(60);
+        if (logs.length >= 6) {
+            const byPeriod: Record<string, number[]> = {morning: [], afternoon: [], evening: [], night: []};
+            logs.forEach((l: any) => {
+                byPeriod[l.timeOfDay]?.push(l.energyLevel);
+            });
+            const avgByPeriod = Object.entries(byPeriod).map(([period, levels]) => ({
+                period,
+                avg: levels.length > 0 ? levels.reduce((a: number, b: number) => a + b, 0) / levels.length : 3
+            }));
+            const peakWindows = avgByPeriod.filter(p => p.avg >= 4).map(p => p.period);
+            const lowWindows = avgByPeriod.filter(p => p.avg <= 2).map(p => p.period);
+            // Cache on user
+            await User.findByIdAndUpdate(userId, {
+                energyProfile: {peakWindows, lowWindows, computedAt: new Date()}
+            });
+            return {peakWindows, lowWindows};
+        }
+
+        // Inferred fallback: derive from FocusSession quality ratings
+        const sessions = await FocusSessionModel.find({
+            userId,
+            qualityRating: {$gte: 1}
+        }).sort({startedAt: -1}).limit(50);
+        if (sessions.length >= 5) {
+            const periodScores: Record<string, number[]> = {morning: [], afternoon: [], evening: [], night: []};
+            sessions.forEach((s: any) => {
+                const h = new Date(s.startedAt).getHours();
+                const period = h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night';
+                periodScores[period].push(s.qualityRating || 3);
+            });
+            const avgByPeriod = Object.entries(periodScores).map(([period, scores]) => ({
+                period,
+                avg: scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 3
+            }));
+            const peakWindows = avgByPeriod.filter(p => p.avg >= 3.5).map(p => p.period);
+            const lowWindows = avgByPeriod.filter(p => p.avg <= 2).map(p => p.period);
+            await User.findByIdAndUpdate(userId, {
+                energyProfile: {peakWindows, lowWindows, computedAt: new Date()}
+            });
+            return {peakWindows, lowWindows};
+        }
+
+        return {peakWindows: ['morning', 'afternoon'], lowWindows: ['night']};
+    }
+
+    // Phase 2.4 — Standalone burnout signal computation
+    async function computeBurnoutSignal(userId: string): Promise<{ triggers: string[], severity: string } | null> {
+        const today = new Date();
+        const fourteenDaysAgo = new Date(today);
+        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+        const dateStr = fourteenDaysAgo.toISOString().split('T')[0];
+        const todayStr = today.toISOString().split('T')[0];
+
+        // Check 1: 9+ consecutive active days
+        const recentPlans = await DailyPlanModel.find({
+            userId, date: {$gte: dateStr, $lte: todayStr}
+        }).sort({date: 1});
+        let consecutiveDays = 0;
+        let maxStreak = 0;
+        for (let i = 0; i < recentPlans.length; i++) {
+            const planDate = new Date(recentPlans[i].date);
+            if (i === 0) {
+                consecutiveDays = 1;
+                maxStreak = 1;
+                continue;
+            }
+            const prevDate = new Date(recentPlans[i - 1].date);
+            const diffDays = (planDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
+            if (diffDays <= 1) consecutiveDays++;
+            else consecutiveDays = 1;
+            maxStreak = Math.max(maxStreak, consecutiveDays);
+        }
+
+        // Check 2: 3+ late-night focus sessions in a week
+        const allSessions = await FocusSessionModel.find({
+            userId, startedAt: {$gte: fourteenDaysAgo}
+        });
+        let lateNightCount = 0;
+        allSessions.forEach((s: any) => {
+            const h = new Date(s.startedAt).getHours();
+            if (h >= 22 || h < 5) lateNightCount++;
+        });
+
+        // Check 3: weekend work
+        const weekendSessions = allSessions.filter((s: any) => {
+            const d = new Date(s.startedAt).getDay();
+            return d === 0 || d === 6;
+        });
+
+        const triggers: string[] = [];
+        if (maxStreak >= 9) triggers.push('consecutive_active_days');
+        if (lateNightCount >= 3) triggers.push('late_night_focus_sessions');
+        if (weekendSessions.length >= 6) triggers.push('excessive_weekend_work');
+
+        if (triggers.length === 0) return null;
+
+        const severity = triggers.length >= 2 ? 'high' : triggers.length === 1 && maxStreak >= 12 ? 'high' : 'medium';
+        return {triggers, severity};
+    }
 
     const checkAIUsage = async (req: any, res: any, next: any) => {
         try {
-            const user = await User.findById(req.uid).select('isPremium premiumExpiry');
+            const user = await User.findById(req.uid).select('isPremium premiumExpiry tier tierExpiry subscriptionPlan');
             if (!user) return res.status(404).json({error: "User not found"});
 
             const now = new Date();
-            const isExpired = user.premiumExpiry && user.premiumExpiry < now;
-            const isPremium = user.isPremium && !isExpired;
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium) {
+                const isExpired = user.premiumExpiry && user.premiumExpiry < now;
+                if (!isExpired) effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
 
-            if (isPremium) return next();
+            const requiredTier = FEATURE_TIER_REQUIREMENT[req.path];
+            if (requiredTier) {
+                const order = {free: 0, pro: 1, pro_plus: 2};
+                if (order[effectiveTier] < order[requiredTier]) {
+                    return res.status(403).json({
+                        error: 'upgrade_required',
+                        requiredTier,
+                        message: `This feature requires ${requiredTier === 'pro_plus' ? 'Pro+' : 'Pro'}`
+                    });
+                }
+            }
 
-            const limit = FREE_TIER_LIMITS[req.path];
-            if (!limit) return next();
+            if (effectiveTier === 'pro_plus') {
+                const today = now.toISOString().split('T')[0];
+
+                // Increment first, then check — avoids TOCTOU race
+                const counter = await AIUsage.findOneAndUpdate(
+                    {userId: req.uid, date: today, endpoint: req.path},
+                    {$inc: {count: 1}, $setOnInsert: {timestamp: now}},
+                    {upsert: true, new: true, rawResult: true}
+                );
+
+                const newCount = counter.value?.count || 1;
+
+                if (newCount > DAILY_FAIR_USE_CAP) {
+                    // Roll back the increment
+                    await AIUsage.findOneAndUpdate(
+                        {userId: req.uid, date: today, endpoint: req.path},
+                        {$inc: {count: -1}}
+                    );
+                    return res.status(429).json({
+                        error: "Daily AI limit reached",
+                        limit: DAILY_FAIR_USE_CAP,
+                        used: newCount - 1,
+                        message: `You've used all ${DAILY_FAIR_USE_CAP} AI calls today. Try again tomorrow.`
+                    });
+                }
+
+                res.setHeader('X-AI-Usage-Remaining', String(Math.max(0, DAILY_FAIR_USE_CAP - newCount)));
+                res.setHeader('X-AI-Usage-Limit', String(DAILY_FAIR_USE_CAP));
+                return next();
+            }
+
+            const tierLimits = TIER_LIMITS[effectiveTier];
+            const limit = tierLimits?.[req.path];
+            if (limit == null) return next();
 
             const today = now.toISOString().split('T')[0];
 
-            // Atomic upsert with $inc — avoids TOCTOU race between count + create
             const counter = await AIUsage.findOneAndUpdate(
                 {userId: req.uid, date: today, endpoint: req.path},
                 {$inc: {count: 1}, $setOnInsert: {timestamp: now}},
@@ -631,17 +934,18 @@ async function startServer() {
             const usageCount = counter.value?.count || 1;
 
             if (usageCount > limit) {
-                // Roll back the increment since we're rejecting
                 await AIUsage.findOneAndUpdate(
                     {userId: req.uid, date: today, endpoint: req.path},
                     {$inc: {count: -1}}
                 );
                 return res.status(403).json({
-                    error: "Daily free-tier limit reached",
+                    error: effectiveTier === 'free' ? "Daily free-tier limit reached" : "Daily tier limit reached",
                     limit,
                     used: usageCount - 1,
                     endpoint: req.path,
-                    message: `You've used all ${limit} free AI calls for this feature today. Upgrade to Premium for unlimited access.`
+                    tier: effectiveTier,
+                    message: `You've used all ${limit} ${effectiveTier} AI calls for this endpoint today.`,
+                    upgradeHint: effectiveTier === 'free' ? 'Upgrade to Pro for higher limits.' : 'Upgrade to Pro+ for unlimited.'
                 });
             }
 
@@ -651,6 +955,31 @@ async function startServer() {
         } catch (err) {
             console.error("AI usage check error:", err);
             next();
+        }
+    };
+
+    const requireTier = (minTier: 'pro' | 'pro_plus') => async (req: any, res: any, next: any) => {
+        try {
+            const user = await User.findById(req.uid).select('tier tierExpiry isPremium premiumExpiry subscriptionPlan');
+            if (!user) return res.status(404).json({error: "User not found"});
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium) {
+                const isExpired = user.premiumExpiry && user.premiumExpiry < new Date();
+                if (!isExpired) effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
+            const order = {free: 0, pro: 1, pro_plus: 2};
+            if (order[effectiveTier] < order[minTier]) {
+                return res.status(403).json({
+                    error: 'upgrade_required',
+                    requiredTier: minTier,
+                    currentTier: effectiveTier,
+                    message: `This feature requires ${minTier === 'pro_plus' ? 'Pro+' : 'Pro'}`
+                });
+            }
+            next();
+        } catch (err) {
+            console.error("requireTier error:", err);
+            res.status(500).json({error: "Tier check failed"});
         }
     };
 
@@ -752,15 +1081,28 @@ async function startServer() {
 
             const today = localDateStr();
 
-            // Compute new streak
+            // Compute new streak (with grace days / streak freezes)
             let newStreak = gamification.currentStreak;
+            let freezesUsed = gamification.streakFreezesUsedDates || [];
+            let freezesAvailable = gamification.streakFreezesAvailable ?? 2;
+            let freezeUsedToday = false;
             if (gamification.lastActiveDate !== today) {
                 if (gamification.lastActiveDate) {
                     const lastActive = new Date(gamification.lastActiveDate);
                     const todayDate = new Date(today);
                     const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
                     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    newStreak = diffDays === 1 ? gamification.currentStreak + 1 : 1;
+                    if (diffDays === 1) {
+                        newStreak = gamification.currentStreak + 1;
+                    } else if (diffDays === 2 && freezesAvailable > 0) {
+                        // Only 1 missed day — consume a freeze
+                        freezesAvailable -= 1;
+                        freezesUsed.push(gamification.lastActiveDate);
+                        freezeUsedToday = true;
+                        newStreak = gamification.currentStreak + 1;
+                    } else {
+                        newStreak = 1;
+                    }
                 } else {
                     newStreak = 1;
                 }
@@ -811,7 +1153,11 @@ async function startServer() {
                     'gamification.currentStreak': newStreak,
                     'gamification.longestStreak': newLongest,
                     'gamification.lastActiveDate': today,
-                    'gamification.level': level
+                    'gamification.level': level,
+                    ...(freezeUsedToday ? {
+                        'gamification.streakFreezesAvailable': freezesAvailable,
+                        'gamification.streakFreezesUsedDates': freezesUsed
+                    } : {})
                 }
             };
             if (newBadges.length > 0) {
@@ -896,15 +1242,27 @@ async function startServer() {
             };
             const today = localDateStr();
 
-            // Compute new streak
+            // Compute new streak (with grace days / streak freezes)
             let newStreak = gamification.currentStreak;
+            let freezesUsed = gamification.streakFreezesUsedDates || [];
+            let freezesAvailable = gamification.streakFreezesAvailable ?? 2;
+            let freezeUsedToday = false;
             if (gamification.lastActiveDate !== today) {
                 if (gamification.lastActiveDate) {
                     const lastActive = new Date(gamification.lastActiveDate);
                     const todayDate = new Date(today);
                     const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
                     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    newStreak = diffDays === 1 ? gamification.currentStreak + 1 : 1;
+                    if (diffDays === 1) {
+                        newStreak = gamification.currentStreak + 1;
+                    } else if (diffDays === 2 && freezesAvailable > 0) {
+                        freezesAvailable -= 1;
+                        freezesUsed.push(gamification.lastActiveDate);
+                        freezeUsedToday = true;
+                        newStreak = gamification.currentStreak + 1;
+                    } else {
+                        newStreak = 1;
+                    }
                 } else {
                     newStreak = 1;
                 }
@@ -938,7 +1296,11 @@ async function startServer() {
                     'gamification.currentStreak': newStreak,
                     'gamification.longestStreak': newLongest,
                     'gamification.lastActiveDate': today,
-                    'gamification.level': level
+                    'gamification.level': level,
+                    ...(freezeUsedToday ? {
+                        'gamification.streakFreezesAvailable': freezesAvailable,
+                        'gamification.streakFreezesUsedDates': freezesUsed
+                    } : {})
                 }
             };
             if (newBadges.length > 0) {
@@ -1291,7 +1653,13 @@ async function startServer() {
             const diffTime = Math.abs(todayDate.getTime() - lastActive.getTime());
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
             if (diffDays > 1) {
-                gamification.currentStreak = 0;
+                // Check if a streak freeze could cover this gap
+                const freezesAvailable = gamification.streakFreezesAvailable ?? 2;
+                if (freezesAvailable <= 0) {
+                    gamification.currentStreak = 0;
+                }
+                // If freezes are available, assume the streak is still valid
+                // (the actual freeze decision happens in processGamificationOnTaskComplete)
             }
         }
         return gamification;
@@ -1307,16 +1675,22 @@ async function startServer() {
             const isExpired = user.premiumExpiry && user.premiumExpiry < now;
             const isActive = user.isPremium && !isExpired;
 
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium && !isExpired) {
+                effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
+
             let aiUsage: Record<string, { used: number; limit: number }> = {};
-            if (!isActive) {
+            if (effectiveTier !== 'pro_plus') {
                 const today = now.toISOString().split('T')[0];
                 const usageRecords = await AIUsage.aggregate([
                     {$match: {userId: req.uid, date: today}},
                     {$group: {_id: '$endpoint', count: {$sum: '$count'}}}
                 ]);
-                for (const [endpoint, limit] of Object.entries(FREE_TIER_LIMITS)) {
+                const tierLimits = TIER_LIMITS[effectiveTier] || TIER_LIMITS.free;
+                for (const [endpoint, limit] of Object.entries(tierLimits)) {
                     const record = usageRecords.find((r: any) => r._id === endpoint);
-                    aiUsage[endpoint] = {used: record?.count || 0, limit};
+                    aiUsage[endpoint] = {used: record?.count || 0, limit: limit as number};
                 }
             }
 
@@ -1338,6 +1712,8 @@ async function startServer() {
                     activePersonality: 'default'
                 },
                 isPremium: isActive,
+                tier: effectiveTier,
+                tierExpiry: user.tierExpiry || user.premiumExpiry,
                 premiumExpiry: user.premiumExpiry,
                 subscriptionPlan: user.subscriptionPlan,
                 subscriptionActive: user.subscriptionActive || false,
@@ -1984,7 +2360,7 @@ async function startServer() {
         try {
             await connectDB();
             const tasks = await Task.find({userId: req.uid}).sort({createdAt: -1});
-            const formattedTasks = tasks.map(t => {
+            const formattedTasks = tasks.map((t: any) => {
                 const obj = t.toObject();
                 obj.id = obj._id.toString();
                 delete obj._id;
@@ -2015,7 +2391,7 @@ async function startServer() {
             if (title != null) taskData.title = String(title).slice(0, 500);
             if (description != null) taskData.description = String(description).slice(0, 5000);
             if (priority != null) taskData.priority = ['high', 'medium', 'low'].includes(priority) ? priority : 'medium';
-            if (status != null) taskData.status = ['todo', 'in_progress', 'completed', 'blocked'].includes(status) ? status : 'todo';
+            if (status != null) taskData.status = ['todo', 'pending', 'in_progress', 'completed', 'blocked'].includes(status) ? status : 'todo';
             if (deadline != null) taskData.deadline = String(deadline);
             if (estimatedHours != null) taskData.estimatedHours = Math.min(Math.max(Number(estimatedHours) || 0, 0), 1000);
             if (goalId != null) taskData.goalId = String(goalId);
@@ -2057,7 +2433,7 @@ async function startServer() {
             if (title != null) updateData.title = String(title).slice(0, 500);
             if (description != null) updateData.description = String(description).slice(0, 5000);
             if (priority != null) updateData.priority = ['high', 'medium', 'low'].includes(priority) ? priority : undefined;
-            if (status != null) updateData.status = ['todo', 'in_progress', 'completed', 'blocked'].includes(status) ? status : undefined;
+            if (status != null) updateData.status = ['todo', 'pending', 'in_progress', 'completed', 'blocked'].includes(status) ? status : undefined;
             if (deadline != null) updateData.deadline = String(deadline);
             if (estimatedHours != null) updateData.estimatedHours = Math.min(Math.max(Number(estimatedHours) || 0, 0), 1000);
             if (goalId !== undefined) updateData.goalId = goalId ? String(goalId) : null;
@@ -2158,7 +2534,7 @@ async function startServer() {
         try {
             await connectDB();
             const goals = await Goal.find({userId: req.uid}).sort({createdAt: -1});
-            const formattedGoals = goals.map(g => {
+            const formattedGoals = goals.map((g: any) => {
                 const obj = getCorrectedGoal(g);
                 obj.id = obj._id.toString();
                 delete obj._id;
@@ -2263,7 +2639,7 @@ async function startServer() {
                 }
             }
             const chats = await ChatMessage.find(query).sort({timestamp: 1}).skip(skip).limit(limit);
-            const formatted = chats.map(c => {
+            const formatted = chats.map((c: any) => {
                 const obj = c.toObject();
                 obj.id = obj._id.toString();
                 delete obj._id;
@@ -2394,7 +2770,7 @@ async function startServer() {
         try {
             await connectDB();
             const decisions = await AIDecision.find({userId: req.uid}).sort({timestamp: -1});
-            const formatted = decisions.map(d => {
+            const formatted = decisions.map((d: any) => {
                 const obj = d.toObject();
                 obj.id = obj._id.toString();
                 delete obj._id;
@@ -3023,6 +3399,30 @@ async function startServer() {
                 tv: user.tokenVersion || 0
             }, JWT_SECRET, {expiresIn: '30d'});
 
+            // Calculate effective tier (same logic as /api/auth/me)
+            const now = new Date();
+            const isExpired = user.premiumExpiry && user.premiumExpiry < now;
+            const isActive = user.isPremium && !isExpired;
+
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium && !isExpired) {
+                effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
+
+            let aiUsage: Record<string, { used: number; limit: number }> = {};
+            if (effectiveTier !== 'pro_plus') {
+                const today = now.toISOString().split('T')[0];
+                const usageRecords = await AIUsage.aggregate([
+                    {$match: {userId: user._id.toString(), date: today}},
+                    {$group: {_id: '$endpoint', count: {$sum: '$count'}}}
+                ]);
+                const tierLimits = TIER_LIMITS[effectiveTier] || TIER_LIMITS.free;
+                for (const [endpoint, limit] of Object.entries(tierLimits)) {
+                    const record = usageRecords.find((r: any) => r._id === endpoint);
+                    aiUsage[endpoint] = {used: record?.count || 0, limit: limit as number};
+                }
+            }
+
             res.json({
                 accessToken,
                 taskpilotToken,
@@ -3031,11 +3431,26 @@ async function startServer() {
                     name: user.name,
                     picture: user.picture,
                     uid: user._id.toString(),
-                    gamification: getCorrectedGamification(user.gamification),
-                    isPremium: user.isPremium || false,
-                    premiumExpiry: user.premiumExpiry || null,
-                    subscriptionPlan: user.subscriptionPlan || null,
-                    role: user.role || 'user'
+                    address: user.address || "",
+                    gamification: getCorrectedGamification(user.gamification) || {
+                        currentStreak: 0,
+                        longestStreak: 0,
+                        xp: 0,
+                        level: 1,
+                        totalTasksCompleted: 0,
+                        onTimeTasksCompleted: 0,
+                        earnedBadges: [],
+                        unlockedPersonalities: ['default'],
+                        activePersonality: 'default'
+                    },
+                    isPremium: isActive,
+                    tier: effectiveTier,
+                    tierExpiry: user.tierExpiry || user.premiumExpiry,
+                    premiumExpiry: user.premiumExpiry,
+                    subscriptionPlan: user.subscriptionPlan,
+                    subscriptionActive: user.subscriptionActive || false,
+                    role: user.role || 'user',
+                    aiUsage
                 }
             });
         } catch (err: any) {
@@ -3057,6 +3472,7 @@ async function startServer() {
 
     const getRequestOrigin = (req: any) => {
         const host = req.headers['x-forwarded-host'] || req.get('host');
+        if (!host) return `${req.protocol}://${req.hostname}`;
         const proto = req.headers['x-forwarded-proto'] || req.protocol;
         const finalProto = host.includes('.run.app') ? 'https' : proto;
         return `${finalProto}://${host}`;
@@ -3466,12 +3882,20 @@ async function startServer() {
             if (title.length + description.length > MAX_INPUT.analyze) {
                 return res.status(413).json({error: "Title and description are too long."});
             }
+
+            // Phase 3.1 — fetch velocity profile for personalized estimation
+            const velocityProfile = await getUserVelocityProfile(req.uid);
+            const profileContext = velocityProfile.size > 0
+                ? `\nHistorical velocity data (actual/estimated ratio per category): ${JSON.stringify(Object.fromEntries(velocityProfile))}\nAdjust estimatedHours using the ratio for this task's category if available (e.g., ratio 1.3 means the user typically takes 30% longer than estimated).`
+                : '';
+
             const prompt = `
         You are an intelligent productivity assistant. Analyze the following task.
         Task: ${title}
         Description: ${description || 'N/A'}
         Deadline: ${deadline || 'N/A'}
         Current Time: ${new Date().toISOString()}
+        ${profileContext}
 
         Return a JSON response with the following format, with no markdown formatting around it:
         {
@@ -3479,10 +3903,12 @@ async function startServer() {
           "priority": "<high|medium|low>",
           "subtasks": ["subtask 1", "subtask 2", ...],
           "riskScore": <number 0-100, where 100 is highest risk of missing deadline>,
+          "riskReason": "<short 1-2 sentence explanation of why this risk score was assigned>",
           "confidenceScore": <number 0-100, where 100 is highest confidence in this analysis>
         }
         Be realistic with estimated hours. Break down complex tasks into manageable subtasks.
         Risk Score should be high if the deadline is very close and estimated hours is high.
+        riskReason must always be provided, even if the risk is low.
       `;
 
             const response = await generateAIContent({
@@ -3512,6 +3938,7 @@ async function startServer() {
                     `Perform review and verify deliverables`
                 ],
                 riskScore,
+                riskReason: deadline ? 'Deadline is set but task scope is uncertain with limited information.' : 'No deadline specified, risk is low.',
                 confidenceScore: 85
             };
 
@@ -3534,7 +3961,8 @@ async function startServer() {
 
         Return a JSON response with the following format, with no markdown, backticks, or text before/after:
         {
-          "subtasks": ["subtask 1", "subtask 2", "subtask 3", ...]
+          "subtasks": ["subtask 1", "subtask 2", "subtask 3", ...],
+          "confidenceScore": <number 0-100, where 100 is highest confidence in this breakdown>
         }
         Keep each subtask description short, active, and highly clear (e.g., "Draft the database schema" or "Write unit tests for authentication").
       `;
@@ -3588,6 +4016,7 @@ async function startServer() {
 
             res.json({
                 subtasks: fallbackSubtasks,
+                confidenceScore: 70,
                 isFallback: true
             });
         }
@@ -3658,6 +4087,92 @@ async function startServer() {
         }
     });
 
+    // --- Shared task extraction helper ---
+    async function extractTasksFromText(text: string, model: string) {
+        const prompt = `
+    You are an intelligent productivity assistant. Analyze the following text and extract all actionable tasks.
+    Text: "${text}"
+
+    Return a JSON response exactly in this format, no markdown, no backticks:
+    {
+      "tasks": [
+        {
+          "title": "Clear action item",
+          "description": "Any additional context mentioned",
+          "priority": "high|medium|low",
+          "deadlineHint": "optional: natural language like 'tomorrow', 'next week', or null"
+        }
+      ],
+      "summary": "1-2 sentence summary of what was captured."
+    }
+    Only include genuine actionable items. If the text is purely informational with no tasks, return an empty tasks array.`;
+
+        const response = await generateAIContent({
+            model,
+            contents: prompt,
+            config: {responseMimeType: "application/json"}
+        });
+
+        let outText = response.text || "{}";
+        outText = outText.replace(/```json/g, "").replace(/```/g, "").trim();
+        return JSON.parse(outText);
+    }
+
+    app.post("/api/capture", verifyToken, checkAIUsage, async (req: any, res: any) => {
+        try {
+            const {text, source = 'manual', model = ''} = req.body || {};
+            const selectedModel = getValidModel(model);
+
+            if (!text || typeof text !== 'string' || text.length < 5) {
+                return res.status(400).json({error: "Text is required and must be at least 5 characters."});
+            }
+            if (text.length > 5000) {
+                return res.status(413).json({error: "Text must be under 5000 characters."});
+            }
+
+            const result = await extractTasksFromText(text, selectedModel);
+            const createdTasks = [];
+
+            if (result.tasks && Array.isArray(result.tasks)) {
+                for (const t of result.tasks) {
+                    // Parse deadlineHint into a rough ISO date
+                    let deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                    if (t.deadlineHint) {
+                        const hint = t.deadlineHint.toLowerCase();
+                        if (hint.includes('today')) {
+                            deadline = new Date().toISOString();
+                        } else if (hint.includes('tomorrow')) {
+                            deadline = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString();
+                        } else if (hint.includes('next week')) {
+                            deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                        } else if (hint.includes('next month')) {
+                            deadline = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                        }
+                    }
+
+                    const newTask = new Task({
+                        userId: req.uid,
+                        title: t.title,
+                        description: t.description || "",
+                        priority: t.priority || "medium",
+                        status: "pending",
+                        category: "Captured",
+                        estimatedHours: 1,
+                        deadline,
+                        resources: [`Captured from: ${source}`]
+                    });
+                    await newTask.save();
+                    createdTasks.push(newTask);
+                }
+            }
+
+            res.json({captured: createdTasks.length, tasks: createdTasks, summary: result.summary || ''});
+        } catch (err: any) {
+            console.error("[capture] Error:", err);
+            res.status(500).json({error: "Failed to capture tasks from text."});
+        }
+    });
+
     app.post("/api/generate-plan", verifyToken, checkAIUsage, async (req: any, res: any) => {
         const {tasks = [], date = '', model = ''} = req.body || {};
         try {
@@ -3667,6 +4182,16 @@ async function startServer() {
             if (JSON.stringify(tasks).length > MAX_INPUT.plan) {
                 return res.status(413).json({error: "Too many tasks. Please reduce the task list."});
             }
+
+            // Phase 2.1 — fetch or compute energy profile for energy-aware scheduling
+            const user = await User.findById(req.uid).select('energyProfile');
+            let energyProfile = user?.energyProfile;
+            if (!energyProfile?.computedAt || (Date.now() - new Date(energyProfile.computedAt).getTime()) > 7 * 24 * 60 * 60 * 1000) {
+                energyProfile = await computeEnergyProfile(req.uid);
+            }
+            const energyContext = energyProfile?.peakWindows?.length
+                ? `\nUser's energy profile: Peak focus windows = ${energyProfile.peakWindows.join(', ')}. Low energy windows = ${energyProfile.lowWindows.join(', ')}. Schedule deep-focus/high-estimatedHours tasks inside peak windows; schedule low-effort/admin tasks inside low windows.`
+                : '';
 
             const currentPlan = await DailyPlanModel.findOne({userId: req.uid, date});
             if (!currentPlan || !currentPlan.sessions || currentPlan.sessions.length === 0) {
@@ -3729,6 +4254,7 @@ async function startServer() {
             const prompt = `
         You are an autonomous AI planning assistant.
         Your job is to schedule the user's pending tasks into their EXISTING daily timetable, at SUBTASK granularity wherever a task has subtasks.
+        ${energyContext}
         ${carryForward.length > 0 ? `
         CARRY-FORWARD TASKS (HIGH PRIORITY — these were scheduled yesterday but not completed. They MUST be given slots today, before any other PACED_SUBTASKS work):
         ${JSON.stringify(carryForward, null, 2)}
@@ -3762,7 +4288,8 @@ async function startServer() {
               "startTime": "YYYY-MM-DDTHH:mm:ss.sss",
               "endTime": "YYYY-MM-DDTHH:mm:ss.sss"
             }
-          ]
+          ],
+          "reason": "<1-2 sentence explanation of the scheduling rationale — why tasks were placed in these specific slots>"
         }
       `;
 
@@ -3965,6 +4492,55 @@ async function startServer() {
             }
 
             res.json({text, planUpdated});
+
+            // Phase 3.2 — Fire-and-forget: extract knowledge entities from user's last message
+            try {
+                const lastUserMsg = (messages || []).filter((m: any) => m.role === 'user').pop();
+                if (lastUserMsg?.content && lastUserMsg.content.length > 20) {
+                    const kgPrompt = `Extract people, projects, and commitments from this text. Return JSON: { "entities": [{"type":"person|project|topic","name":"...","aliases":[]}], "commitments": [{"from":"...","to":"...","relation":"..."}] }. Text: "${lastUserMsg.content.slice(0, 500)}"`;
+                    const kgResponse = await generateAIContent({model: selectedModel, contents: kgPrompt});
+                    const kgText = (kgResponse.text || '').replace(/```json/g, '').replace(/```/g, '').trim();
+                    const kgData = JSON.parse(kgText);
+                    if (kgData.entities?.length || kgData.commitments?.length) {
+                        const ents = kgData.entities || [];
+                        const upsertedNames = new Map<string, string>();
+                        for (const ent of ents) {
+                            if (!ent.name) continue;
+                            const existing = await KnowledgeEntity.findOne({
+                                userId: req.uid,
+                                type: ent.type,
+                                name: ent.name
+                            });
+                            if (existing) upsertedNames.set(ent.name, existing._id.toString());
+                            else {
+                                const created = await KnowledgeEntity.create({
+                                    userId: req.uid,
+                                    type: ent.type,
+                                    name: ent.name,
+                                    aliases: ent.aliases || []
+                                });
+                                upsertedNames.set(ent.name, created._id.toString());
+                            }
+                        }
+                        for (const c of kgData.commitments || []) {
+                            const fromId = upsertedNames.get(c.from);
+                            const toId = upsertedNames.get(c.to);
+                            if (fromId && toId) {
+                                await KnowledgeEdge.create({
+                                    userId: req.uid,
+                                    fromEntityId: fromId,
+                                    toEntityId: toId,
+                                    relation: c.relation || 'commits_to',
+                                    sourceType: 'chat',
+                                    sourceId: null
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silent fail — knowledge extraction is best-effort
+            }
         } catch (err: any) {
             console.error("Gemini Chat failed, returning personality fallback response:", err);
 
@@ -3994,7 +4570,7 @@ async function startServer() {
         }
     });
 
-    app.post("/api/autonomous-pipeline", verifyToken, checkAIUsage, async (req: any, res: any) => {
+    app.post("/api/autonomous-pipeline", verifyToken, requireTier('pro_plus'), checkAIUsage, async (req: any, res: any) => {
         const userId = req.uid;
         const {
             eventName = '',
@@ -4011,9 +4587,20 @@ async function startServer() {
                 return res.status(413).json({error: "Input too large. Please reduce tasks or description."});
             }
 
+            // Phase 2.1 — fetch or compute energy profile
+            const userDoc = await User.findById(userId).select('energyProfile');
+            let energyProfile = userDoc?.energyProfile;
+            if (!energyProfile?.computedAt || (Date.now() - new Date(energyProfile.computedAt).getTime()) > 7 * 24 * 60 * 60 * 1000) {
+                energyProfile = await computeEnergyProfile(userId);
+            }
+            const energyContext = energyProfile?.peakWindows?.length
+                ? `\nUser's energy profile: Peak focus windows = ${energyProfile.peakWindows.join(', ')}. Low energy windows = ${energyProfile.lowWindows.join(', ')}. Schedule deep-focus/high-estimatedHours tasks inside peak windows; schedule low-effort/admin tasks inside low windows.`
+                : '';
+
             const prompt = `
         You are an autonomous AI Productivity Agent designing a General Daily Timetable of Total Discipline.
         The timeline MUST be a complete structured routine representing a perfectly disciplined day, covering activities from wake-up to sleeping time.
+        ${energyContext}
         
         An event just occurred: "${eventName}"
         Details: "${eventDetail}"
@@ -4610,46 +5197,6 @@ async function startServer() {
         }
     });
 
-    // --- Vite Middleware ---
-    if (process.env.NODE_ENV !== "production") {
-        // Dynamic import: keeps 'vite' (and its rollup native binary dependency)
-        // out of the production code path entirely. A static top-level import
-        // would load vite/rollup on every environment, including production,
-        // which crashed the Vercel serverless function with
-        // "Cannot find module '@rollup/rollup-linux-x64-gnu'" since vite is
-        // never actually needed once we're serving the prebuilt dist/ folder.
-        const {createServer: createViteServer} = await import("vite");
-        const vite = await createViteServer({
-            server: {middlewareMode: true},
-            appType: "spa",
-        });
-        app.use(vite.middlewares);
-
-        app.get('*', async (req, res, next) => {
-            // Do not intercept API, auth, or webhook routes that should be handled by subsequent routes
-            if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/register')) {
-                return next();
-            }
-            console.log(`[Dev SPA Fallback] Handling GET request for: ${req.originalUrl}`);
-            try {
-                const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
-                const transformedHtml = await vite.transformIndexHtml(req.originalUrl, indexHtml);
-                res.status(200).set({'Content-Type': 'text/html'}).end(transformedHtml);
-            } catch (err: any) {
-                console.error("[Dev SPA Fallback] Error rendering index.html:", err);
-                res.status(500).send(`Dev SPA Fallback Error: ${err?.stack || err?.message || err}`);
-            }
-        });
-    } else {
-        const distPath = path.join(process.cwd(), 'dist');
-        app.use(express.static(distPath));
-        app.get('*', (req, res, next) => {
-            if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/register')) {
-                return next();
-            }
-            res.sendFile(path.join(distPath, 'index.html'));
-        });
-    }
 
     // On Vercel, requests are routed to the exported handler below instead of a
     // listening port — Vercel sets VERCEL=1 in its build/runtime environment.
@@ -4716,34 +5263,70 @@ async function startServer() {
     // Default pricing seed data
     const DEFAULT_PRICING: any[] = [
         {
-            planId: 'monthly',
-            name: 'Monthly Premium',
-            description: 'Access to all premium features for one month',
+            planId: 'pro_monthly',
+            name: 'Pro',
+            description: 'Smarter organization with AI assistance',
             basePrice: 199,
             interval: 'month' as const,
             features: [
-                'Unlimited AI-powered scheduling',
-                'Advanced analytics & insights',
-                'Focus Zone power modes unlocked',
-                'Priority email support',
-                '20+ customization themes'
+                'Unlimited projects, quests, habits',
+                'AI task creation & subtask generation',
+                'AI priority suggestions',
+                'AI chat assistant',
+                'Visual timeline view',
+                'Task micro-stepper',
+                'Dopamine menu',
+                'Streak freezes',
+                'Guided daily planning',
+                'Transparent billing dashboard'
             ],
             popular: false
         },
         {
-            planId: 'annual',
-            name: 'Annual Premium',
-            description: 'Save 20% with annual billing',
-            basePrice: 1999,
+            planId: 'pro_annual',
+            name: 'Pro Annual',
+            description: 'Save 17% with annual billing',
+            basePrice: 1990,
             interval: 'year' as const,
             features: [
-                'All Monthly Premium features',
-                '20% savings vs monthly',
-                'Early access to new features',
-                'Premium badge & customization',
-                'No ads, ever'
+                'All Pro features',
+                '2 months free vs monthly',
+                'Priority support'
+            ],
+            popular: false
+        },
+        {
+            planId: 'pro_plus_monthly',
+            name: 'Pro+',
+            description: 'AI Executive Assistant — full autonomy',
+            basePrice: 499,
+            interval: 'month' as const,
+            features: [
+                'Everything in Pro',
+                'Autonomous pipeline & auto-rescheduler',
+                'Energy-matched scheduling',
+                'Burnout detection',
+                'Deadline risk predictions',
+                'Scenario simulator',
+                'Personal knowledge graph',
+                'Shared projects with AI mediator',
+                'Voice brain dump',
+                'Unlimited AI usage (fair-use)'
             ],
             popular: true
+        },
+        {
+            planId: 'pro_plus_annual',
+            name: 'Pro+ Annual',
+            description: 'Save 17% with annual billing',
+            basePrice: 4990,
+            interval: 'year' as const,
+            features: [
+                'All Pro+ features',
+                '2 months free vs monthly',
+                'Priority support'
+            ],
+            popular: false
         }
     ];
 
@@ -4946,7 +5529,7 @@ async function startServer() {
             // Bulk expire user flags
             const result = await User.updateMany(
                 {isPremium: true, premiumExpiry: {$lt: now}},
-                {$set: {isPremium: false, subscriptionActive: false}}
+                {$set: {isPremium: false, subscriptionActive: false, tier: 'free', tierExpiry: null}}
             );
             // Bulk expire subscription entries using array filters
             await User.updateMany(
@@ -4967,8 +5550,9 @@ async function startServer() {
     app.post("/api/subscriptions/create-order", verifyToken, paymentLimiter, async (req: any, res: any) => {
         try {
             const {plan} = req.body;
-            if (!plan || !['monthly', 'annual'].includes(plan)) {
-                return res.status(400).json({error: "Invalid plan. Use 'monthly' or 'annual'."});
+            const VALID_PLANS = ['pro_monthly', 'pro_annual', 'pro_plus_monthly', 'pro_plus_annual'];
+            if (!plan || !VALID_PLANS.includes(plan)) {
+                return res.status(400).json({error: `Invalid plan. Use one of: ${VALID_PLANS.join(', ')}`});
             }
 
             await connectDB();
@@ -5069,8 +5653,9 @@ async function startServer() {
     app.post("/api/subscriptions/payment-link", verifyToken, paymentLimiter, async (req: any, res: any) => {
         try {
             const {plan} = req.body;
-            if (!plan || !['monthly', 'annual'].includes(plan)) {
-                return res.status(400).json({error: "Invalid plan. Use 'monthly' or 'annual'."});
+            const VALID_PLANS = ['pro_monthly', 'pro_annual', 'pro_plus_monthly', 'pro_plus_annual'];
+            if (!plan || !VALID_PLANS.includes(plan)) {
+                return res.status(400).json({error: `Invalid plan. Use one of: ${VALID_PLANS.join(', ')}`});
             }
 
             await connectDB();
@@ -5216,7 +5801,7 @@ async function startServer() {
             const amount = orderRecord.amount;
 
             const now = new Date();
-            const expiryDate = new Date(now.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000);
+            const expiryDate = new Date(now.getTime() + (plan.includes('annual') ? 365 : 30) * 24 * 60 * 60 * 1000);
 
             // Atomic update: only transition THIS order's array entry from
             // non-active to active, using arrayFilters + a condition on the current
@@ -5227,6 +5812,8 @@ async function startServer() {
                     $set: {
                         isPremium: true,
                         premiumExpiry: expiryDate,
+                        tier: tierFromPlan(plan),
+                        tierExpiry: expiryDate,
                         subscriptionId: paymentId,
                         subscriptionPlan: plan,
                         subscriptionActive: true,
@@ -5291,7 +5878,7 @@ async function startServer() {
             if (!hasUpcomingSub) {
                 await User.findOneAndUpdate(
                     {_id: req.uid},
-                    {$set: {isPremium: false, premiumExpiry: null}}
+                    {$set: {isPremium: false, premiumExpiry: null}, $unset: {tier: '', tierExpiry: ''}}
                 );
                 res.json({
                     success: true,
@@ -5314,7 +5901,7 @@ async function startServer() {
     app.get("/api/subscriptions/status", verifyToken, async (req: any, res: any) => {
         try {
             await connectDB();
-            const user = await User.findById(req.uid).select('isPremium premiumExpiry subscriptionPlan subscriptions');
+            const user = await User.findById(req.uid).select('isPremium premiumExpiry tier tierExpiry subscriptionPlan subscriptions');
             if (!user) return res.status(404).json({error: "User not found"});
 
             const now = new Date();
@@ -5331,6 +5918,7 @@ async function startServer() {
                             subscriptionActive: false,
                             updatedAt: now
                         },
+                        $unset: {tier: '', tierExpiry: ''},
                         $push: {
                             subscriptions: {
                                 $each: [{status: 'expired', expiry: user.premiumExpiry}],
@@ -5341,17 +5929,905 @@ async function startServer() {
                 );
             }
 
+            // Find the active subscription entry
+            const activeSub = (user.subscriptions || []).find((s: any) => s.status === 'active');
+            const nextChargeDate = activeSub?.expiry || user.premiumExpiry || null;
+            const nextChargeAmount = activeSub?.amount || (user.tier === 'pro_plus' ? 499 : user.tier === 'pro' ? 199 : 0);
+
             res.json({
                 isPremium: isActive,
+                tier: user.tier || (isActive && user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'free'),
+                tierExpiry: user.tierExpiry,
                 premiumExpiry: user.premiumExpiry,
                 subscriptionPlan: user.subscriptionPlan,
                 subscriptions: user.subscriptions || [],
                 daysRemaining: user.premiumExpiry
                     ? Math.ceil((user.premiumExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-                    : 0
+                    : 0,
+                nextChargeDate,
+                nextChargeAmount
             });
         } catch (error: any) {
             console.error("Get subscription status error:", error);
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Personal Access Tokens (PAT) ──────────────────────────────────────
+    const PAT_PREFIX = 'tp_';
+    const PAT_BYTE_LENGTH = 32;
+
+    function hashPAT(raw: string): string {
+        return crypto.createHash('sha256').update(raw).digest('hex');
+    }
+
+    // List PATs
+    app.get("/api/pat", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const pats = await PersonalAccessTokenModel.find({userId: req.uid})
+                .select('name lastUsedAt expiresAt createdAt')
+                .sort({createdAt: -1});
+            res.json(pats.map((p: any) => ({
+                id: p._id,
+                name: p.name,
+                lastUsedAt: p.lastUsedAt,
+                expiresAt: p.expiresAt,
+                createdAt: p.createdAt
+            })));
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // Create PAT
+    app.post("/api/pat", verifyToken, async (req: any, res: any) => {
+        try {
+            const {name, expiresInDays} = req.body;
+            if (!name || typeof name !== 'string' || name.trim().length === 0) {
+                return res.status(400).json({error: "Token name is required"});
+            }
+            if (name.length > 64) {
+                return res.status(400).json({error: "Token name too long (max 64 chars)"});
+            }
+
+            // Limit active PATs per user
+            await connectDB();
+
+            // Validate expiresInDays
+            const expiryDays = typeof expiresInDays === 'number' && expiresInDays > 0 ? Math.min(Math.floor(expiresInDays), 365) : null;
+
+            const raw = PAT_PREFIX + crypto.randomBytes(PAT_BYTE_LENGTH).toString('hex');
+            const tokenHash = hashPAT(raw);
+
+            const expiresAt = expiryDays
+                ? new Date(Date.now() + expiryDays * 86400000)
+                : null;
+
+            const pat = await PersonalAccessTokenModel.create({
+                userId: req.uid,
+                name: name.trim(),
+                tokenHash,
+                expiresAt
+            });
+
+            // Enforce 10-token cap — delete oldest excess (resolves race condition)
+            const count = await PersonalAccessTokenModel.countDocuments({userId: req.uid});
+            if (count > 10) {
+                const excess = await PersonalAccessTokenModel.find({userId: req.uid})
+                    .sort({createdAt: 1})
+                    .limit(count - 10)
+                    .select('_id');
+                if (excess.length > 0) {
+                    await PersonalAccessTokenModel.deleteMany({_id: {$in: excess.map((e: any) => e._id)}});
+                }
+            }
+
+            // Return plaintext token once — it cannot be recovered later
+            res.status(201).json({
+                id: pat._id,
+                name: pat.name,
+                token: raw,
+                expiresAt: pat.expiresAt,
+                createdAt: pat.createdAt
+            });
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // Revoke (delete) PAT
+    app.delete("/api/pat/:id", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const deleted = await PersonalAccessTokenModel.findOneAndDelete({
+                _id: req.params.id,
+                userId: req.uid
+            });
+            if (!deleted) return res.status(404).json({error: "Token not found"});
+            res.json({message: "Token revoked"});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // Verify PAT (browser extension login)
+    app.post("/api/pat/verify", authLimiter, async (req: any, res: any) => {
+        try {
+            const {token} = req.body;
+            if (!token || typeof token !== 'string') {
+                return res.status(400).json({error: "Token is required"});
+            }
+            if (!token.startsWith(PAT_PREFIX)) {
+                return res.status(401).json({error: "Invalid token format"});
+            }
+
+            const tokenHash = hashPAT(token);
+            await connectDB();
+            const pat = await PersonalAccessTokenModel.findOne({tokenHash});
+            if (!pat) return res.status(401).json({error: "Invalid or revoked token"});
+
+            // Check expiry
+            if (pat.expiresAt && new Date(pat.expiresAt) < new Date()) {
+                return res.status(401).json({error: "Token has expired"});
+            }
+
+            // Update lastUsedAt
+            pat.lastUsedAt = new Date();
+            await pat.save();
+
+            // Issue a regular JWT so the rest of the app works unchanged
+            const user = await User.findById(pat.userId);
+            if (!user) return res.status(401).json({error: "User not found"});
+
+            const jwtToken = jwt.sign({uid: user._id, tv: user.tokenVersion || 0}, JWT_SECRET, {expiresIn: '7d'});
+            res.json({token: jwtToken});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Automation Dial Routes ─────────────────────────────────────────────
+    app.get("/api/automation/settings", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const user = await User.findById(req.uid).select('automationSettings');
+            if (!user) return res.status(404).json({error: "User not found"});
+            res.json({
+                global: user.automationSettings?.global || 'suggest',
+                perProject: user.automationSettings?.perProject || {}
+            });
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.put("/api/automation/settings", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {global: globalSetting, perProject} = req.body;
+
+            // Resolve tier once for all 'auto' checks
+            const user = await User.findById(req.uid).select('tier tierExpiry isPremium premiumExpiry subscriptionPlan');
+            if (!user) return res.status(404).json({error: "User not found"});
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium) {
+                const isExpired = user.premiumExpiry && user.premiumExpiry < new Date();
+                if (!isExpired) effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
+
+            // Check if any 'auto' setting is being requested
+            const wantsAuto = globalSetting === 'auto' ||
+                (perProject && typeof perProject === 'object' && Object.values(perProject).some(v => v === 'auto'));
+
+            if (wantsAuto) {
+                const order = {free: 0, pro: 1, pro_plus: 2};
+                if (order[effectiveTier] < order['pro_plus']) {
+                    return res.status(403).json({error: 'upgrade_required', requiredTier: 'pro_plus'});
+                }
+            }
+
+            const update: any = {};
+            if (globalSetting && ['suggest', 'auto', 'off'].includes(globalSetting)) {
+                update['automationSettings.global'] = globalSetting;
+            }
+            if (perProject && typeof perProject === 'object') {
+                for (const [key, value] of Object.entries(perProject)) {
+                    if (['suggest', 'auto', 'off'].includes(value as string)) {
+                        update[`automationSettings.perProject.${key}`] = value;
+                    }
+                }
+            }
+
+            await User.findByIdAndUpdate(req.uid, {$set: update});
+            res.json({success: true});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── AI Actions (Explainability + Undo) ─────────────────────────────────
+    app.get("/api/ai-actions", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {status, page = 1, limit = 20} = req.query;
+            const filter: any = {userId: req.uid};
+            if (status) filter.status = status;
+            const skip = (Number(page) - 1) * Number(limit);
+            const [actions, total] = await Promise.all([
+                AIAction.find(filter).sort({createdAt: -1}).skip(skip).limit(Number(limit)),
+                AIAction.countDocuments(filter)
+            ]);
+            res.json({actions, total, page: Number(page), pages: Math.ceil(total / Number(limit))});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/ai-actions/:id/accept", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const action = await AIAction.findOneAndUpdate(
+                {_id: req.params.id, userId: req.uid, status: 'pending_review'},
+                {$set: {status: 'accepted'}},
+                {new: true}
+            );
+            if (!action) return res.status(404).json({error: "Action not found or not pending"});
+
+            // Apply the change to the target collection
+            if (action.targetCollection === 'Task' && action.after) {
+                await Task.findByIdAndUpdate(action.targetId, {$set: action.after});
+            }
+            res.json({success: true, action});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/ai-actions/:id/reject", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const action = await AIAction.findOneAndUpdate(
+                {_id: req.params.id, userId: req.uid, status: 'pending_review'},
+                {$set: {status: 'rejected'}},
+                {new: true}
+            );
+            if (!action) return res.status(404).json({error: "Action not found or not pending"});
+            res.json({success: true, action});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/ai-actions/:id/revert", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const action = await AIAction.findOne({
+                _id: req.params.id,
+                userId: req.uid,
+                status: {$in: ['applied', 'accepted']}
+            });
+            if (!action) return res.status(404).json({error: "Action not found or not revertible"});
+
+            if (action.before && action.targetCollection === 'Task') {
+                await Task.findByIdAndUpdate(action.targetId, {$set: action.before});
+            } else if (action.before && action.targetCollection === 'DailyPlan') {
+                await DailyPlanModel.findByIdAndUpdate(action.targetId, {$set: action.before});
+            }
+
+            await AIAction.findByIdAndUpdate(action._id, {$set: {status: 'reverted'}});
+            res.json({success: true, message: "Action reverted"});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Task Micro-Stepper ─────────────────────────────────────────────────
+    app.post("/api/tasks/micro-steps", verifyToken, checkAIUsage, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {taskId} = req.body;
+            if (!taskId) return res.status(400).json({error: "taskId required"});
+
+            const task = await Task.findOne({_id: taskId, userId: req.uid});
+            if (!task) return res.status(404).json({error: "Task not found"});
+
+            const prompt = `You are a task initiation coach for someone with executive dysfunction.
+Given this task: "${task.title}" — ${task.description || 'No description'}
+Return a JSON array of 3-5 micro-steps that are physically concrete, sub-2-minute first actions.
+Each must be so small they require no decision-making. E.g., "Open your laptop", "Open the document", "Write one sentence".
+Do NOT include planning steps like "think about what to do".
+Return JSON: [{"text": "...", "completed": false}]`;
+
+            let microSteps: any[] = [];
+            try {
+                const response = await generateAIContent({
+                    model: "gemini-3.5-flash",
+                    contents: prompt,
+                    config: {responseMimeType: 'application/json'}
+                });
+                const text = response.text || '';
+                microSteps = JSON.parse(text);
+            } catch {
+                // Fallback generic micro-steps
+                microSteps = [
+                    {id: crypto.randomUUID(), title: "Take a deep breath", completed: false},
+                    {id: crypto.randomUUID(), title: "Open the project files", completed: false},
+                    {id: crypto.randomUUID(), title: "Do just the first small part", completed: false},
+                ];
+            }
+
+            // Ensure IDs — map 'text' → 'title' to match SubtaskSchema
+            microSteps = microSteps.map((s: any) => ({
+                id: s.id || crypto.randomUUID(),
+                title: s.text || s.title || 'Untitled step',
+                completed: false
+            }));
+
+            await Task.findByIdAndUpdate(taskId, {$set: {microSteps}});
+
+            // Log AI action
+            await AIAction.create({
+                userId: req.uid,
+                type: 'micro_steps',
+                targetId: taskId,
+                targetCollection: 'Task',
+                before: null,
+                after: {microSteps},
+                reason: `Generated ${microSteps.length} micro-steps to help overcome task paralysis`,
+                status: 'applied'
+            });
+
+            res.json({microSteps});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // Toggle micro-step completion
+    app.put("/api/tasks/:id/micro-steps/:stepId", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {id: taskId, stepId} = req.params;
+            const {completed} = req.body;
+            if (typeof completed !== 'boolean') {
+                return res.status(400).json({error: "completed (boolean) required"});
+            }
+
+            const task = await Task.findOne({_id: taskId, userId: req.uid});
+            if (!task) return res.status(404).json({error: "Task not found"});
+
+            const step = task.microSteps?.find((s: any) => s.id === stepId);
+            if (!step) return res.status(404).json({error: "Micro-step not found"});
+
+            step.completed = completed;
+            task.markModified('microSteps');
+            await task.save();
+
+            res.json({microSteps: task.microSteps});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Dopamine Menu Routes ───────────────────────────────────────────────
+    app.get("/api/dopamine-menu", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            let items = await DopamineMenuItemModel.find({userId: req.uid});
+            if (items.length === 0) {
+                // Seed defaults on first access
+                const defaults = [
+                    {userId: req.uid, label: 'Stretch', emoji: '🧘', durationMinutes: 3},
+                    {userId: req.uid, label: 'Make tea', emoji: '🍵', durationMinutes: 5},
+                    {userId: req.uid, label: '5 min walk', emoji: '🚶', durationMinutes: 5},
+                    {userId: req.uid, label: 'Listen to favorite song', emoji: '🎵', durationMinutes: 3},
+                    {userId: req.uid, label: 'Deep breathing', emoji: '🌬️', durationMinutes: 2},
+                ];
+                items = await DopamineMenuItemModel.insertMany(defaults);
+            }
+            // Return 3 random picks
+            const shuffled = [...items].sort(() => 0.5 - Math.random());
+            res.json({items: shuffled.slice(0, 3), allItems: items});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/dopamine-menu", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {label, emoji, durationMinutes} = req.body;
+            if (!label) return res.status(400).json({error: "label required"});
+            const item = await DopamineMenuItemModel.create({
+                userId: req.uid,
+                label,
+                emoji: emoji || '✨',
+                durationMinutes: durationMinutes ?? 5
+            });
+            res.json(item);
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.delete("/api/dopamine-menu/:id", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            await DopamineMenuItemModel.findOneAndDelete({_id: req.params.id, userId: req.uid});
+            res.json({success: true});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Billing History ────────────────────────────────────────────────────
+    app.get("/api/subscriptions/billing-history", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const user = await User.findById(req.uid).select('subscriptions');
+            if (!user) return res.status(404).json({error: "User not found"});
+
+            const history = (user.subscriptions || []).map((sub: any) => ({
+                plan: sub.plan,
+                tier: sub.tier || 'pro',
+                amount: sub.amount,
+                currency: sub.currency,
+                status: sub.status,
+                startedAt: sub.startedAt,
+                expiry: sub.expiry,
+                paymentMethod: sub.paymentMethod
+            })).sort((a: any, b: any) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+
+            res.json({history});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/subscriptions/preview-change", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {newTier} = req.body;
+            if (!newTier || !['pro', 'pro_plus'].includes(newTier)) {
+                return res.status(400).json({error: "newTier must be 'pro' or 'pro_plus'"});
+            }
+
+            const user = await User.findById(req.uid).select('tier tierExpiry premiumExpiry subscriptionPlan subscriptions');
+            if (!user) return res.status(404).json({error: "User not found"});
+
+            const now = new Date();
+            const expiry = user.tierExpiry || user.premiumExpiry;
+            const daysRemaining = expiry ? Math.max(0, Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0;
+
+            const currentPrice = user.tier === 'pro_plus' ? 499 : user.tier === 'pro' ? 199 : 0;
+            const newPrice = newTier === 'pro_plus' ? 499 : 199;
+            const isUpgrade = newPrice > currentPrice;
+
+            // Simple proration: credit remaining days of current plan toward new plan
+            const dailyRate = currentPrice / 30;
+            const credit = daysRemaining * dailyRate;
+            const prorationAmount = Math.max(0, Math.round(newPrice - credit));
+
+            res.json({
+                currentTier: user.tier || (user.isPremium && user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'free'),
+                newTier,
+                daysRemaining,
+                currentPrice,
+                newPrice,
+                credit: Math.round(credit),
+                prorationAmount,
+                isUpgrade
+            });
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Tier Resolution endpoint (for frontend) ────────────────────────────
+    app.get("/api/user/tier", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const user = await User.findById(req.uid).select('tier tierExpiry isPremium premiumExpiry subscriptionPlan automationSettings');
+            if (!user) return res.status(404).json({error: "User not found"});
+            let effectiveTier = resolveTier(user);
+            if (effectiveTier === 'free' && user.isPremium) {
+                const isExpired = user.premiumExpiry && user.premiumExpiry < new Date();
+                if (!isExpired) effectiveTier = user.subscriptionPlan ? tierFromPlan(user.subscriptionPlan) : 'pro_plus';
+            }
+
+            // Phase 2.4 — on-demand burnout check (cached for 24h per user)
+            let burnoutSignal = null;
+            const existingSignal = await BurnoutSignal.findOne({userId: req.uid, dismissed: false}).sort({date: -1});
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (!existingSignal || existingSignal.date !== todayStr) {
+                burnoutSignal = await computeBurnoutSignal(req.uid);
+                if (burnoutSignal) {
+                    await BurnoutSignal.findOneAndUpdate(
+                        {userId: req.uid, date: todayStr},
+                        {triggers: burnoutSignal.triggers, severity: burnoutSignal.severity, dismissed: false},
+                        {upsert: true}
+                    );
+                }
+            } else {
+                burnoutSignal = {triggers: existingSignal.triggers, severity: existingSignal.severity};
+            }
+
+            res.json({
+                tier: effectiveTier,
+                tierExpiry: user.tierExpiry || user.premiumExpiry,
+                subscriptionPlan: user.subscriptionPlan,
+                automationSettings: {
+                    global: user.automationSettings?.global || 'suggest',
+                    perProject: user.automationSettings?.perProject || {}
+                },
+                burnoutSignal
+            });
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Energy Logs (Phase 2) ──────────────────────────────────────────────
+    app.post("/api/energy-logs", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {date, timeOfDay, energyLevel} = req.body;
+            if (!date || !timeOfDay || energyLevel == null) {
+                return res.status(400).json({error: "date, timeOfDay, and energyLevel are required"});
+            }
+            if (!['morning', 'afternoon', 'evening', 'night'].includes(timeOfDay)) {
+                return res.status(400).json({error: "timeOfDay must be morning, afternoon, evening, or night"});
+            }
+            if (energyLevel < 1 || energyLevel > 5) {
+                return res.status(400).json({error: "energyLevel must be 1-5"});
+            }
+            const log = await EnergyLog.findOneAndUpdate(
+                {userId: req.uid, date, timeOfDay},
+                {energyLevel, source: 'manual'},
+                {upsert: true, new: true}
+            );
+
+            // Auto-infer burnout if energy is low (≤2) for two consecutive periods today
+            const todayLogs = await EnergyLog.find({userId: req.uid, date}).sort({timeOfDay: 1});
+            const lowPeriods = todayLogs.filter((l: any) => l.energyLevel <= 2);
+            if (lowPeriods.length >= 2) {
+                const triggers: string[] = [];
+                if (lowPeriods.length >= 2) triggers.push('consecutive_low_energy');
+                if (todayLogs.length >= 3) triggers.push('extended_low_energy');
+                await BurnoutSignal.findOneAndUpdate(
+                    {userId: req.uid, date},
+                    {triggers, severity: triggers.length >= 2 ? 'high' : 'medium'},
+                    {upsert: true}
+                );
+            }
+
+            res.json({success: true, log});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.get("/api/energy-logs", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {date, range} = req.query;
+            let query: any = {userId: req.uid};
+            if (date) {
+                query.date = date as string;
+            } else if (range) {
+                const days = parseInt(range as string) || 7;
+                const since = new Date();
+                since.setDate(since.getDate() - days);
+                query.date = {$gte: since.toISOString().split('T')[0]};
+            }
+            const logs = await EnergyLog.find(query).sort({date: 1, timeOfDay: 1});
+            res.json({logs});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Burnout Signals (Phase 2) ─────────────────────────────────────────
+    app.get("/api/burnout-signals", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {range} = req.query;
+            const days = parseInt(range as string) || 14;
+            const since = new Date();
+            since.setDate(since.getDate() - days);
+            const signals = await BurnoutSignal.find({
+                userId: req.uid,
+                date: {$gte: since.toISOString().split('T')[0]}
+            }).sort({date: -1});
+            res.json({signals});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/burnout-signals/:id/dismiss", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const signal = await BurnoutSignal.findOneAndUpdate(
+                {_id: req.params.id, userId: req.uid},
+                {dismissed: true},
+                {new: true}
+            );
+            if (!signal) return res.status(404).json({error: "Signal not found"});
+            res.json({success: true, signal});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Knowledge Graph Search (Phase 3.2) ────────────────────────────────
+    app.get("/api/knowledge/search", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {q} = req.query;
+            if (!q || (q as string).trim().length < 1) {
+                return res.status(400).json({error: "Search query (q) is required"});
+            }
+            const query = (q as string).trim();
+
+            // Text search against name and aliases
+            const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const entities = await KnowledgeEntity.find({
+                userId: req.uid,
+                $or: [
+                    {name: {$regex: escapedQuery, $options: 'i'}},
+                    {aliases: {$regex: escapedQuery, $options: 'i'}}
+                ]
+            }).limit(10);
+
+            if (!entities.length) {
+                return res.json({entities: [], edges: []});
+            }
+
+            const entityIds = entities.map((e: any) => e._id.toString());
+
+            // Fetch connected edges (both directions)
+            const edges = await KnowledgeEdge.find({
+                userId: req.uid,
+                $or: [
+                    {fromEntityId: {$in: entityIds}},
+                    {toEntityId: {$in: entityIds}}
+                ]
+            }).sort({extractedAt: -1}).limit(20);
+
+            // Fetch referenced entities to resolve names
+            const allReferencedIds = new Set<string>();
+            edges.forEach((edge: any) => {
+                allReferencedIds.add(edge.fromEntityId);
+                allReferencedIds.add(edge.toEntityId);
+            });
+            const referencedEntities = await KnowledgeEntity.find({
+                _id: {$in: Array.from(allReferencedIds)}
+            });
+            const entityMap = new Map<string, any>(referencedEntities.map((e: any) => [e._id.toString(), e]));
+
+            // Enrich edges with entity names
+            const enrichedEdges = edges.map((edge: any) => ({
+                ...edge.toObject(),
+                fromEntityName: entityMap.get(edge.fromEntityId)?.name || 'Unknown',
+                toEntityName: entityMap.get(edge.toEntityId)?.name || 'Unknown'
+            }));
+
+            res.json({entities, edges: enrichedEdges});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    app.post("/api/knowledge/upsert", verifyToken, async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {entities = [], edges = [], sourceType, sourceId} = req.body;
+            const results = {entitiesUpserted: 0, edgesCreated: 0};
+
+            for (const ent of entities) {
+                if (!ent.type || !ent.name) continue;
+                const existing = await KnowledgeEntity.findOne({
+                    userId: req.uid, type: ent.type, name: ent.name
+                });
+                if (existing) {
+                    if (ent.aliases?.length) {
+                        await KnowledgeEntity.findByIdAndUpdate(existing._id, {
+                            $addToSet: {aliases: {$each: ent.aliases}}
+                        });
+                    }
+                } else {
+                    await KnowledgeEntity.create({
+                        userId: req.uid, type: ent.type, name: ent.name, aliases: ent.aliases || []
+                    });
+                    results.entitiesUpserted++;
+                }
+            }
+
+            for (const edge of edges) {
+                if (!edge.fromEntityId || !edge.toEntityId || !edge.relation) continue;
+                const dup = await KnowledgeEdge.findOne({
+                    userId: req.uid,
+                    fromEntityId: edge.fromEntityId,
+                    toEntityId: edge.toEntityId,
+                    relation: edge.relation
+                });
+                if (!dup) {
+                    await KnowledgeEdge.create({
+                        userId: req.uid,
+                        fromEntityId: edge.fromEntityId,
+                        toEntityId: edge.toEntityId,
+                        relation: edge.relation,
+                        sourceType: sourceType || 'chat',
+                        sourceId: sourceId || null
+                    });
+                    results.edgesCreated++;
+                }
+            }
+
+            res.json({success: true, ...results});
+        } catch (error: any) {
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Integrations — GitHub Webhook (Phase 3.5) ─────────────────────────
+    const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
+    app.post("/api/integrations/github/webhook", express.raw({type: 'application/json'}), async (req: any, res: any) => {
+        try {
+            // SECURITY: Verify GitHub webhook signature before processing any payload
+            if (!GITHUB_WEBHOOK_SECRET) {
+                console.error('GITHUB_WEBHOOK_SECRET is not configured — refusing to process GitHub webhook.');
+                return res.status(500).json({error: 'Webhook not configured'});
+            }
+            const signature = req.headers['x-hub-signature-256'] as string;
+            if (!signature) {
+                return res.status(401).json({error: 'Missing signature header'});
+            }
+            const expectedSignature = 'sha256=' + crypto.createHmac('sha256', GITHUB_WEBHOOK_SECRET).update((req as any).rawBody || req.body).digest('hex');
+            const sigBuf = Buffer.from(signature);
+            const expectedBuf = Buffer.from(expectedSignature);
+            if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+                return res.status(401).json({error: 'Invalid signature'});
+            }
+
+            const event = req.headers['x-github-event'] as string;
+            const payload = JSON.parse(req.body.toString());
+
+            if (!['issues', 'issue_comment'].includes(event)) {
+                return res.json({received: true, skipped: true});
+            }
+
+            const installationId = payload.installation?.id;
+            if (!installationId) return res.json({received: true});
+
+            await connectDB();
+            const conn = await IntegrationConnection.findOne({
+                provider: 'github',
+                externalAccountId: String(installationId)
+            });
+            if (!conn) return res.json({received: true, noConnection: true});
+
+            const issue = payload.issue;
+            if (!issue) return res.json({received: true});
+
+            const action = payload.action;
+            const url = issue.html_url;
+            const title = issue.title;
+            const body = issue.body || '';
+
+            if (action === 'opened' || action === 'labeled') {
+                const labelNames = (issue.labels || []).map((l: any) => l.name?.toLowerCase());
+                const isHigh = labelNames.some((n: string) => ['urgent', 'high', 'p0', 'p1'].includes(n));
+                const priority = isHigh ? 'high' : 'medium';
+
+                const existing = await Task.findOne({
+                    userId: conn.userId,
+                    'externalRef.provider': 'github',
+                    'externalRef.externalId': String(issue.id)
+                });
+
+                if (existing) {
+                    existing.title = title;
+                    existing.description = body.slice(0, 2000);
+                    if (action === 'labeled') existing.priority = priority;
+                    await existing.save();
+                } else {
+                    await Task.create({
+                        userId: conn.userId,
+                        title: `[GH] ${title}`,
+                        description: body.slice(0, 2000),
+                        priority,
+                        category: 'GitHub',
+                        externalRef: {provider: 'github', externalId: String(issue.id), url}
+                    });
+                }
+            } else if (action === 'closed') {
+                await Task.findOneAndUpdate(
+                    {
+                        userId: conn.userId,
+                        'externalRef.provider': 'github',
+                        'externalRef.externalId': String(issue.id)
+                    },
+                    {status: 'completed', completedAt: new Date().toISOString()}
+                );
+            }
+
+            res.json({received: true});
+        } catch (error: any) {
+            console.error('GitHub webhook error:', error);
+            res.status(500).json({error: safeError(error)});
+        }
+    });
+
+    // ─── Low-Energy Replanning (Phase 2) ───────────────────────────────────
+    app.post("/api/plans/:date/low-energy-replan", verifyToken, requireTier('pro_plus'), async (req: any, res: any) => {
+        try {
+            await connectDB();
+            const {date} = req.params;
+            const plan = await DailyPlanModel.findOne({userId: req.uid, date});
+            if (!plan) return res.status(404).json({error: "No plan found for this date"});
+
+            // Fetch today's energy logs
+            const energyLogs = await EnergyLog.find({userId: req.uid, date});
+            const avgEnergy = energyLogs.length > 0
+                ? energyLogs.reduce((sum: number, l: any) => sum + l.energyLevel, 0) / energyLogs.length
+                : 3;
+
+            // Fetch open tasks
+            const tasks = await Task.find({
+                userId: req.uid,
+                status: {$nin: ['completed', 'archived']}
+            }).sort({priority: -1});
+            if (!tasks.length) return res.status(200).json({success: true, plan, message: "No open tasks to replan"});
+
+            const geminiApiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
+            let newPlan = plan;
+
+            if (geminiApiKey && avgEnergy <= 2.5) {
+                const prompt = `You are a productivity assistant replanning a user's day because their energy is low.
+The user's average energy today is ${avgEnergy.toFixed(1)}/5.
+Original plan sessions: ${JSON.stringify(plan.sessions?.map((s: any) => ({
+                    taskTitle: s.taskTitle,
+                    startTime: s.startTime,
+                    endTime: s.endTime
+                })) || [])}
+Open tasks (by priority): ${tasks.slice(0, 8).map((t: any) => `${t.title} (priority ${t.priority})`).join(', ')}
+Generate a lighter schedule with:
+- Fewer, shorter focus blocks
+- Longer breaks between blocks
+- Move low-priority tasks to tomorrow
+- Keep only 1-2 high-priority tasks
+Return JSON: { "sessions": [{ "taskTitle": "...", "startTime": "HH:MM", "endTime": "HH:MM", "taskId": "..." }], "rationale": "..." }`;
+
+                try {
+                    const response = await generateAIContent({
+                        model: "gemini-3.5-flash",
+                        contents: prompt,
+                        config: {responseMimeType: "application/json"}
+                    });
+                    const text = response.text || '';
+                    const parsed = JSON.parse(text);
+                    if (parsed.sessions && Array.isArray(parsed.sessions)) {
+                        // Validate each session has required fields
+                        const validSessions = parsed.sessions.filter((s: any) =>
+                            s && typeof s.taskTitle === 'string' && typeof s.startTime === 'string' && typeof s.endTime === 'string'
+                        );
+                        if (validSessions.length > 0) {
+                            plan.sessions = validSessions;
+                            plan.replanRationale = parsed.rationale || 'Low energy replan';
+                            await plan.save();
+                            newPlan = plan;
+                        }
+                    }
+                } catch (e: any) {
+                    console.error('Low-energy replan AI error:', e.message);
+                }
+            }
+
+            res.json({success: true, plan: newPlan, avgEnergy});
+        } catch (error: any) {
             res.status(500).json({error: safeError(error)});
         }
     });
@@ -5383,7 +6859,7 @@ async function startServer() {
                 return res.status(400).json({error: 'Missing signature'});
             }
             const expectedSignature = crypto.createHmac('sha256', razorpayWebhookSecret)
-                .update(req.body.toString())
+                .update((req as any).rawBody || req.body.toString())
                 .digest('hex');
             let sigBuf: Buffer, expectedBuf: Buffer;
             try {
@@ -5396,7 +6872,7 @@ async function startServer() {
                 return res.status(400).json({error: 'Invalid signature'});
             }
 
-            const payload = JSON.parse(req.body.toString());
+            const payload = JSON.parse(((req as any).rawBody || req.body).toString());
             const {event, payload: data, created_at} = payload;
 
             // Replay-attack guard: Razorpay recommends rejecting events whose
@@ -5443,9 +6919,9 @@ async function startServer() {
                 }
 
                 // Use plan from notes or user record
-                const plan = planFromNotes || user.subscriptionPlan || 'monthly';
+                const plan = planFromNotes || user.subscriptionPlan || 'pro_monthly';
                 const now = new Date();
-                const expiryDate = new Date(now.getTime() + (plan === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000);
+                const expiryDate = new Date(now.getTime() + (plan.includes('annual') ? 365 : 30) * 24 * 60 * 60 * 1000);
 
                 if (!user.subscriptions) user.subscriptions = [];
                 const alreadyProcessed = user.subscriptions.some((s: any) => s.paymentId === paymentId);
@@ -5470,6 +6946,8 @@ async function startServer() {
                             $set: {
                                 isPremium: true,
                                 premiumExpiry: expiryDate,
+                                tier: tierFromPlan(plan),
+                                tierExpiry: expiryDate,
                                 subscriptionId: paymentId,
                                 subscriptionPlan: plan,
                                 subscriptionActive: true,
@@ -5489,6 +6967,8 @@ async function startServer() {
                     // fall back to appending a new active record.
                     user.isPremium = true;
                     user.premiumExpiry = expiryDate;
+                    user.tier = tierFromPlan(plan);
+                    user.tierExpiry = expiryDate;
                     user.subscriptionActive = true;
                     user.subscriptionId = paymentId;
                     user.subscriptions.push({
@@ -5524,6 +7004,62 @@ async function startServer() {
     }
 
     // Global error handler - catches async route handler errors
+    // --- Vite Middleware ---
+    if (process.env.NODE_ENV !== "production") {
+        // Dynamic import: keeps 'vite' (and its rollup native binary dependency)
+        // out of the production code path entirely. A static top-level import
+        // would load vite/rollup on every environment, including production,
+        // which crashed the Vercel serverless function with
+        // "Cannot find module '@rollup/rollup-linux-x64-gnu'" since vite is
+        // never actually needed once we're serving the prebuilt dist/ folder.
+        const {createServer: createViteServer} = await import("vite");
+        const vite = await createViteServer({
+            server: {middlewareMode: true},
+            appType: "spa",
+        });
+        app.use(vite.middlewares);
+
+        app.get('*', async (req, res, next) => {
+            // Do not intercept API, auth, or webhook routes that should be handled by subsequent routes
+            if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/register')) {
+                return next();
+            }
+            console.log(`[Dev SPA Fallback] Handling GET request for: ${req.originalUrl}`);
+            try {
+                const indexHtml = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+                const transformedHtml = await vite.transformIndexHtml(req.originalUrl, indexHtml);
+                res.status(200).set({'Content-Type': 'text/html'}).end(transformedHtml);
+            } catch (err: any) {
+                console.error("[Dev SPA Fallback] Error rendering index.html:", err);
+                res.status(500).send(`Dev SPA Fallback Error: ${err?.stack || err?.message || err}`);
+            }
+        });
+    } else {
+        const distPath = path.join(process.cwd(), 'dist');
+        app.use(express.static(distPath));
+        app.get('*', (req, res, next) => {
+            if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/register')) {
+                return next();
+            }
+            // If express.static above didn't find the file, it's a real 404 —
+            // not a client-side route to hand off to the SPA. This matters most
+            // for hashed build assets (/assets/index-XXXX.css|js): after a
+            // redeploy changes the hash, a browser holding a stale cached
+            // index.html (or a stale service worker / CDN edge) will request
+            // the old, now-nonexistent asset filename. Without this guard the
+            // request fell through to sendFile(index.html) below, returning a
+            // 200 text/html response for a .css/.js request — which browsers
+            // correctly refuse to apply due to the MIME type mismatch. Bail out
+            // to a plain 404 for anything under /assets or with a file
+            // extension so those fail loudly (prompting a hard refresh)
+            // instead of silently serving the wrong content type.
+            if (req.path.startsWith('/assets/') || /\.[a-zA-Z0-9]+$/.test(req.path)) {
+                return res.status(404).end();
+            }
+            res.sendFile(path.join(distPath, 'index.html'));
+        });
+    }
+
     app.use((err: any, req: any, res: any, next: any) => {
         console.error("Unhandled route error:", err);
         if (!res.headersSent) {

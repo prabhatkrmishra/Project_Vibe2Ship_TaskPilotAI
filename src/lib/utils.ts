@@ -16,6 +16,44 @@ export const safeJson = async (res: Response) => {
     return res.json();
 };
 
+// --- API Client with 403 upgrade_required interception ---
+// Centralized fetch wrapper that checks for tier-gated 403 responses and
+// dispatches a global event so any mounted UpgradeModal can intercept.
+// Usage: replace `fetch(url, opts)` with `apiFetch(url, opts)` in feature call sites.
+
+export class TierUpgradeRequiredError extends Error {
+    requiredTier: string;
+
+    constructor(requiredTier: string) {
+        super(`Upgrade required: ${requiredTier}`);
+        this.name = 'TierUpgradeRequiredError';
+        this.requiredTier = requiredTier;
+    }
+}
+
+export async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+    const res = await fetch(url, options);
+
+    if (res.status === 403) {
+        try {
+            const clone = res.clone();
+            const body = await clone.json();
+            if (body?.error === 'upgrade_required' && body?.requiredTier) {
+                // Dispatch a global event so the UpgradeModal (if mounted) can intercept
+                window.dispatchEvent(new CustomEvent('upgrade-required', {
+                    detail: {requiredTier: body.requiredTier}
+                }));
+                throw new TierUpgradeRequiredError(body.requiredTier);
+            }
+        } catch (e) {
+            if (e instanceof TierUpgradeRequiredError) throw e;
+            // Not a tier-gated 403 — fall through to normal error handling
+        }
+    }
+
+    return res;
+}
+
 // Compute delay text for a task/goal that had a deadline.
 export const getDelayText = (deadlineStr?: string, completedAtStr?: string) => {
     if (!deadlineStr) return null;

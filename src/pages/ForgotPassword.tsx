@@ -43,13 +43,13 @@ export default function ForgotPassword() {
 
     return (
         <div className="login-bg flex min-h-screen items-center justify-center text-slate-200 py-10 px-4">
-            <div className="w-full max-w-md p-8 bg-[#0d1117] border border-[#21262d] rounded-3xl shadow-2xl space-y-6">
+            <div className="w-full max-w-md p-8 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl shadow-2xl space-y-6">
                 <div className="text-center space-y-2">
                     <div
-                        className="mx-auto w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.3)]">
+                        className="mx-auto w-14 h-14 bg-[var(--violet)] rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.3)]">
                         <LayoutDashboard className="h-7 w-7 text-white"/>
                     </div>
-                    <h1 className="text-2xl font-semibold text-[#f0f6fc] tracking-tight">
+                    <h1 className="text-2xl font-semibold text-white tracking-tight">
                         {sent ? "Check your email" : "Reset your password"}
                     </h1>
                     <p className="text-slate-400 text-xs">
@@ -71,7 +71,7 @@ export default function ForgotPassword() {
                         </div>
                         <Link
                             to="/login"
-                            className="block w-full h-11 text-center text-xs uppercase tracking-widest font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors leading-[44px]"
+                            className="block w-full h-11 text-center text-xs uppercase tracking-widest font-bold bg-[var(--violet)] text-white rounded-xl hover:brightness-110 transition-colors leading-[44px]"
                         >
                             Back to Sign In
                         </Link>
@@ -92,7 +92,7 @@ export default function ForgotPassword() {
                                     }}
                                     placeholder="pilot@workspace.com"
                                     required
-                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm transition-all"
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[var(--violet)] text-sm transition-all"
                                 />
                                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
                             </div>
@@ -101,7 +101,7 @@ export default function ForgotPassword() {
                         <Button
                             type="submit"
                             disabled={submitting}
-                            className="w-full h-11 text-xs uppercase tracking-widest font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20"
+                            className="w-full h-11 text-xs uppercase tracking-widest font-bold bg-[var(--violet)] text-white rounded-xl hover:brightness-110 transition-colors shadow-lg shadow-[var(--violet)]/20"
                         >
                             {submitting ? <Loader2 className="h-4 w-4 animate-spin mx-auto"/> : "Send Reset Link"}
                         </Button>
@@ -118,7 +118,7 @@ export default function ForgotPassword() {
                 {!sent && (
                     <div className="text-center">
                         <Link to="/login"
-                              className="text-[13px] text-indigo-400 hover:text-indigo-300 transition-colors hover:underline font-medium">
+                              className="text-[13px] text-[var(--violet)] hover:opacity-80 transition-colors hover:underline font-medium">
                             Back to Sign In
                         </Link>
                     </div>

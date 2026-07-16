@@ -76,23 +76,46 @@ const UserSchema = new mongoose.Schema({
     // Role-based access
     role: {type: String, enum: ['user', 'admin'], default: 'user'},
 
-    // Premium Subscription
+    // Tier system (replaces binary isPremium)
+    tier: {type: String, enum: ['free', 'pro', 'pro_plus'], default: 'free'},
+    tierExpiry: {type: Date, default: null},
+
+    // Premium Subscription (kept for backward compat)
     isPremium: {type: Boolean, default: false},
     premiumExpiry: {type: Date, default: null},
     subscriptionId: {type: String, default: null},
-    subscriptionPlan: {type: String, enum: ['monthly', 'annual'], default: null},
+    subscriptionPlan: {type: String, enum: ['pro_monthly', 'pro_annual', 'pro_plus_monthly', 'pro_plus_annual'], default: null},
     subscriptionActive: {type: Boolean, default: false},
     subscriptions: [{
-        plan: {type: String, enum: ['monthly', 'annual']},
+        plan: {type: String, enum: ['pro_monthly', 'pro_annual', 'pro_plus_monthly', 'pro_plus_annual']},
         amount: {type: Number},
         currency: {type: String, default: 'INR'},
         orderId: {type: String},
         paymentId: {type: String},
+        transactionId: {type: String},
+        paymentLinkId: {type: String},
         startedAt: {type: Date},
         expiry: {type: Date},
         status: {type: String, enum: ['active', 'pending', 'cancelled', 'expired'], default: 'active'},
+        tier: {type: String, enum: ['pro', 'pro_plus']},
         paymentMethod: {type: String, enum: ['razorpay', 'upi'], default: 'razorpay'}
     }],
+
+    // Automation Dial
+    automationSettings: {
+        global: {type: String, enum: ['suggest', 'auto', 'off'], default: 'suggest'},
+        perProject: {type: Map, of: String, default: {}},
+    },
+
+    // Velocity Profile (Phase 3.1) — category → actual/estimated ratio
+    velocityProfile: {type: Map, of: Number, default: {}},
+
+    // Energy Profile (Phase 2.1) — derived from energy logs, cached
+    energyProfile: {
+        peakWindows: {type: [String], default: []},
+        lowWindows: {type: [String], default: []},
+        computedAt: {type: Date, default: null}
+    },
 
     // Gamification Profile
     gamification: {
@@ -111,7 +134,10 @@ const UserSchema = new mongoose.Schema({
         longestFocusStreak: {type: Number, default: 0},
         totalFocusMinutes: {type: Number, default: 0},
         focusSessionsCompleted: {type: Number, default: 0},
-        focusLastActiveDate: {type: String, default: null} // YYYY-MM-DD — dedicated for focus streak
+        focusLastActiveDate: {type: String, default: null},
+        // Streak grace days
+        streakFreezesAvailable: {type: Number, default: 2},
+        streakFreezesUsedDates: {type: [String], default: []}
     },
 
     createdAt: {type: Date, default: Date.now},
@@ -143,6 +169,7 @@ const GoalSchema = new mongoose.Schema({
     completedAt: {type: String},
     steps: {type: [GoalStepSchema], default: []},
     subtasks: {type: [GoalStepSchema], default: []},
+    sharedWith: {type: [{userId: String, role: {type: String, enum: ['owner', 'editor', 'viewer'], default: 'viewer'}}], default: []},
     targetValue: {type: Number},
     unit: {type: String},
     createdAt: {type: Date, default: Date.now}
@@ -168,10 +195,18 @@ const TaskSchema = new mongoose.Schema({
     hasBeenCompleted: {type: Boolean, default: false},
     completedAt: {type: String},
     riskScore: {type: Number},
+    riskReason: {type: String},
     confidenceScore: {type: Number},
     resources: {type: [String], default: []},
     subtasks: {type: [SubtaskSchema], default: []},
+    microSteps: {type: [SubtaskSchema], default: []},
     schedulingPreference: {type: String},
+    // Phase 3.5 — External integration reference (GitHub/Linear/Jira)
+    externalRef: {
+        provider: {type: String, enum: ['github', 'linear', 'jira'], default: null},
+        externalId: {type: String, default: null},
+        url: {type: String, default: null}
+    },
     createdAt: {type: Date, default: Date.now}
 });
 
@@ -214,6 +249,7 @@ const DailyPlanSchema = new mongoose.Schema({
     userId: {type: String, required: true, index: true},
     date: {type: String, required: true, index: true}, // YYYY-MM-DD
     sessions: {type: [ScheduledSessionSchema], default: []},
+    replanRationale: {type: String, default: null},
     updatedAt: {type: Date, default: Date.now}
 });
 
@@ -271,6 +307,99 @@ const PricingConfigSchema = new mongoose.Schema({
 
 PricingConfigSchema.index({enabled: 1});
 
+// 10. AI Action Schema (Automation Dial explainability + undo trail)
+const AIActionSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    type: {type: String, required: true}, // 'reschedule' | 'priority_change' | 'task_created' | 'subtask_created' | 'micro_steps'
+    targetId: {type: String, required: true},
+    targetCollection: {type: String, required: true},
+    before: {type: mongoose.Schema.Types.Mixed},
+    after: {type: mongoose.Schema.Types.Mixed},
+    reason: {type: String, required: true},
+    status: {type: String, enum: ['applied', 'pending_review', 'accepted', 'rejected', 'reverted'], default: 'applied'},
+    createdAt: {type: Date, default: Date.now, index: true}
+});
+
+AIActionSchema.index({userId: 1, status: 1, createdAt: -1});
+
+// 11. Dopamine Menu Schema
+const DopamineMenuItemSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    label: {type: String, required: true},
+    emoji: {type: String, default: '?'},
+    durationMinutes: {type: Number, default: 5}
+});
+
+// 12. Personal Access Token Schema (for browser extension auth)
+const PersonalAccessTokenSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    name: {type: String, required: true},
+    tokenHash: {type: String, required: true, index: true},
+    lastUsedAt: {type: Date},
+    expiresAt: {type: Date, default: null},
+    createdAt: {type: Date, default: Date.now}
+});
+
+// 13. Burnout Signal Schema
+const BurnoutSignalSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    date: {type: String, required: true}, // YYYY-MM-DD
+    triggers: {type: [String], default: []},
+    severity: {type: String, enum: ['low', 'medium', 'high'], default: 'low'},
+    dismissed: {type: Boolean, default: false}
+});
+
+BurnoutSignalSchema.index({userId: 1, date: 1}, {unique: true});
+
+// 14. Energy Log Schema
+const EnergyLogSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    date: {type: String, required: true}, // YYYY-MM-DD
+    timeOfDay: {type: String, enum: ['morning', 'afternoon', 'evening', 'night'], required: true},
+    energyLevel: {type: Number, min: 1, max: 5, required: true},
+    source: {type: String, enum: ['manual', 'inferred'], default: 'manual'}
+});
+
+EnergyLogSchema.index({userId: 1, date: 1});
+
+// 15. Knowledge Graph Schemas (Phase 3.2)
+const KnowledgeEntitySchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    type: {type: String, enum: ['person', 'project', 'file', 'topic'], required: true},
+    name: {type: String, required: true},
+    aliases: {type: [String], default: []}
+});
+
+KnowledgeEntitySchema.index({userId: 1, name: 'text', aliases: 'text'});
+KnowledgeEntitySchema.index({userId: 1, type: 1});
+
+const KnowledgeEdgeSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    fromEntityId: {type: String, required: true},
+    toEntityId: {type: String, required: true},
+    relation: {type: String, required: true},
+    sourceType: {type: String, enum: ['task', 'chat', 'meeting', 'email'], required: true},
+    sourceId: {type: String, default: null},
+    extractedAt: {type: Date, default: Date.now}
+});
+
+KnowledgeEdgeSchema.index({userId: 1, fromEntityId: 1});
+KnowledgeEdgeSchema.index({userId: 1, toEntityId: 1});
+
+// 16. Integration Connection Schema (Phase 3.5)
+const IntegrationConnectionSchema = new mongoose.Schema({
+    userId: {type: String, required: true, index: true},
+    provider: {type: String, enum: ['github', 'linear', 'jira'], required: true},
+    accessToken: {type: String, required: true}, // encrypted
+    refreshToken: {type: String, default: null},
+    externalAccountId: {type: String, default: null},
+    externalAccountName: {type: String, default: null},
+    createdAt: {type: Date, default: Date.now},
+    lastSyncedAt: {type: Date, default: null}
+});
+
+IntegrationConnectionSchema.index({userId: 1, provider: 1}, {unique: true});
+
 // Helper to handle compilation with hot reloading/re-importing
 export const User = mongoose.models.User || mongoose.model('User', UserSchema);
 export const Goal = mongoose.models.Goal || mongoose.model('Goal', GoalSchema);
@@ -281,3 +410,11 @@ export const DailyPlanModel = mongoose.models.DailyPlan || mongoose.model('Daily
 export const FocusSession = mongoose.models.FocusSession || mongoose.model('FocusSession', FocusSessionSchema);
 export const AIUsage = mongoose.models.AIUsage || mongoose.model('AIUsage', AIUsageSchema);
 export const PricingConfig = mongoose.models.PricingConfig || mongoose.model('PricingConfig', PricingConfigSchema);
+export const AIAction = mongoose.models.AIAction || mongoose.model('AIAction', AIActionSchema);
+export const DopamineMenuItem = mongoose.models.DopamineMenuItem || mongoose.model('DopamineMenuItem', DopamineMenuItemSchema);
+export const PersonalAccessToken = mongoose.models.PersonalAccessToken || mongoose.model('PersonalAccessToken', PersonalAccessTokenSchema);
+export const BurnoutSignal = mongoose.models.BurnoutSignal || mongoose.model('BurnoutSignal', BurnoutSignalSchema);
+export const EnergyLog = mongoose.models.EnergyLog || mongoose.model('EnergyLog', EnergyLogSchema);
+export const KnowledgeEntity = mongoose.models.KnowledgeEntity || mongoose.model('KnowledgeEntity', KnowledgeEntitySchema);
+export const KnowledgeEdge = mongoose.models.KnowledgeEdge || mongoose.model('KnowledgeEdge', KnowledgeEdgeSchema);
+export const IntegrationConnection = mongoose.models.IntegrationConnection || mongoose.model('IntegrationConnection', IntegrationConnectionSchema);

@@ -34,7 +34,7 @@ export default function FocusSessionSummary({
         if (rating === 0 || saving) return;
         setSaving(true);
         try {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('taskpilot_jwt');
             const res = await fetch('/api/focus-sessions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
@@ -75,7 +75,7 @@ export default function FocusSessionSummary({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
             <div
-                className="bg-[#12161f] border border-slate-700/50 rounded-2xl p-6 max-w-sm w-full mx-4 space-y-5 shadow-2xl">
+                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl p-6 max-w-sm w-full mx-4 space-y-5 shadow-2xl">
                 {/* Header */}
                 <div className="text-center">
                     <div className="text-lg font-semibold text-slate-100">Session Complete</div>

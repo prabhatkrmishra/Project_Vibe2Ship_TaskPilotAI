@@ -198,13 +198,14 @@ export function Admin() {
 
     if (!isAllowed) {
         return (
-            <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
+            <div className="flex-1 overflow-y-auto bg-[var(--graphite-950)] text-slate-200 p-6 md:p-8">
                 <div className="max-w-4xl mx-auto text-center py-20 space-y-4">
                     <ShieldCheck className="w-16 h-16 text-rose-500 mx-auto"/>
                     <h2 className="text-2xl font-bold text-white">Access Denied</h2>
                     <p className="text-slate-400">You need admin privileges to access this page.</p>
                     <Link to="/dashboard">
-                        <Button className="bg-indigo-600 hover:bg-indigo-500 text-white mt-4">Back to Dashboard</Button>
+                        <Button className="bg-[var(--violet)] hover:brightness-110 text-white mt-4">Back to
+                            Dashboard</Button>
                     </Link>
                 </div>
             </div>
@@ -212,11 +213,11 @@ export function Admin() {
     }
 
     return (
-        <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
+        <div className="flex-1 overflow-y-auto bg-[var(--graphite-950)] text-slate-200 p-6 md:p-8">
             <div className="max-w-6xl mx-auto space-y-8">
                 <div className="flex items-start gap-3">
                     <Link to="/dashboard"
-                          className="p-2 mt-1 bg-slate-900 hover:bg-slate-800 border border-[#21262d] rounded-xl text-slate-400 hover:text-white transition-all shrink-0">
+                          className="p-2 mt-1 bg-slate-900 hover:bg-slate-800 border border-[var(--panel-line)] rounded-xl text-slate-400 hover:text-white transition-all shrink-0">
                         <ArrowLeft className="h-4 w-4"/>
                     </Link>
                     <div className="flex-1">
@@ -233,17 +234,20 @@ export function Admin() {
 
                 {/* Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-[#161b22] border border-[#21262d] rounded-2xl p-5 text-center">
+                    <div
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl p-5 text-center">
                         <Users className="w-5 h-5 text-violet-400 mx-auto mb-2"/>
                         <div className="text-2xl font-bold text-white">{stats.totalPremium}</div>
                         <div className="text-xs text-slate-500 uppercase tracking-wider">Premium Users</div>
                     </div>
-                    <div className="bg-[#161b22] border border-[#21262d] rounded-2xl p-5 text-center">
+                    <div
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl p-5 text-center">
                         <DollarSign className="w-5 h-5 text-emerald-400 mx-auto mb-2"/>
                         <div className="text-2xl font-bold text-white">₹{stats.totalRevenue.toLocaleString()}</div>
                         <div className="text-xs text-slate-500 uppercase tracking-wider">Total Revenue</div>
                     </div>
-                    <div className="bg-[#161b22] border border-[#21262d] rounded-2xl p-5 text-center">
+                    <div
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl p-5 text-center">
                         <Crown className="w-5 h-5 text-amber-400 mx-auto mb-2"/>
                         <div className="text-2xl font-bold text-white">{plans.filter(p => p.enabled).length}</div>
                         <div className="text-xs text-slate-500 uppercase tracking-wider">Active Plans</div>
@@ -251,7 +255,7 @@ export function Admin() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex gap-2 p-1 bg-[#0d1117] border border-[#21262d] rounded-2xl">
+                <div className="flex gap-2 p-1 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl">
                     <button onClick={() => setActiveTab('pricing')}
                             className={`flex-1 py-2 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'pricing' ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
                         <Tag className="w-4 h-4"/> Pricing Management
@@ -270,7 +274,7 @@ export function Admin() {
                                 className="w-6 h-6 animate-spin text-violet-400"/></div>
                         ) : plans.map((plan) => (
                             <div key={plan.planId}
-                                 className={`bg-[#0d1117] border rounded-3xl p-6 md:p-8 space-y-5 transition-all ${plan.enabled ? 'border-[#21262d]' : 'border-rose-500/30 opacity-60'}`}>
+                                 className={`bg-[var(--graphite-900)] border rounded-3xl p-6 md:p-8 space-y-5 transition-all ${plan.enabled ? 'border-[var(--panel-line)]' : 'border-rose-500/30 opacity-60'}`}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <Crown className="w-5 h-5 text-violet-400"/>
@@ -296,7 +300,7 @@ export function Admin() {
                                         <input type="number" value={String(getEdit(plan, 'basePrice'))}
                                                onChange={(e) => setEdit(plan.planId, 'basePrice', Number(e.target.value))}
                                                onBlur={() => commitEdit(plan, 'basePrice', updateBasePrice)}
-                                               className="w-full px-3 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
+                                               className="w-full px-3 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label
@@ -306,7 +310,7 @@ export function Admin() {
                                                onChange={(e) => setEdit(plan.planId, 'salePrice', Number(e.target.value))}
                                                onBlur={() => commitEdit(plan, 'salePrice', updateSalePrice)}
                                                placeholder={String(plan.basePrice)}
-                                               className="w-full px-3 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
+                                               className="w-full px-3 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label
@@ -316,14 +320,14 @@ export function Admin() {
                                                onChange={(e) => setEdit(plan.planId, 'saleLabel', e.target.value)}
                                                onBlur={() => commitEdit(plan, 'saleLabel', updateSaleLabel)}
                                                placeholder="e.g. Launch Offer"
-                                               className="w-full px-3 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
+                                               className="w-full px-3 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label
                                             className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Status</label>
                                         <button onClick={() => toggleSale(plan)}
                                                 className={`w-full px-3 py-2 rounded-xl text-sm font-bold border transition-all ${
-                                                    plan.saleActive ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-900 border-[#21262d] text-slate-500'
+                                                    plan.saleActive ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-900 border-[var(--panel-line)] text-slate-500'
                                                 }`}>
                                             {plan.saleActive ? 'Sale Active' : 'Sale Off'}
                                         </button>
@@ -353,7 +357,8 @@ export function Admin() {
                 {/* Users Tab */}
                 {activeTab === 'users' && (
                     <div className="space-y-6">
-                        <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-4">
+                        <div
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-4">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <ShieldCheck className="w-5 h-5 text-violet-400"/> Make User Admin
                             </h3>
@@ -361,7 +366,7 @@ export function Admin() {
                                 <input type="email" value={newAdminEmail}
                                        onChange={(e) => setNewAdminEmail(e.target.value)}
                                        placeholder="user@example.com"
-                                       className="flex-1 px-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
+                                       className="flex-1 px-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
                                 <Button onClick={handleMakeAdmin} disabled={makeAdminLoading || !newAdminEmail}
                                         className="bg-violet-600 hover:bg-violet-500 text-white font-bold">
                                     {makeAdminLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Grant Access'}
@@ -369,7 +374,8 @@ export function Admin() {
                             </div>
                         </div>
 
-                        <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-4">
+                        <div
+                            className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-4">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Crown className="w-5 h-5 text-amber-400"/> Premium Subscribers ({premiumUsers.length})
                             </h3>
@@ -380,12 +386,12 @@ export function Admin() {
                                     setUserPage(0);
                                 }}
                                        placeholder="Search by name or email..."
-                                       className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-[#21262d] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
+                                       className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-white text-sm focus:outline-none focus:border-violet-500"/>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
-                                        <tr className="border-b border-[#21262d]">
+                                        <tr className="border-b border-[var(--panel-line)]">
                                             <th className="text-left py-3 text-xs text-slate-500 font-medium">Name</th>
                                             <th className="text-left py-3 text-xs text-slate-500 font-medium">Email</th>
                                             <th className="text-center py-3 text-xs text-slate-500 font-medium">Plan</th>
@@ -410,7 +416,7 @@ export function Admin() {
                                             }
 
                                             return paged.map((u, i) => (
-                                                <tr key={i} className="border-b border-[#21262d]/50">
+                                                <tr key={i} className="border-b border-[var(--panel-line)]/50">
                                                     <td className="py-3 text-white font-medium">{u.name}</td>
                                                     <td className="py-3 text-slate-400 font-mono text-xs">{u.email}</td>
                                                     <td className="py-3 text-center"><span
@@ -432,7 +438,8 @@ export function Admin() {
                                 const totalPages = Math.ceil(filtered.length / USERS_PER_PAGE);
                                 if (totalPages <= 1) return null;
                                 return (
-                                    <div className="flex items-center justify-between pt-3 border-t border-[#21262d]">
+                                    <div
+                                        className="flex items-center justify-between pt-3 border-t border-[var(--panel-line)]">
                                         <span
                                             className="text-xs text-slate-500">Page {userPage + 1} of {totalPages}</span>
                                         <div className="flex gap-2">

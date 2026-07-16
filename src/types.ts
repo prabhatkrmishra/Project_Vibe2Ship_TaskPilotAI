@@ -1,5 +1,10 @@
 export type Priority = 'high' | 'medium' | 'low';
 export type TaskStatus = 'todo' | 'pending' | 'in_progress' | 'completed' | 'blocked';
+export type UserTier = 'free' | 'pro' | 'pro_plus';
+export type AutomationMode = 'suggest' | 'auto' | 'off';
+export type AIActionStatus = 'applied' | 'pending_review' | 'accepted' | 'rejected' | 'reverted';
+export type BurnoutSeverity = 'low' | 'medium' | 'high';
+export type EnergyTimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
 
 export interface Subtask {
     id: string;
@@ -18,8 +23,10 @@ export interface Task {
     category: string;
     estimatedHours: number;
     subtasks: Subtask[];
+    microSteps?: Subtask[];
     createdAt: string;
     riskScore?: number;
+    riskReason?: string;
     confidenceScore?: number;
     resources?: string[];
     goalId?: string | null;
@@ -328,38 +335,77 @@ export interface SubscriptionPlan {
     price: number; // in INR
     interval: 'month' | 'year';
     features: string[];
+    tier: UserTier;
     popular?: boolean;
 }
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     {
-        id: 'monthly',
-        name: 'Monthly Premium',
-        description: 'Access to all premium features for one month',
+        id: 'pro_monthly',
+        name: 'Pro',
+        description: 'Smarter organization with AI assistance',
         price: 199,
         interval: 'month',
+        tier: 'pro',
         features: [
-            'Unlimited AI Power Mode sessions',
-            'Advanced analytics dashboard',
-            'Priority AI processing',
-            'No watermarks on exports',
-            'Premium themes & customization',
-            'Export to PDF reports'
+            'Unlimited projects, quests, habits',
+            'AI task creation & subtask generation',
+            'AI priority suggestions',
+            'AI chat assistant',
+            'Visual timeline view',
+            'Task micro-stepper',
+            'Dopamine menu',
+            'Streak freezes',
+            'Guided daily planning',
+            'Transparent billing dashboard'
         ]
     },
     {
-        id: 'annual',
-        name: 'Annual Premium',
-        description: 'Save 20% with annual billing',
-        price: 1999,
+        id: 'pro_annual',
+        name: 'Pro Annual',
+        description: 'Save 17% with annual billing',
+        price: 1990,
         interval: 'year',
+        tier: 'pro',
         features: [
-            'All Monthly Premium features',
-            'All for the price of 8 months',
-            'Early access to new features',
-            'Premium support priority'
+            'All Pro features',
+            '2 months free vs monthly',
+            'Priority support'
+        ]
+    },
+    {
+        id: 'pro_plus_monthly',
+        name: 'Pro+',
+        description: 'AI Executive Assistant — full autonomy',
+        price: 499,
+        interval: 'month',
+        tier: 'pro_plus',
+        features: [
+            'Everything in Pro',
+            'Autonomous pipeline & auto-rescheduler',
+            'Energy-matched scheduling',
+            'Burnout detection',
+            'Deadline risk predictions',
+            'Scenario simulator',
+            'Personal knowledge graph',
+            'Shared projects with AI mediator',
+            'Voice brain dump',
+            'Unlimited AI usage (fair-use)'
         ],
         popular: true
+    },
+    {
+        id: 'pro_plus_annual',
+        name: 'Pro+ Annual',
+        description: 'Save 17% with annual billing',
+        price: 4990,
+        interval: 'year',
+        tier: 'pro_plus',
+        features: [
+            'All Pro+ features',
+            '2 months free vs monthly',
+            'Priority support'
+        ]
     }
 ];
 
@@ -377,3 +423,66 @@ export const PREMIUM_FEATURES = [
 ] as const;
 
 export type PremiumFeature = typeof PREMIUM_FEATURES[number];
+
+// ─── Tier System ──────────────────────────────────────────────────────────────
+
+export const TIER_FEATURES: Record<UserTier, string[]> = {
+    free: [],
+    pro: [
+        'unlimited_tasks', 'ai_chat', 'ai_plan_generation', 'ai_subtasks',
+        'ai_weekly_review', 'ai_meeting_summaries', 'visual_timeline',
+        'task_micro_stepper', 'dopamine_menu', 'streak_freezes',
+        'guided_planning', 'transparent_billing'
+    ],
+    pro_plus: [
+        'all_pro', 'autonomous_pipeline', 'auto_mode', 'ai_energy_matching',
+        'burnout_detection', 'deadline_risk_prediction', 'scenario_simulator',
+        'second_opinion', 'knowledge_graph', 'shared_projects',
+        'delegation_assistant', 'voice_brain_dump', 'github_sync',
+        'ai_body_doubling', 'unlimited_ai'
+    ]
+};
+
+export interface AIAction {
+    id: string;
+    userId: string;
+    type: string;
+    targetId: string;
+    targetCollection: string;
+    before: Record<string, any> | null;
+    after: Record<string, any> | null;
+    reason: string;
+    status: AIActionStatus;
+    createdAt: string;
+}
+
+export interface DopamineMenuItem {
+    id: string;
+    userId: string;
+    label: string;
+    emoji: string;
+    durationMinutes: number;
+}
+
+export interface AutomationSettings {
+    global: AutomationMode;
+    perProject: Record<string, AutomationMode>;
+}
+
+export interface BurnoutSignal {
+    id: string;
+    userId: string;
+    date: string;
+    triggers: string[];
+    severity: BurnoutSeverity;
+    dismissed: boolean;
+}
+
+export interface EnergyLog {
+    id: string;
+    userId: string;
+    date: string;
+    timeOfDay: EnergyTimeOfDay;
+    energyLevel: number;
+    source: 'manual' | 'inferred';
+}

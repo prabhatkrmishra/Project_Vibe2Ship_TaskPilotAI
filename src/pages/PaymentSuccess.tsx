@@ -7,10 +7,19 @@ import {showSuccess, showError} from '../lib/toastTheme';
 
 export function PaymentSuccess() {
     const navigate = useNavigate();
-    const {user, refreshPremiumStatus} = useAuth();
+    const {user, loading: authLoading, refreshPremiumStatus} = useAuth();
     const [checking, setChecking] = useState(true);
 
     useEffect(() => {
+        // This page is reached via a hard, full-page redirect from Razorpay's
+        // Payment Link callback_url, so AuthContext remounts from scratch and
+        // starts with user=null while it re-fetches /api/auth/me from the JWT
+        // in localStorage. Bail out until that restore finishes instead of
+        // treating a momentarily-null user as "not logged in" — otherwise a
+        // user who just paid gets bounced to /login before AuthContext has a
+        // chance to catch up.
+        if (authLoading) return;
+
         const checkPaymentStatus = async () => {
             try {
                 const token = await user?.getIdToken();
@@ -26,7 +35,7 @@ export function PaymentSuccess() {
 
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.isPremium) {
+                    if (data.tier && data.tier !== 'free') {
                         showSuccess('Payment successful! Premium activated.');
                         await refreshPremiumStatus();
                         setTimeout(() => navigate('/dashboard'), 2000);
@@ -42,7 +51,7 @@ export function PaymentSuccess() {
         };
 
         checkPaymentStatus();
-    }, [user, navigate, refreshPremiumStatus]);
+    }, [user, authLoading, navigate, refreshPremiumStatus]);
 
     return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">

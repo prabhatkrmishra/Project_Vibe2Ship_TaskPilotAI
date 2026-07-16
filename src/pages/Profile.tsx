@@ -29,7 +29,10 @@ import {
     Zap,
     Shield,
     AlertTriangle,
-    CalendarClock
+    CalendarClock,
+    Plus,
+    Trash2,
+    KeyRound
 } from 'lucide-react';
 import {Link, useNavigate} from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -325,14 +328,103 @@ export function Profile() {
         showSuccess('Secret copied to clipboard');
     }, [twoFASecret]);
 
+    // ─── Personal Access Tokens ─────────────────────────────────────────────
+    interface PATRecord {
+        id: string;
+        name: string;
+        lastUsedAt: string | null;
+        expiresAt: string | null;
+        createdAt: string;
+    }
+
+    const [patList, setPatList] = useState<PATRecord[]>([]);
+    const [patName, setPatName] = useState('');
+    const [patExpiryDays, setPatExpiryDays] = useState<number>(0);
+    const [patLoading, setPatLoading] = useState(false);
+    const [newPatToken, setNewPatToken] = useState<string | null>(null);
+
+    // ─── Automation Dial ────────────────────────────────────────────────────
+    const [automationMode, setAutomationMode] = useState<string>('suggest');
+
+    const fetchPATs = useCallback(async () => {
+        if (!user) return;
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/pat', {
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            if (res.ok) setPatList(await res.json());
+        } catch {}
+    }, [user]);
+
+    useEffect(() => { fetchPATs(); }, [fetchPATs]);
+
+    // Fetch automation settings on mount
+    useEffect(() => {
+        const fetchAutomation = async () => {
+            if (!user || user.tier === 'free') return;
+            try {
+                const token = await user.getIdToken();
+                const res = await fetch('/api/automation/settings', {
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setAutomationMode(data.global || 'suggest');
+                }
+            } catch {}
+        };
+        fetchAutomation();
+    }, [user]);
+
+    const handleCreatePAT = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!patName.trim()) { showError('Enter a token name'); return; }
+        try {
+            setPatLoading(true);
+            const token = await user?.getIdToken();
+            const res = await fetch('/api/pat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({name: patName.trim(), expiresInDays: patExpiryDays || undefined})
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to create token');
+            setNewPatToken(data.token);
+            setPatName('');
+            setPatExpiryDays(0);
+            fetchPATs();
+            showSuccess('Token created — copy it now, it won\'t be shown again');
+        } catch (err: any) {
+            showError(err.message);
+        } finally {
+            setPatLoading(false);
+        }
+    };
+
+    const handleRevokePAT = async (id: string) => {
+        try {
+            const token = await user?.getIdToken();
+            const res = await fetch(`/api/pat/${id}`, {
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            if (!res.ok) throw new Error('Failed to revoke token');
+            setPatList(prev => prev.filter(p => p.id !== id));
+            showSuccess('Token revoked');
+        } catch (err: any) {
+            showError(err.message);
+        }
+    };
+
     return (
-        <div className="flex-1 overflow-y-auto bg-[#030712] text-slate-200 p-6 md:p-8">
+        <div className="flex-1 overflow-y-auto bg-[var(--graphite-950)] text-slate-200 p-6 md:p-8">
             <div className="max-w-6xl mx-auto space-y-8">
 
                 {/* Header */}
                 <div className="flex items-start gap-3">
                     <Link to="/dashboard"
-                          className="p-2 mt-1 bg-slate-900 hover:bg-slate-800 border border-[#21262d] rounded-xl text-slate-400 hover:text-white transition-all shrink-0">
+                          className="p-2 mt-1 bg-slate-900 hover:bg-slate-800 border border-[var(--panel-line)] rounded-xl text-slate-400 hover:text-white transition-all shrink-0">
                         <ArrowLeft className="h-4 w-4"/>
                     </Link>
                     <div className="flex-1">
@@ -359,7 +451,7 @@ export function Profile() {
 
                     {/* User Meta Summary Card */}
                     <div
-                        className="md:col-span-4 lg:col-span-4 xl:col-span-3 bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 flex flex-col items-center text-center h-fit">
+                        className="md:col-span-4 lg:col-span-4 xl:col-span-3 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 flex flex-col items-center text-center h-fit">
                         <div className="relative mb-4">
                             {user?.picture ? (
                                 <img src={user.picture} alt="Profile"
@@ -371,12 +463,12 @@ export function Profile() {
                                 </div>
                             )}
                             <div
-                                className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-emerald-500 border-4 border-[#0d1117] flex items-center justify-center">
+                                className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-emerald-500 border-4 border-[var(--graphite-900)] flex items-center justify-center">
                                 <span className="w-2 h-2 rounded-full bg-white animate-pulse"/>
                             </div>
                         </div>
 
-                        <h2 className="text-lg font-bold text-[#f0f6fc] tracking-tight leading-snug mb-2">{user?.name}</h2>
+                        <h2 className="text-lg font-bold text-white tracking-tight leading-snug mb-2">{user?.name}</h2>
 
                         {user?.isPremium ? (
                             <span
@@ -391,7 +483,7 @@ export function Profile() {
                 </span>
                         )}
 
-                        <div className="w-full border-t border-[#21262d] mt-6 pt-6 space-y-4 text-left">
+                        <div className="w-full border-t border-[var(--panel-line)] mt-6 pt-6 space-y-4 text-left">
                             <div className="flex items-center gap-3">
                                 <Mail className="h-4 w-4 text-slate-500 shrink-0"/>
                                 <div className="space-y-0.5">
@@ -410,7 +502,7 @@ export function Profile() {
                         </div>
 
                         {user?.gamification && (
-                            <div className="w-full border-t border-[#21262d] mt-6 pt-6 space-y-4 text-left">
+                            <div className="w-full border-t border-[var(--panel-line)] mt-6 pt-6 space-y-4 text-left">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <Trophy className="h-4 w-4 text-indigo-400"/>
@@ -444,7 +536,7 @@ export function Profile() {
                             </div>
                         )}
 
-                        <div className="w-full border-t border-[#21262d] mt-6 pt-6">
+                        <div className="w-full border-t border-[var(--panel-line)] mt-6 pt-6">
                             <Button
                                 onClick={async () => {
                                     try {
@@ -467,7 +559,7 @@ export function Profile() {
                     <div className="md:col-span-8 lg:col-span-8 xl:col-span-9 space-y-6">
 
                         {/* Tabs - stacked on mobile, horizontal on desktop */}
-                        <div className="block sm:flex gap-2 p-1 bg-[#0d1117] border border-[#21262d] rounded-2xl">
+                        <div className="block sm:flex gap-2 p-1 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl">
                             <button
                                 onClick={() => setActiveTab('achievements')}
                                 className={`w-full sm:flex-1 py-2 text-sm font-bold rounded-xl sm:rounded-r-none transition-all flex items-center justify-center gap-2 ${activeTab === 'achievements' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white hover:bg-white/5 sm:rounded-xl'}`}
@@ -501,10 +593,10 @@ export function Profile() {
                         {activeTab === 'settings' && (
                             <div className="space-y-8">
                                 {/* General Settings */}
-                                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
-                                    <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                         <UserIcon className="h-5 w-5 text-indigo-400"/>
-                                        <h3 className="text-lg font-bold text-[#f0f6fc]">General Information</h3>
+                                        <h3 className="text-lg font-bold text-white">General Information</h3>
                                     </div>
 
                                     <form onSubmit={handleUpdateProfile} className="space-y-5">
@@ -518,7 +610,7 @@ export function Profile() {
                                                     value={name}
                                                     onChange={(e) => setName(e.target.value)}
                                                     placeholder="Enter your name"
-                                                    className="w-full px-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
+                                                    className="w-full px-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
                                                 />
                                             </div>
 
@@ -530,7 +622,7 @@ export function Profile() {
                                                     type="email"
                                                     value={user?.email || ''}
                                                     disabled
-                                                    className="w-full px-4 py-2.5 bg-[#161b22] border border-[#21262d] rounded-xl text-slate-400 cursor-not-allowed text-sm focus:outline-none"
+                                                    className="w-full px-4 py-2.5 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl text-slate-400 cursor-not-allowed text-sm focus:outline-none"
                                                 />
                                             </div>
                                         </div>
@@ -543,7 +635,7 @@ export function Profile() {
                                                 onChange={(e) => setAddress(e.target.value)}
                                                 placeholder="Enter your workstation/billing address"
                                                 rows={3}
-                                                className="w-full px-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all resize-none"
+                                                className="w-full px-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all resize-none"
                                             />
                                         </div>
 
@@ -570,11 +662,11 @@ export function Profile() {
                                 </div>
 
                                 {/* Change Password */}
-                                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
-                                    <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                         <Key className="h-5 w-5 text-emerald-400"/>
                                         <div className="flex-1">
-                                            <h3 className="text-lg font-bold text-[#f0f6fc]">Security & Credentials</h3>
+                                            <h3 className="text-lg font-bold text-white">Security & Credentials</h3>
                                             <p className="text-xs text-slate-500 mt-0.5">Keep your account safe by
                                                 updating your password regularly.</p>
                                         </div>
@@ -591,7 +683,7 @@ export function Profile() {
                                                     value={currentPassword}
                                                     onChange={(e) => setCurrentPassword(e.target.value)}
                                                     placeholder="••••••••"
-                                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
                                                 />
                                                 <Lock
                                                     className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
@@ -609,7 +701,7 @@ export function Profile() {
                                                         value={newPassword}
                                                         onChange={(e) => setNewPassword(e.target.value)}
                                                         placeholder="••••••••"
-                                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
+                                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
                                                     />
                                                     <Lock
                                                         className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
@@ -626,7 +718,7 @@ export function Profile() {
                                                         value={retypeNewPassword}
                                                         onChange={(e) => setRetypeNewPassword(e.target.value)}
                                                         placeholder="••••••••"
-                                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
+                                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 text-sm transition-all"
                                                     />
                                                     <Lock
                                                         className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"/>
@@ -657,11 +749,11 @@ export function Profile() {
                                 </div>
 
                                 {/* Two-Factor Authentication */}
-                                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
-                                    <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                         <Smartphone className="h-5 w-5 text-amber-400"/>
                                         <div className="flex-1">
-                                            <h3 className="text-lg font-bold text-[#f0f6fc]">Two-Factor
+                                            <h3 className="text-lg font-bold text-white">Two-Factor
                                                 Authentication</h3>
                                             <p className="text-xs text-slate-500 mt-0.5">Add an extra layer of security
                                                 with an authenticator app.</p>
@@ -712,22 +804,173 @@ export function Profile() {
                                     </div>
                                 </div>
 
+                                {/* Personal Access Tokens */}
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
+                                        <KeyRound className="h-5 w-5 text-amber-400"/>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-bold text-white">Personal Access Tokens</h3>
+                                            <p className="text-xs text-slate-500 mt-0.5">Use these tokens to authenticate the browser extension or third-party integrations.</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Newly created token — show once */}
+                                    {newPatToken && (
+                                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                                            <div className="flex items-center gap-2 text-amber-400 text-sm font-semibold">
+                                                <AlertTriangle className="h-4 w-4"/>
+                                                Copy this token now — it won't be shown again.
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <code className="flex-1 text-xs bg-slate-900 border border-[var(--panel-line)] rounded-lg px-3 py-2 font-mono text-amber-300 break-all">{newPatToken}</code>
+                                                <Button
+                                                    onClick={() => { navigator.clipboard.writeText(newPatToken); showSuccess('Copied to clipboard'); }}
+                                                    size="sm"
+                                                    className="shrink-0 h-8 px-3 rounded-lg bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-amber-500/30"
+                                                >
+                                                    <Copy className="h-3.5 w-3.5"/>
+                                                </Button>
+                                            </div>
+                                            <Button onClick={() => setNewPatToken(null)} variant="ghost" className="text-xs text-slate-500 hover:text-white">
+                                                Dismiss
+                                            </Button>
+                                        </div>
+                                    )}
+
+                                    {/* Create new token */}
+                                    <form onSubmit={handleCreatePAT} className="flex flex-col sm:flex-row items-end gap-3">
+                                        <div className="flex-1 w-full space-y-1">
+                                            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Token Name</label>
+                                            <input
+                                                type="text"
+                                                value={patName}
+                                                onChange={(e) => setPatName(e.target.value)}
+                                                placeholder="e.g. Browser Extension"
+                                                maxLength={64}
+                                                className="w-full px-4 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500 text-sm transition-all"
+                                            />
+                                        </div>
+                                        <div className="w-full sm:w-40 space-y-1">
+                                            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Expires</label>
+                                            <select
+                                                value={patExpiryDays}
+                                                onChange={(e) => setPatExpiryDays(Number(e.target.value))}
+                                                className="w-full px-3 py-2.5 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 text-sm focus:outline-none focus:border-amber-500"
+                                            >
+                                                <option value={0}>Never</option>
+                                                <option value={30}>30 days</option>
+                                                <option value={90}>90 days</option>
+                                                <option value={180}>6 months</option>
+                                                <option value={365}>1 year</option>
+                                            </select>
+                                        </div>
+                                        <Button
+                                            type="submit"
+                                            disabled={patLoading || !patName.trim()}
+                                            className="h-10 px-5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-medium text-sm transition-all shrink-0"
+                                        >
+                                            {patLoading ? <Loader2 className="h-4 w-4 animate-spin"/> : <Plus className="h-4 w-4"/>}
+                                            <span className="ml-1.5">Create</span>
+                                        </Button>
+                                    </form>
+
+                                    {/* Existing tokens */}
+                                    {patList.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {patList.map((pat) => (
+                                                <div key={pat.id} className="flex items-center justify-between gap-3 p-3 bg-slate-900 border border-[var(--panel-line)] rounded-xl">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-white truncate">{pat.name}</p>
+                                                        <p className="text-xs text-slate-500 mt-0.5">
+                                                            Created {new Date(pat.createdAt).toLocaleDateString()}
+                                                            {pat.lastUsedAt && ` · Last used ${new Date(pat.lastUsedAt).toLocaleDateString()}`}
+                                                            {pat.expiresAt && ` · Expires ${new Date(pat.expiresAt).toLocaleDateString()}`}
+                                                        </p>
+                                                    </div>
+                                                    <Button
+                                                        onClick={() => handleRevokePAT(pat.id)}
+                                                        size="sm"
+                                                        className="h-8 px-3 rounded-lg bg-rose-600/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600/20 text-xs shrink-0"
+                                                    >
+                                                        <Trash2 className="h-3.5 w-3.5 mr-1"/>
+                                                        Revoke
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-500">No tokens yet. Create one above to get started.</p>
+                                    )}
+                                </div>
+
+                                {/* Automation Dial (Phase 1.1) */}
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
+                                        <Cpu className="h-5 w-5 text-[var(--violet)]"/>
+                                        <div className="flex-1">
+                                            <h3 className="text-lg font-bold text-white">Automation Dial</h3>
+                                            <p className="text-xs text-slate-500 mt-0.5">Control how much autonomy the AI has over your schedule.</p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-slate-300 font-medium">Global Mode</p>
+                                                <p className="text-xs text-slate-500">Suggest: AI proposes changes for your review. Auto: AI applies changes directly. Off: AI doesn't act.</p>
+                                            </div>
+                                            <select
+                                                value={user?.tier === 'free' ? 'suggest' : automationMode}
+                                                disabled={user?.tier === 'free'}
+                                                onChange={async (e) => {
+                                                    const val = e.target.value;
+                                                    if (val === 'auto' && user?.tier !== 'pro_plus') {
+                                                        showError('Auto mode requires Pro+');
+                                                        return;
+                                                    }
+                                                    try {
+                                                        const token = await user?.getIdToken();
+                                                        const res = await fetch('/api/automation/settings', {
+                                                            method: 'PUT',
+                                                            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                                                            body: JSON.stringify({global: val})
+                                                        });
+                                                        if (res.ok) {
+                                                            setAutomationMode(val);
+                                                            showSuccess('Automation mode updated');
+                                                        } else {
+                                                            const data = await res.json();
+                                                            showError(data.error || 'Failed to update');
+                                                        }
+                                                    } catch {
+                                                        showError('Failed to update automation mode');
+                                                    }
+                                                }}
+                                                className="px-3 py-2 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 text-sm focus:outline-none focus:border-[var(--violet)]"
+                                            >
+                                                <option value="suggest">Suggest</option>
+                                                <option value="auto" disabled={user?.tier !== 'pro_plus'}>Auto {user?.tier !== 'pro_plus' && '(Pro+ only)'}</option>
+                                                <option value="off">Off</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Premium Features Section */}
                                 {user?.isPremium && (
                                     <div
                                         className="bg-violet-500/10 border border-violet-500/20 rounded-3xl p-6 md:p-8 space-y-6">
                                         <div className="flex items-center gap-3 border-b border-violet-500/30 pb-4">
                                             <Crown className="h-5 w-5 text-violet-400"/>
-                                            <h3 className="text-lg font-bold text-[#f0f6fc]">Premium Features</h3>
+                                            <h3 className="text-lg font-bold text-white">Premium Features</h3>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                                                 <h4 className="text-sm font-bold text-violet-300 mb-2">Unlimited
                                                     Sessions</h4>
                                                 <p className="text-xs text-slate-400">No limits on AI-powered scheduling
                                                     sessions per day.</p>
                                             </div>
-                                            <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
+                                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-4">
                                                 <h4 className="text-sm font-bold text-violet-300 mb-2">Advanced
                                                     Analytics</h4>
                                                 <p className="text-xs text-slate-400">Detailed insights and productivity
@@ -738,11 +981,11 @@ export function Profile() {
                                 )}
 
                                 {/* Default AI Brain Model Selector Card */}
-                                <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-6">
-                                    <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                         <Cpu className="h-5 w-5 text-indigo-400"/>
                                         <div className="flex-1">
-                                            <h3 className="text-lg font-bold text-[#f0f6fc]">AI Brain Configuration</h3>
+                                            <h3 className="text-lg font-bold text-white">AI Brain Configuration</h3>
                                             <p className="text-xs text-slate-400 mt-0.5">
                                                 Choose the default model used for task analysis, subtask generation,
                                                 quest planning, and daily routine rescheduling.
@@ -751,7 +994,7 @@ export function Profile() {
                                     </div>
 
                                     <div
-                                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/40 border border-[#21262d] hover:border-indigo-500/30 transition-all">
+                                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/40 border border-[var(--panel-line)] hover:border-indigo-500/30 transition-all">
                                         <div className="space-y-1">
                                             <span
                                                 className="text-[10px] text-indigo-400 uppercase tracking-wider font-mono font-bold">Active Workspace Default Brain</span>
@@ -768,10 +1011,10 @@ export function Profile() {
                                                 Configure Brain
                                             </DialogTrigger>
                                             <DialogContent
-                                                className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl p-6">
-                                                <DialogHeader className="border-b border-[#21262d] pb-4">
+                                                className="sm:max-w-[480px] bg-[var(--graphite-900)] text-slate-300 border-[var(--panel-line)] rounded-3xl shadow-2xl p-6">
+                                                <DialogHeader className="border-b border-[var(--panel-line)] pb-4">
                                                     <DialogTitle
-                                                        className="text-[#f0f6fc] text-xl flex items-center gap-2">
+                                                        className="text-white text-xl flex items-center gap-2">
                                                         <Cpu className="h-5 w-5 text-indigo-400"/>
                                                         Select Default AI Model
                                                     </DialogTitle>
@@ -830,10 +1073,10 @@ export function Profile() {
                                                                                     disabled={!model.available}
                                                                                     className={`w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${
                                                                                         !model.available
-                                                                                            ? 'bg-slate-900/20 border-[#21262d] text-slate-600 opacity-50 cursor-not-allowed'
+                                                                                            ? 'bg-slate-900/20 border-[var(--panel-line)] text-slate-600 opacity-50 cursor-not-allowed'
                                                                                             : isSelected
                                                                                                 ? 'bg-indigo-500/10 border-indigo-500 text-white'
-                                                                                                : 'bg-slate-900/40 border-[#21262d] hover:border-[#30363d] hover:bg-slate-900/80 text-slate-300'
+                                                                                                : 'bg-slate-900/40 border-[var(--panel-line)] hover:border-[var(--panel-line)] hover:bg-slate-900/80 text-slate-300'
                                                                                     }`}
                                                                                 >
                                                                                     <div className="space-y-1">
@@ -865,10 +1108,10 @@ export function Profile() {
                         )}
 
                         {activeTab === 'achievements' && (
-                            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
-                                <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-8">
+                                <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                     <Trophy className="h-6 w-6 text-yellow-500"/>
-                                    <h3 className="text-xl font-bold text-[#f0f6fc]">Achievement Badges</h3>
+                                    <h3 className="text-xl font-bold text-white">Achievement Badges</h3>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -892,8 +1135,8 @@ export function Profile() {
                                                 key={achievement.id}
                                                 className={`relative flex flex-col items-center p-5 rounded-2xl border transition-all ${
                                                     isEarned
-                                                        ? 'bg-[#161b22] border-[#30363d] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:border-indigo-500/50'
-                                                        : 'bg-[#0a0d14] border-[#161b22] opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
+                                                        ? 'bg-[var(--graphite-900)] border-[var(--panel-line)] shadow-[0_4px_24px_rgba(0,0,0,0.2)] hover:border-indigo-500/50'
+                                                        : 'bg-[var(--graphite-950)] border-[#161b22] opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
                                                 }`}
                                             >
                                                 <div
@@ -925,10 +1168,10 @@ export function Profile() {
                         )}
 
                         {activeTab === 'personalities' && (
-                            <div className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 md:p-8 space-y-8">
-                                <div className="flex items-center gap-3 border-b border-[#21262d] pb-4">
+                            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8 space-y-8">
+                                <div className="flex items-center gap-3 border-b border-[var(--panel-line)] pb-4">
                                     <Target className="h-6 w-6 text-cyan-500"/>
-                                    <h3 className="text-xl font-bold text-[#f0f6fc]">AI Personalities</h3>
+                                    <h3 className="text-xl font-bold text-white">AI Personalities</h3>
                                 </div>
                                 <p className="text-sm text-slate-400">Unlock different AI personalities for Mission
                                     Control using your Gamification XP.</p>
@@ -1016,7 +1259,7 @@ export function Profile() {
                                                 key={personality.id}
                                                 className={`relative flex flex-col p-5 rounded-2xl border transition-all ${
                                                     isActive ? 'bg-indigo-500/10 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' :
-                                                        isUnlocked ? 'bg-[#161b22] border-[#30363d] hover:border-indigo-500/50' : 'bg-[#0a0d14] border-[#161b22] opacity-80'
+                                                        isUnlocked ? 'bg-[var(--graphite-900)] border-[var(--panel-line)] hover:border-indigo-500/50' : 'bg-[var(--graphite-950)] border-[#161b22] opacity-80'
                                                 }`}
                                             >
                                                 <div className="flex items-center gap-3 mb-3">
@@ -1024,7 +1267,7 @@ export function Profile() {
                                                         className={`p-2 rounded-full ${isActive ? 'bg-indigo-500 text-white' : isUnlocked ? 'bg-slate-800 text-slate-300' : 'bg-slate-900 text-slate-600'}`}>
                                                         <Icon className="w-5 h-5"/>
                                                     </div>
-                                                    <h4 className="font-bold text-[#f0f6fc]">{personality.name}</h4>
+                                                    <h4 className="font-bold text-white">{personality.name}</h4>
                                                 </div>
                                                 <p className="text-xs text-slate-400 flex-1 mb-4">{personality.desc}</p>
 
@@ -1084,9 +1327,9 @@ export function Profile() {
                 }
             }}>
                 <DialogContent
-                    className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+                    className="sm:max-w-[480px] bg-[var(--graphite-900)] text-slate-300 border-[var(--panel-line)] rounded-3xl shadow-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-[#f0f6fc] text-xl">Set Up Two-Factor Authentication</DialogTitle>
+                        <DialogTitle className="text-white text-xl">Set Up Two-Factor Authentication</DialogTitle>
                     </DialogHeader>
 
                     {twoFASetupStep === 'qr' && (
@@ -1102,9 +1345,9 @@ export function Profile() {
                                 <p className="text-xs text-slate-500 text-center">Or enter this secret manually:</p>
                                 <div className="flex items-center gap-2">
                                     <code
-                                        className="flex-1 text-xs bg-slate-900 border border-[#21262d] rounded-lg px-3 py-2 font-mono text-amber-300 break-all">{twoFASecret}</code>
+                                        className="flex-1 text-xs bg-slate-900 border border-[var(--panel-line)] rounded-lg px-3 py-2 font-mono text-amber-300 break-all">{twoFASecret}</code>
                                     <Button onClick={copySecret} size="sm"
-                                            className="shrink-0 h-8 px-3 rounded-lg bg-[#161b22] border border-[#21262d] hover:border-amber-500/30">
+                                            className="shrink-0 h-8 px-3 rounded-lg bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-amber-500/30">
                                         <Copy className="h-3.5 w-3.5"/>
                                     </Button>
                                 </div>
@@ -1128,7 +1371,7 @@ export function Profile() {
                                 value={twoFACode}
                                 onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, ''))}
                                 placeholder="000000"
-                                className="w-full px-4 py-3 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
+                                className="w-full px-4 py-3 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
                             />
                             <Button
                                 onClick={handle2FAVerify}
@@ -1160,9 +1403,9 @@ export function Profile() {
                 if (!open) setTwoFADisableCode('');
             }}>
                 <DialogContent
-                    className="sm:max-w-[420px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+                    className="sm:max-w-[420px] bg-[var(--graphite-900)] text-slate-300 border-[var(--panel-line)] rounded-3xl shadow-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-[#f0f6fc] text-xl">Disable Two-Factor Authentication</DialogTitle>
+                        <DialogTitle className="text-white text-xl">Disable Two-Factor Authentication</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         <p className="text-sm text-slate-400">Enter a code from your authenticator app to confirm.</p>
@@ -1174,11 +1417,11 @@ export function Profile() {
                             value={twoFADisableCode}
                             onChange={(e) => setTwoFADisableCode(e.target.value.replace(/\D/g, ''))}
                             placeholder="000000"
-                            className="w-full px-4 py-3 bg-slate-900 border border-[#21262d] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
+                            className="w-full px-4 py-3 bg-slate-900 border border-[var(--panel-line)] rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 text-center text-lg font-mono tracking-[0.5em] transition-all"
                         />
                         <div className="flex gap-3">
                             <Button onClick={() => setTwoFADisableDialogOpen(false)} variant="ghost"
-                                    className="flex-1 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-[#161b22]">Cancel</Button>
+                                    className="flex-1 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-[var(--graphite-900)]">Cancel</Button>
                             <Button
                                 onClick={handle2FADisable}
                                 disabled={twoFADisableCode.length !== 6 || twoFASetupLoading}
@@ -1196,9 +1439,9 @@ export function Profile() {
                 setTwoFADialogOpen(open);
             }}>
                 <DialogContent
-                    className="sm:max-w-[480px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+                    className="sm:max-w-[480px] bg-[var(--graphite-900)] text-slate-300 border-[var(--panel-line)] rounded-3xl shadow-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-[#f0f6fc] text-xl">Set Up Two-Factor Authentication</DialogTitle>
+                        <DialogTitle className="text-white text-xl">Set Up Two-Factor Authentication</DialogTitle>
                     </DialogHeader>
                     <div className="py-4 text-center">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto text-indigo-400"/>
@@ -1253,7 +1496,7 @@ function PremiumTabContent() {
             <div className={`rounded-3xl p-6 md:p-8 border ${
                 isPremium
                     ? 'bg-gradient-to-r from-violet-900/30 to-indigo-900/20 border-violet-500/30'
-                    : 'bg-[#161b22] border-[#21262d]'
+                    : 'bg-[var(--graphite-900)] border-[var(--panel-line)]'
             }`}>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     <div
@@ -1261,7 +1504,7 @@ function PremiumTabContent() {
                         <Crown className="w-6 h-6"/>
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-lg font-bold text-[#f0f6fc]">
+                        <h3 className="text-lg font-bold text-white">
                             {isPremium ? `${plan === 'annual' ? 'Annual' : 'Monthly'} Premium` : 'Free Tier'}
                         </h3>
                         <p className="text-sm text-slate-400">
@@ -1286,10 +1529,10 @@ function PremiumTabContent() {
 
             {/* ── AI Usage (Free Tier only) ── */}
             {!isPremium && user?.aiUsage && Object.keys(user.aiUsage).length > 0 && (
-                <div className="bg-[#161b22] border border-[#21262d] rounded-3xl p-6 md:p-8">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8">
                     <div className="flex items-center gap-3 mb-4">
                         <BarChart3 className="h-5 w-5 text-cyan-400"/>
-                        <h3 className="text-sm font-bold text-[#f0f6fc]">Today's AI Usage</h3>
+                        <h3 className="text-sm font-bold text-white">Today's AI Usage</h3>
                         <span className="text-[10px] text-slate-500 font-mono">(Free Tier)</span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1297,7 +1540,7 @@ function PremiumTabContent() {
                             const name = endpoint.replace('/api/', '').replace(/-/g, ' ');
                             const pct = Math.min(100, (used / limit) * 100);
                             return (
-                                <div key={endpoint} className="bg-[#0d1117] border border-[#21262d] rounded-xl p-3">
+                                <div key={endpoint} className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-xl p-3">
                                     <div
                                         className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 capitalize">{name}</div>
                                     <div className="flex items-end justify-between">
@@ -1328,8 +1571,8 @@ function PremiumTabContent() {
                     Switch to Premium
                 </Button>
             ) : (
-                <div className="bg-[#161b22] border border-[#21262d] rounded-3xl p-6 md:p-8">
-                    <h4 className="text-sm font-bold text-[#f0f6fc] mb-4 flex items-center gap-2">
+                <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8">
+                    <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                         <CalendarClock className="w-4 h-4 text-violet-400"/>
                         Subscription Details
                     </h4>
@@ -1366,15 +1609,15 @@ function PremiumTabContent() {
             )}
 
             {/* ── Comparison Table ── */}
-            <div className="bg-[#161b22] border border-[#21262d] rounded-3xl p-6 md:p-8">
+            <div className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 md:p-8">
                 <div className="flex items-center gap-3 mb-4">
                     <BarChart3 className="w-5 h-5 text-cyan-400"/>
-                    <h3 className="text-sm font-bold text-[#f0f6fc]">Plan Comparison</h3>
+                    <h3 className="text-sm font-bold text-white">Plan Comparison</h3>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="border-b border-[#21262d]">
+                            <tr className="border-b border-[var(--panel-line)]">
                                 <th className="text-left py-3 text-xs text-slate-400 font-medium">Feature</th>
                                 <th className="text-center py-3 text-xs text-slate-400 font-medium">Free</th>
                                 <th className="text-center py-3 text-xs text-violet-400 font-medium">Premium</th>
@@ -1389,7 +1632,7 @@ function PremiumTabContent() {
                                 ['Focus Protocols', 'Pomodoro, Flowtime', 'All 5 modes'],
                                 ['Priority Support', '—', 'Included'],
                             ].map(([feature, free, prem]) => (
-                                <tr key={feature} className="border-b border-[#21262d]/50 last:border-0">
+                                <tr key={feature} className="border-b border-[var(--panel-line)]/50 last:border-0">
                                     <td className="py-3 text-slate-300">{feature}</td>
                                     <td className="py-3 text-center text-slate-500">{free}</td>
                                     <td className="py-3 text-center text-violet-400 font-bold">{prem}</td>

@@ -14,7 +14,8 @@ import {
     MessageSquare,
     Clock,
     Headphones,
-    LayoutDashboard
+    LayoutDashboard,
+    Info
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import {showSuccess, showError, showInfo} from '../lib/toastTheme';
@@ -40,6 +41,7 @@ export function Dashboard() {
     const {startJob, endJob, isJobRunning, planVersion, bumpPlanVersion} = useAIJobs();
     const isJobActive = isJobRunning('generate-plan');
     const {setHabits} = useHabitReminders();
+    const [aiActions, setAiActions] = useState<any[]>([]);
 
     const today = (() => {
         const d = new Date();
@@ -53,11 +55,12 @@ export function Dashboard() {
             const headers = {'Authorization': `Bearer ${token}`};
 
             // Fetch all dashboard data simultaneously for optimal performance
-            const [resTasks, resGoals, resDecisions, resPlan] = await Promise.all([
+            const [resTasks, resGoals, resDecisions, resPlan, resAiActions] = await Promise.all([
                 fetch('/api/tasks', {headers}),
                 fetch('/api/goals', {headers}),
                 fetch('/api/ai-decisions', {headers}),
-                fetch(`/api/plans/${today}`, {headers})
+                fetch(`/api/plans/${today}`, {headers}),
+                fetch('/api/ai-actions', {headers})
             ]);
 
             let goalsData: Goal[] = [];
@@ -76,6 +79,11 @@ export function Dashboard() {
                 setPlan(planData);
             } else {
                 setPlan(null);
+            }
+
+            if (resAiActions.ok) {
+                const actionsData = await safeJson(resAiActions);
+                setAiActions((actionsData.actions || actionsData || []).slice(0, 5));
             }
 
             if (resTasks.ok) {
@@ -171,6 +179,24 @@ export function Dashboard() {
         }
     };
 
+    const handleRevertAction = async (actionId: string) => {
+        try {
+            const token = await user?.getIdToken();
+            const res = await fetch(`/api/ai-actions/${actionId}/revert`, {
+                method: 'POST',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            if (res.ok) {
+                showSuccess("AI action reverted");
+                setAiActions(prev => prev.filter(a => a._id !== actionId));
+            } else {
+                showError("Failed to revert action");
+            }
+        } catch {
+            showError("Failed to revert action");
+        }
+    };
+
     const tasksAtRisk = tasks.filter(t => (t.riskScore || 0) > 60).length;
     const topTask = [...tasks].sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))[0];
     const focusGoal = goals.find(g => g.type === 'quest' && !g.completed) || goals.find(g => !g.completed) || goals[0];
@@ -197,45 +223,29 @@ export function Dashboard() {
                 description="Your AI-powered mission control — plans, progress, and insights at a glance."
                 actions={
                     <>
-                        {/* Gamification Streak & Level */}
+                        {/* Gamification Streak & Level — consolidated into one strip */}
                         {user?.gamification && (
-                            <div className="hidden sm:flex items-center gap-2 sm:gap-3">
-                                <div
-                                    className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
-                                    <Flame
-                                        className={`w-3.5 h-3.5 ${user.gamification.currentStreak > 0 ? 'text-orange-500' : 'text-slate-500'}`}/>
-                                    <span
-                                        className="text-xs font-bold text-white">{user.gamification.currentStreak}<span
-                                        className="font-normal text-slate-500 ml-0.5">d Streak</span></span>
-                                </div>
-                                <div
-                                    className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
-                                    <span
-                                        className="text-xs font-bold text-indigo-400">LV{user.gamification.level}</span>
-                                    <CircularProgress
-                                        progress={user.gamification.level > 0 ? Math.min(100, (user.gamification.xp / (user.gamification.level * 200)) * 100) : 0}
-                                        size={20} strokeWidth={2.5} color="stroke-indigo-500">
-                                        <span className="text-[7px] font-bold text-indigo-400">XP</span>
-                                    </CircularProgress>
-                                </div>
+                            <div className="hidden sm:flex items-center gap-2 bg-[var(--graphite-900)] border border-[var(--panel-line)] px-3 py-1.5 rounded-xl">
+                                <Flame
+                                    className={`w-3.5 h-3.5 ${user.gamification.currentStreak > 0 ? 'text-orange-500' : 'text-slate-500'}`}/>
+                                <span
+                                    className="text-xs font-bold text-white">{user.gamification.currentStreak}<span
+                                    className="font-normal text-slate-500 ml-0.5">d</span></span>
+                                <span className="text-slate-600 mx-0.5">·</span>
+                                <span
+                                    className="text-xs font-bold text-indigo-400">LV{user.gamification.level ?? 1}</span>
                                 {(user.gamification as any).focusStreak > 0 && (
-                                    <div
-                                        className="flex items-center gap-1.5 bg-[#161b22] border border-[#30363d] px-2.5 py-1.5 rounded-xl">
-                                        <Headphones className="w-3.5 h-3.5 text-violet-400"/>
+                                    <>
+                                        <span className="text-slate-600 mx-0.5">·</span>
+                                        <Headphones className="w-3 h-3 text-violet-400"/>
                                         <span
                                             className="text-xs font-bold text-violet-300">{(user.gamification as any).focusStreak}<span
-                                            className="font-normal text-slate-500 ml-0.5">d Focus</span></span>
-                                    </div>
+                                            className="font-normal text-slate-500 ml-0.5">d</span></span>
+                                    </>
                                 )}
                             </div>
                         )}
 
-                        <div
-                            className="px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                            <span
-                                className="hidden sm:inline text-[10px] font-bold text-emerald-400 uppercase tracking-wider">AI Core</span>
-                        </div>
                     </>
                 }
             />
@@ -245,9 +255,9 @@ export function Dashboard() {
                 initial={{opacity: 0, y: -20}}
                 animate={{opacity: 1, y: 0}}
                 transition={{duration: 0.5}}
-                className="bg-gradient-to-r from-indigo-950/40 to-[#0d1117] border border-indigo-500/30 rounded-3xl p-6 shadow-lg shadow-indigo-500/5"
+                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 shadow-lg"
             >
-                <div className="flex items-center justify-between border-b border-[#21262d] pb-3 mb-4">
+                <div className="flex items-center justify-between border-b border-[var(--panel-line)] pb-3 mb-4">
                     <div className="flex gap-6">
                         <button
                             onClick={() => setActiveBriefTab('brief')}
@@ -276,12 +286,6 @@ export function Dashboard() {
                             </button>
                         )}
                     </div>
-                    <div
-                        className="hidden sm:flex px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
-                        <span
-                            className="text-[10px] font-semibold text-indigo-400 uppercase tracking-widest">Active</span>
-                    </div>
                 </div>
 
                 <div className="min-h-[60px]">
@@ -298,7 +302,7 @@ export function Dashboard() {
                                 <Sparkles className="w-5 h-5 text-indigo-400"/>
                             </div>
                             <div>
-                                <p className="text-[#f0f6fc] text-base leading-relaxed font-medium">
+                                <p className="text-white text-base leading-relaxed font-medium">
                                     {tasks.length === 0 && completedTasks.length === 0 ? (
                                         "Your schedule is completely clear. Start by adding a task or a quest!"
                                     ) : tasksAtRisk > 0 ? (
@@ -347,7 +351,7 @@ export function Dashboard() {
                         initial={{opacity: 0, scale: 0.95}}
                         animate={{opacity: 1, scale: 1}}
                         transition={{duration: 0.5, delay: 0.1}}
-                        className="bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 relative overflow-hidden group flex-1 min-h-[280px] transition-all hover:border-[#30363d] shadow-lg"
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 relative overflow-hidden group flex-1 min-h-[280px] transition-all hover:border-[var(--panel-line)] shadow-lg"
                     >
                         <div className="relative z-10 flex flex-col h-full">
                             <div className="flex items-center justify-between mb-6">
@@ -463,8 +467,8 @@ export function Dashboard() {
                                                             isCompleted
                                                                 ? 'bg-emerald-500/5 border-emerald-500/20 opacity-75'
                                                                 : isPast
-                                                                    ? 'bg-[#161b22] border-[#21262d] opacity-50'
-                                                                    : 'bg-[#161b22] border-[#21262d] card-lift'
+                                                                    ? 'bg-[var(--graphite-900)] border-[var(--panel-line)] opacity-50'
+                                                                    : 'bg-[var(--graphite-900)] border-[var(--panel-line)] card-lift'
                                                         }`}
                                                     >
                                                         <div
@@ -474,13 +478,13 @@ export function Dashboard() {
                                                                  style={{width: `${progress}%`}}></div>
                                                         )}
                                                         <div
-                                                            className="w-24 text-xs font-mono font-bold text-slate-400 text-right shrink-0 border-r border-[#21262d] pr-4 uppercase">
+                                                            className="w-24 text-xs font-mono font-bold text-slate-400 text-right shrink-0 border-r border-[var(--panel-line)] pr-4 uppercase">
                                                             {formatTime(session.startTime)}<br/>
                                                             <span
                                                                 className="text-indigo-400/70">{formatTime(session.endTime)}</span>
                                                         </div>
                                                         <div className="flex-grow">
-                                                            <h4 className={`font-medium text-sm ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-[#f0f6fc]'}`}>
+                                                            <h4 className={`font-medium text-sm ${isCompleted ? 'text-slate-400 line-through font-normal' : 'text-white'}`}>
                                                                 {session.sessionLabel || session.taskTitle}
                                                             </h4>
                                                             {isCompleted ? (
@@ -519,7 +523,7 @@ export function Dashboard() {
                     initial={{opacity: 0, x: 20}}
                     animate={{opacity: 1, x: 0}}
                     transition={{duration: 0.5, delay: 0.2}}
-                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex flex-col justify-between transition-transform hover:-translate-y-1"
+                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 shadow-lg flex flex-col justify-between transition-transform hover:-translate-y-1"
                 >
                     {/* Workload card */}
                     <div className="flex-grow">
@@ -559,31 +563,31 @@ export function Dashboard() {
                     initial={{opacity: 0, x: 20}}
                     animate={{opacity: 1, x: 0}}
                     transition={{duration: 0.5, delay: 0.3}}
-                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
+                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 transition-colors hover:border-[var(--panel-line)]"
                 >
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Pilot Telemetry</h3>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[var(--graphite-900)] rounded-2xl p-4">
                             <CircularProgress progress={Math.min(100, completedTasks.length * 10)} size={64}
-                                              color="stroke-indigo-400" trackColor="stroke-[#21262d]">
+                                              color="stroke-indigo-400" trackColor="stroke-[var(--panel-line)]">
                                 <span
-                                    className="text-lg font-mono font-bold text-[#f0f6fc]">{completedTasks.length}</span>
+                                    className="text-lg font-mono font-bold text-white">{completedTasks.length}</span>
                             </CircularProgress>
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Tasks<br/>Done
                             </p>
                         </div>
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[var(--graphite-900)] rounded-2xl p-4">
                             <CircularProgress progress={Math.min(100, productivityScore)} size={64}
-                                              color="stroke-cyan-400" trackColor="stroke-[#21262d]">
+                                              color="stroke-cyan-400" trackColor="stroke-[var(--panel-line)]">
                                 <span className="text-lg font-mono font-bold text-cyan-400">{productivityScore}</span>
                             </CircularProgress>
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Prod<br/>Score
                             </p>
                         </div>
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[var(--graphite-900)] rounded-2xl p-4">
                             <CircularProgress progress={tasksAtRisk > 0 ? 100 : 0} size={64}
                                               color={tasksAtRisk > 0 ? "stroke-red-500" : "stroke-emerald-400"}
-                                              trackColor="stroke-[#21262d]">
+                                              trackColor="stroke-[var(--panel-line)]">
                                 <span
                                     className={`text-lg font-mono font-bold ${tasksAtRisk > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{tasksAtRisk}</span>
                             </CircularProgress>
@@ -591,9 +595,9 @@ export function Dashboard() {
                             </p>
                         </div>
                         <div
-                            className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 overflow-hidden">
+                            className="flex flex-col items-center justify-center bg-[var(--graphite-900)] rounded-2xl p-4 overflow-hidden">
                             <Target className="w-8 h-8 text-indigo-400/50 mb-2"/>
-                            <p className="text-xs font-medium text-[#f0f6fc] text-center w-full truncate px-2"
+                            <p className="text-xs font-medium text-white text-center w-full truncate px-2"
                                title={focusGoalTitle}>{focusGoalTitle}</p>
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-1">Focus</p>
                         </div>
@@ -605,7 +609,7 @@ export function Dashboard() {
                     initial={{opacity: 0, x: 20}}
                     animate={{opacity: 1, x: 0}}
                     transition={{duration: 0.5, delay: 0.4}}
-                    className="col-span-1 md:col-span-2 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d] flex flex-col justify-between min-h-[240px]"
+                    className="col-span-1 md:col-span-2 lg:col-span-4 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 transition-colors hover:border-[var(--panel-line)] flex flex-col justify-between min-h-[240px]"
                 >
                     <div className="flex flex-col h-full w-full justify-between gap-4">
                         <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-2">
@@ -620,7 +624,7 @@ export function Dashboard() {
                                 <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-3 w-full">
                                     {goals.filter(g => !g.completed).slice(0, 3).map(g => (
                                         <div key={g.id}
-                                             className="p-3 bg-[#161b22] border border-[#21262d] rounded-2xl flex flex-col justify-between gap-2 min-h-[90px]">
+                                             className="p-3 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl flex flex-col justify-between gap-2 min-h-[90px]">
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="text-xs font-semibold text-slate-200 truncate"
                                                       title={g.title}>{g.title}</span>
@@ -666,7 +670,7 @@ export function Dashboard() {
                     initial={{opacity: 0, y: 20}}
                     animate={{opacity: 1, y: 0}}
                     transition={{duration: 0.5, delay: 0.5}}
-                    className="col-span-1 md:col-span-2 lg:col-span-12 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
+                    className="col-span-1 md:col-span-2 lg:col-span-12 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 transition-colors hover:border-[var(--panel-line)]"
                 >
                     <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                         <Sparkles className="w-3 h-3"/>
@@ -678,16 +682,23 @@ export function Dashboard() {
                                 see AI reasoning.</div>
                         )}
                         {decisions.map(d => (
-                            <div key={d.id} className="relative pl-4 border-l-2 border-[#21262d]">
+                            <div key={d.id} className="relative pl-4 border-l-2 border-[var(--panel-line)]">
                                 <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-indigo-500"></div>
                                 <div className="flex flex-col gap-0.5">
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="text-xs font-semibold text-indigo-300">{d.title}</span>
-                                        <span
-                                            className="text-[10px] text-slate-500 font-mono shrink-0">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString([], {
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        }) : 'Just now'}</span>
+                                        <div className="flex items-center gap-1.5">
+                                            {d.reason && (
+                                                <span title={d.reason} className="cursor-help">
+                                                    <Info className="h-3 w-3 text-slate-500 hover:text-[var(--violet)] transition-colors"/>
+                                                </span>
+                                            )}
+                                            <span
+                                                className="text-[10px] text-slate-500 font-mono shrink-0">{d.timestamp ? new Date(d.timestamp).toLocaleTimeString([], {
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            }) : 'Just now'}</span>
+                                        </div>
                                     </div>
                                     <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">{d.reason}</p>
                                 </div>
@@ -696,6 +707,44 @@ export function Dashboard() {
                     </div>
                 </motion.div>
             </div>
+
+            {/* Recent AI Activity Panel (Phase 1.3) */}
+            {aiActions.length > 0 && (
+                <div className="mt-6">
+                    <motion.div
+                        initial={{opacity: 0, y: 10}}
+                        animate={{opacity: 1, y: 0}}
+                        className="bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 md:p-6"
+                    >
+                        <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
+                            <Info className="h-4 w-4 text-[var(--violet)]"/>
+                            Recent AI Activity
+                        </h3>
+                        <div className="space-y-2">
+                            {aiActions.map(action => (
+                                <div key={action._id} className="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition-colors">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-300 truncate">{action.type}: {action.reason || 'No reason provided'}</p>
+                                        <p className="text-[10px] text-slate-500 font-mono">
+                                            {action.createdAt ? new Date(action.createdAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : ''}
+                                            {action.status === 'reverted' && <span className="ml-2 text-amber-400">reverted</span>}
+                                        </p>
+                                    </div>
+                                    {action.status !== 'reverted' && (
+                                        <button
+                                            onClick={() => handleRevertAction(action._id)}
+                                            className="text-[10px] text-slate-500 hover:text-red-400 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10"
+                                            title="Revert this action"
+                                        >
+                                            Undo
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                </div>
+            )}
 
             {/* Task Selection Modal */}
             <TaskSelectionModal

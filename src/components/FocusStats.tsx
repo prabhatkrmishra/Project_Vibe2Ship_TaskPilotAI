@@ -19,7 +19,7 @@ export default function FocusStats({refreshKey = 0}: { refreshKey?: number }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('taskpilot_jwt');
         fetch('/api/focus-sessions/stats', {headers: {Authorization: `Bearer ${token}`}})
             .then(r => {
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);

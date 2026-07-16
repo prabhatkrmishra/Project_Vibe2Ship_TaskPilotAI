@@ -260,7 +260,8 @@ export function Chat() {
         fetchModels();
     }, [user]);
 
-    const handleModelChange = (value: string) => {
+    const handleModelChange = (value: string | null) => {
+        if (!value) return;
         setSelectedModel(value);
         localStorage.setItem('default_gemini_model', value);
         const displayName = models.find(m => m.name === value)?.displayName || value;
@@ -361,7 +362,8 @@ export function Chat() {
         ]);
     };
 
-    const handleSelectSession = (chatId: string) => {
+    const handleSelectSession = (chatId: string | null) => {
+        if (!chatId) return;
         setActiveChatId(chatId);
         localStorage.setItem('active_chat_id', chatId);
         const session = sessions.find(s => s.chatId === chatId);
@@ -754,9 +756,9 @@ export function Chat() {
         <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto h-full flex flex-col w-full animate-fade-in relative">
             {isRecording && (
                 <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d1117]/80 backdrop-blur-md">
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--graphite-900)]/80 backdrop-blur-md">
                     <div
-                        className="bg-[#161b22] border border-red-500/30 p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.15)] flex flex-col items-center gap-6 w-[90%] max-w-md animate-fade-in relative overflow-hidden">
+                        className="bg-[var(--graphite-900)] border border-red-500/30 p-8 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.15)] flex flex-col items-center gap-6 w-[90%] max-w-md animate-fade-in relative overflow-hidden">
                         <div className="absolute inset-0 bg-red-500/5 pointer-events-none animate-pulse"/>
 
                         <div
@@ -765,13 +767,13 @@ export function Chat() {
                         </div>
 
                         <div className="text-center space-y-2 w-full z-10">
-                            <h2 className="text-xl font-medium text-[#f0f6fc]">Listening...</h2>
+                            <h2 className="text-xl font-medium text-white">Listening...</h2>
                             <div
-                                className="w-full h-24 bg-[#0d1117] rounded-2xl overflow-hidden border border-[#21262d] relative shadow-inner">
+                                className="w-full h-24 bg-[var(--graphite-900)] rounded-2xl overflow-hidden border border-[var(--panel-line)] relative shadow-inner">
                                 <canvas ref={canvasRef} width="400" height="100"
                                         className="w-full h-full object-cover opacity-80"/>
                             </div>
-                            <p className="text-sm text-[#8b949e] line-clamp-3 overflow-hidden text-ellipsis px-2 min-h-[40px] mt-4">
+                            <p className="text-sm text-slate-400 line-clamp-3 overflow-hidden text-ellipsis px-2 min-h-[40px] mt-4">
                                 {input || "Speak now..."}
                             </p>
                         </div>
@@ -805,7 +807,7 @@ export function Chat() {
                         <div className="flex flex-col gap-1.5 shrink-0">
                             <Button
                                 onClick={handleStartNewChat}
-                                className="h-10 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-indigo-600/10 px-4 font-medium"
+                                className="h-10 bg-[var(--violet)] hover:brightness-110 text-white rounded-xl flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-[var(--violet)]/10 px-4 font-medium"
                             >
                                 <Plus className="w-4 h-4"/>
                                 <span>New Chat</span>
@@ -823,7 +825,7 @@ export function Chat() {
                                     <Input
                                         value={renameTitleInput}
                                         onChange={(e) => setRenameTitleInput(e.target.value)}
-                                        className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 flex-1 px-3 text-sm"
+                                        className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 flex-1 px-3 text-sm"
                                         placeholder="Enter session name..."
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') handleRenameSession();
@@ -836,7 +838,7 @@ export function Chat() {
                                         size="icon"
                                         onClick={handleRenameSession}
                                         disabled={isUpdatingTitle}
-                                        className="h-10 w-10 shrink-0 border-emerald-500/20 bg-[#0d1117] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl cursor-pointer transition-all"
+                                        className="h-10 w-10 shrink-0 border-emerald-500/20 bg-[var(--graphite-900)] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl cursor-pointer transition-all"
                                         title="Save new title"
                                     >
                                         {isUpdatingTitle ? (
@@ -850,7 +852,7 @@ export function Chat() {
                                         size="icon"
                                         onClick={() => setIsRenaming(false)}
                                         disabled={isUpdatingTitle}
-                                        className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-[#f0f6fc] rounded-xl cursor-pointer transition-all"
+                                        className="h-10 w-10 shrink-0 border-[var(--panel-line)] bg-[var(--graphite-900)] text-slate-400 hover:text-white rounded-xl cursor-pointer transition-all"
                                         title="Cancel"
                                     >
                                         <X className="w-4 h-4"/>
@@ -867,7 +869,7 @@ export function Chat() {
                                     </label>
                                     <Select value={activeChatId} onValueChange={handleSelectSession}>
                                         <SelectTrigger
-                                            className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
+                                            className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
                                             <SelectValue placeholder="Select session">
                                                 {(value: string) => {
                                                     const sess = sessions.find((s) => s.chatId === value);
@@ -876,7 +878,7 @@ export function Chat() {
                                             </SelectValue>
                                         </SelectTrigger>
                                         <SelectContent
-                                            className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] max-h-72">
+                                            className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white max-h-72">
                                             {sessions.length === 0 ? (
                                                 <SelectItem value="default"
                                                             className="focus:bg-indigo-600/20 focus:text-indigo-200">
@@ -907,7 +909,7 @@ export function Chat() {
                                     variant="outline"
                                     size="icon"
                                     onClick={startRenameMode}
-                                    className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-amber-400 hover:border-amber-500/30 rounded-xl cursor-pointer transition-all"
+                                    className="h-10 w-10 shrink-0 border-[var(--panel-line)] bg-[var(--graphite-900)] text-slate-400 hover:text-amber-400 hover:border-amber-500/30 rounded-xl cursor-pointer transition-all"
                                     title="Rename current session"
                                 >
                                     <Edit2 className="w-4 h-4"/>
@@ -920,7 +922,7 @@ export function Chat() {
                                         size="icon"
                                         onClick={(e) => handleDeleteSession(activeChatId, e)}
                                         disabled={isDeletingSession === activeChatId}
-                                        className="h-10 w-10 shrink-0 border-[#21262d] bg-[#0d1117] text-slate-400 hover:text-rose-400 hover:border-rose-500/30 rounded-xl cursor-pointer transition-all"
+                                        className="h-10 w-10 shrink-0 border-[var(--panel-line)] bg-[var(--graphite-900)] text-slate-400 hover:text-rose-400 hover:border-rose-500/30 rounded-xl cursor-pointer transition-all"
                                         title="Delete current session"
                                     >
                                         {isDeletingSession === activeChatId ? (
@@ -942,7 +944,7 @@ export function Chat() {
                         </label>
                         <Select value={selectedModel} onValueChange={handleModelChange} disabled={isLoadingModels}>
                             <SelectTrigger
-                                className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
+                                className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white h-10 rounded-xl focus:ring-1 focus:ring-indigo-500 w-full">
                                 <SelectValue placeholder={isLoadingModels ? "Syncing core brains..." : "Choose model"}>
                                     {(value: string) => {
                                         if (isLoadingModels) return "Syncing core brains...";
@@ -952,7 +954,7 @@ export function Chat() {
                                 </SelectValue>
                             </SelectTrigger>
                             <SelectContent
-                                className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] max-h-80 overflow-y-auto">
+                                className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white max-h-80 overflow-y-auto">
                                 {isLoadingModels ? (
                                     <div className="flex items-center justify-center p-4">
                                         <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mr-2"/>
@@ -970,7 +972,7 @@ export function Chat() {
                                         return Array.from(grouped.entries()).map(([provider, providerModels]) => (
                                             <div key={provider}>
                                                 <div
-                                                    className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-500 bg-[#161b22] sticky top-0 z-10">
+                                                    className="px-3 py-1.5 text-[10px] uppercase tracking-widest font-bold text-slate-500 bg-[var(--graphite-900)] sticky top-0 z-10">
                                                     {provider}
                                                 </div>
                                                 {providerModels.map((model) => (
@@ -997,7 +999,7 @@ export function Chat() {
             </div>
 
             <div
-                className="flex-1 flex flex-col min-h-0 bg-[#0d1117] border border-[#21262d] rounded-3xl overflow-hidden shadow-2xl">
+                className="flex-1 flex flex-col min-h-0 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl overflow-hidden shadow-2xl">
                 <div className="flex-1 flex flex-col p-0 min-h-0 overflow-hidden">
                     <div
                         className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-indigo-500/20 scrollbar-track-transparent"
@@ -1014,7 +1016,7 @@ export function Chat() {
                                                     ? 'bg-indigo-500/20 text-indigo-400 font-bold text-[10px] uppercase border border-indigo-500/30'
                                                     : isMsgError
                                                         ? 'bg-red-500/10 border border-red-500/20 text-red-400'
-                                                        : 'bg-[#161b22] border border-[#21262d]'
+                                                        : 'bg-[var(--graphite-900)] border border-[var(--panel-line)]'
                                             }`}>
                                             {msg.role === 'user' ? 'YOU' : <Bot
                                                 className={`w-4 h-4 ${isMsgError ? 'text-red-400' : 'text-cyan-400'}`}/>}
@@ -1030,7 +1032,7 @@ export function Chat() {
                                                 <p className="text-sm">{msg.content}</p>
                                             ) : (
                                                 <div
-                                                    className={`prose prose-sm prose-invert max-w-none text-sm markdown-body ${isMsgError ? 'text-red-200' : 'text-[#f0f6fc]'}`}>
+                                                    className={`prose prose-sm prose-invert max-w-none text-sm markdown-body ${isMsgError ? 'text-red-200' : 'text-white'}`}>
                                                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                                                 </div>
                                             )}
@@ -1048,7 +1050,7 @@ export function Chat() {
                             {isSending && (
                                 <div className="flex gap-4">
                                     <div
-                                        className="w-8 h-8 rounded-full bg-[#161b22] border border-[#21262d] flex items-center justify-center shrink-0">
+                                        className="w-8 h-8 rounded-full bg-[var(--graphite-900)] border border-[var(--panel-line)] flex items-center justify-center shrink-0">
                                         <Bot className="w-4 h-4 text-cyan-400"/>
                                     </div>
                                     <div
@@ -1067,13 +1069,13 @@ export function Chat() {
                         </div>
                     </div>
 
-                    <div className="p-4 border-t border-[#21262d] bg-[#0d1117] shrink-0">
+                    <div className="p-4 border-t border-[var(--panel-line)] bg-[var(--graphite-900)] shrink-0">
                         <div className="flex gap-2 overflow-x-auto mb-3 pb-2 scrollbar-hide">
                             {['What should I work on next?', 'Can I finish before tomorrow?', 'Replan my schedule.', 'What is blocking my progress?'].map(suggestion => (
                                 <button
                                     key={suggestion}
                                     onClick={() => setInput(suggestion)}
-                                    className="px-3 py-1.5 text-xs bg-[#161b22] text-[#8b949e] rounded-lg hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors whitespace-nowrap border border-[#21262d]"
+                                    className="px-3 py-1.5 text-xs bg-[var(--graphite-900)] text-slate-400 rounded-lg hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors whitespace-nowrap border border-[var(--panel-line)]"
                                 >
                                     {suggestion}
                                 </button>
@@ -1083,7 +1085,7 @@ export function Chat() {
                             <Button
                                 type="button"
                                 variant="outline"
-                                className={`transition-all rounded-xl ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)] scale-105' : 'bg-[#161b22] border-[#21262d] text-[#8b949e] hover:text-[#f0f6fc]'}`}
+                                className={`transition-all rounded-xl ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)] scale-105' : 'bg-[var(--graphite-900)] border-[var(--panel-line)] text-slate-400 hover:text-white'}`}
                                 onClick={toggleRecording}
                                 title={isRecording ? "Stop recording" : "Start recording"}
                             >
@@ -1094,7 +1096,7 @@ export function Chat() {
                                 value={input}
                                 onChange={e => setInput(e.target.value)}
                                 placeholder="E.g. What should I prioritize this afternoon?"
-                                className="flex-1 bg-[#161b22] border-[#21262d] text-[#f0f6fc] placeholder:text-slate-500 rounded-xl"
+                                className="flex-1 bg-[var(--graphite-900)] border-[var(--panel-line)] text-white placeholder:text-slate-500 rounded-xl"
                                 disabled={isSending}
                             />
                             <Button
@@ -1102,12 +1104,12 @@ export function Chat() {
                                 onClick={handleExtractJournal}
                                 disabled={isSending || !input.trim()}
                                 title="Extract Tasks from Journal"
-                                className="bg-[#161b22] border border-[#21262d] text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-xl"
+                                className="bg-[var(--graphite-900)] border border-[var(--panel-line)] text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-xl"
                             >
                                 <Sparkles className="w-4 h-4"/>
                             </Button>
                             <Button type="submit" disabled={isSending || !input.trim()}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/20">
+                                    className="bg-[var(--violet)] hover:brightness-110 text-white rounded-xl shadow-lg shadow-[var(--violet)]/10">
                                 <Send className="w-4 h-4"/>
                             </Button>
                         </form>

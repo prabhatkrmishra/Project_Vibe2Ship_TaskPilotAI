@@ -17,35 +17,35 @@ export const TOAST_THEME: Record<ToastAccent, {
     primaryBtn: string;
 }> = {
     amber: {
-        panel: 'from-amber-500/[0.08] via-[#12161d] to-[#0a0d12] border-amber-500/25',
+        panel: 'from-amber-500/[0.08] via-[var(--graphite-900)] to-[var(--graphite-950)] border-amber-500/25',
         halo: 'from-amber-400/40 to-amber-500/0',
         iconRing: 'border-amber-400/40 bg-amber-500/15',
         iconText: 'text-amber-300',
         primaryBtn: 'bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25',
     },
     cyan: {
-        panel: 'from-cyan-500/[0.08] via-[#12161d] to-[#0a0d12] border-cyan-500/25',
+        panel: 'from-cyan-500/[0.08] via-[var(--graphite-900)] to-[var(--graphite-950)] border-cyan-500/25',
         halo: 'from-cyan-400/40 to-cyan-500/0',
         iconRing: 'border-cyan-400/40 bg-cyan-500/15',
         iconText: 'text-cyan-300',
         primaryBtn: 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25',
     },
     emerald: {
-        panel: 'from-emerald-500/[0.08] via-[#12161d] to-[#0a0d12] border-emerald-500/25',
+        panel: 'from-emerald-500/[0.08] via-[var(--graphite-900)] to-[var(--graphite-950)] border-emerald-500/25',
         halo: 'from-emerald-400/40 to-emerald-500/0',
         iconRing: 'border-emerald-400/40 bg-emerald-500/15',
         iconText: 'text-emerald-300',
         primaryBtn: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25',
     },
     indigo: {
-        panel: 'from-indigo-500/[0.08] via-[#12161d] to-[#0a0d12] border-indigo-500/25',
+        panel: 'from-indigo-500/[0.08] via-[var(--graphite-900)] to-[var(--graphite-950)] border-indigo-500/25',
         halo: 'from-indigo-400/40 to-indigo-500/0',
         iconRing: 'border-indigo-400/40 bg-indigo-500/15',
         iconText: 'text-indigo-300',
         primaryBtn: 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25',
     },
     red: {
-        panel: 'from-red-500/[0.08] via-[#12161d] to-[#0a0d12] border-red-500/25',
+        panel: 'from-red-500/[0.08] via-[var(--graphite-900)] to-[var(--graphite-950)] border-red-500/25',
         halo: 'from-red-400/40 to-red-500/0',
         iconRing: 'border-red-400/40 bg-red-500/15',
         iconText: 'text-red-300',

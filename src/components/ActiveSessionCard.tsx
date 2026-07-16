@@ -25,7 +25,7 @@ const formatCountdown = (ms: number) => {
 // panel, border, rounded-3xl, hover border) so the two read as one cohesive
 // stack rather than mismatched components. Cyan accents layer on top for the
 // "live" states only — idle/empty states stay neutral like the rest of the UI.
-const PANEL = 'bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]';
+const PANEL = 'bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-5 transition-colors hover:border-[var(--panel-line)]';
 
 export function ActiveSessionCard({plan}: ActiveSessionCardProps) {
     const [now, setNow] = useState(() => Date.now());
@@ -59,7 +59,7 @@ export function ActiveSessionCard({plan}: ActiveSessionCardProps) {
         return (
             <div className={`${PANEL} flex items-center gap-3`}>
         <span
-            className="px-2 py-1 bg-[#161b22] text-slate-500 text-[10px] font-bold rounded uppercase tracking-wider border border-[#21262d]">
+            className="px-2 py-1 bg-[var(--graphite-900)] text-slate-500 text-[10px] font-bold rounded uppercase tracking-wider border border-[var(--panel-line)]">
           Active Session
         </span>
                 <p className="text-xs text-slate-500">Generate a timetable to start tracking sessions.</p>
@@ -72,7 +72,7 @@ export function ActiveSessionCard({plan}: ActiveSessionCardProps) {
         return (
             <div className={`${PANEL} flex items-center gap-3`}>
         <span
-            className="px-2 py-1 bg-[#161b22] text-slate-500 text-[10px] font-bold rounded uppercase tracking-wider border border-[#21262d] shrink-0">
+            className="px-2 py-1 bg-[var(--graphite-900)] text-slate-500 text-[10px] font-bold rounded uppercase tracking-wider border border-[var(--panel-line)] shrink-0">
           Active Session
         </span>
                 <div className="min-w-0 flex items-start gap-2">
@@ -128,7 +128,7 @@ export function ActiveSessionCard({plan}: ActiveSessionCardProps) {
                 </CircularProgress>
 
                 <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-[#f0f6fc] break-words">
+                    <h4 className="text-sm font-semibold text-white break-words">
                         {activeSession.sessionLabel || activeSession.taskTitle}
                     </h4>
                     <span className="text-[10px] text-slate-500 mt-0.5 block font-bold uppercase tracking-widest">Deep Work Session</span>

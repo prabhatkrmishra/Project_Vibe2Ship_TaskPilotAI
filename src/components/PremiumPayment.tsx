@@ -20,16 +20,28 @@ interface PlanConfig {
 
 const FALLBACK_PLANS: PlanConfig[] = [
     {
-        planId: 'monthly', name: 'Monthly Premium', description: '', basePrice: 199,
+        planId: 'pro_monthly', name: 'Pro', description: 'Smarter organization with AI assistance', basePrice: 199,
         salePrice: null, saleActive: false, saleLabel: '', interval: 'month',
-        features: ['Unlimited AI-powered scheduling', 'Advanced analytics & insights', 'All 5 focus protocols', 'Priority email support', '20+ customization themes'],
+        features: ['Unlimited projects, quests, habits', 'AI task creation & subtask generation', 'AI chat assistant', 'Visual timeline view', 'Task micro-stepper', 'Dopamine menu', 'Streak freezes', 'Guided daily planning'],
         popular: false
     },
     {
-        planId: 'annual', name: 'Annual Premium', description: '', basePrice: 1999,
+        planId: 'pro_annual', name: 'Pro Annual', description: 'Save 17% with annual billing', basePrice: 1990,
         salePrice: null, saleActive: false, saleLabel: '', interval: 'year',
-        features: ['All Monthly Premium features', '20% savings vs monthly', 'Early access to new features', 'Premium badge & customization', 'No ads, ever'],
+        features: ['All Pro features', '2 months free vs monthly', 'Priority support'],
+        popular: false
+    },
+    {
+        planId: 'pro_plus_monthly', name: 'Pro+', description: 'AI Executive Assistant — full autonomy', basePrice: 499,
+        salePrice: null, saleActive: false, saleLabel: '', interval: 'month',
+        features: ['Everything in Pro', 'Autonomous pipeline & auto-rescheduler', 'Energy-matched scheduling', 'Burnout detection', 'Deadline risk predictions', 'Personal knowledge graph', 'Unlimited AI usage (fair-use)'],
         popular: true
+    },
+    {
+        planId: 'pro_plus_annual', name: 'Pro+ Annual', description: 'Save 17% with annual billing', basePrice: 4990,
+        salePrice: null, saleActive: false, saleLabel: '', interval: 'year',
+        features: ['All Pro+ features', '2 months free vs monthly', 'Priority support'],
+        popular: false
     }
 ];
 
@@ -46,7 +58,7 @@ declare global {
 
 export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
     const {user, refreshPremiumStatus} = useAuth();
-    const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
+    const [selectedPlan, setSelectedPlan] = useState<string>('pro_plus_monthly');
     const [loading, setLoading] = useState(false);
     const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const unmountedRef = useRef(false);
@@ -216,21 +228,21 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
         }
     };
 
-    const isPremium = user?.isPremium;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
     const currentPlan = user?.subscriptionPlan;
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent
-                className="bg-[#0d1117] border-[#21262d] text-[#f0f6fc] w-full max-w-lg sm:max-w-xl md:max-w-2xl max-h-[85vh] overflow-y-auto no-scrollbar p-0">
+                className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-white w-full max-w-lg sm:max-w-xl md:max-w-2xl max-h-[85vh] overflow-y-auto no-scrollbar p-0">
                 <div className="p-6 sm:p-8 space-y-6">
                     <div className="text-center">
-                        <h2 className="text-xl font-bold text-[#f0f6fc] mb-1 flex items-center justify-center gap-2">
+                        <h2 className="text-xl font-bold text-white mb-1 flex items-center justify-center gap-2">
                             <Crown className="w-5 h-5 text-violet-400"/>
                             {isPremium ? 'Manage Subscription' : 'Upgrade to Premium'}
                         </h2>
                         <p className="text-sm text-slate-400">
-                            {isPremium ? `You are on the ${currentPlan === 'annual' ? 'Annual' : 'Monthly'} plan` : 'Choose a plan to unlock all features'}
+                            {isPremium ? `You are on the ${currentPlan?.includes('annual') ? 'Annual' : 'Monthly'} ${currentPlan?.includes('pro_plus') ? 'Pro+' : 'Pro'} plan` : 'Choose a plan to unlock all features'}
                         </p>
                     </div>
 
@@ -251,8 +263,8 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
                             return (
                                 <div
                                     key={plan.planId}
-                                    className={`bg-[#161b22] border rounded-xl p-5 cursor-pointer transition-all relative ${
-                                        selectedPlan === plan.planId ? 'ring-2 ring-violet-500 bg-violet-500/10' : 'border-[#21262d] hover:border-slate-700 hover:bg-[#1a1f29]'
+                                    className={`bg-[var(--graphite-900)] border rounded-xl p-5 cursor-pointer transition-all relative ${
+                                        selectedPlan === plan.planId ? 'ring-2 ring-violet-500 bg-violet-500/10' : 'border-[var(--panel-line)] hover:border-slate-700 hover:bg-[#1a1f29]'
                                     }`}
                                     onClick={() => setSelectedPlan(plan.planId as any)}
                                 >
@@ -300,7 +312,7 @@ export function PremiumPaymentModal({isOpen, onClose}: PaymentModalProps) {
                                         )}
                                     </ul>
 
-                                    <label className="flex items-center gap-2 pt-3 border-t border-[#21262d]">
+                                    <label className="flex items-center gap-2 pt-3 border-t border-[var(--panel-line)]">
                                         <input
                                             type="radio"
                                             name="plan"

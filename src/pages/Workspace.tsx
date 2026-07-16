@@ -428,7 +428,7 @@ export function Workspace() {
     };
 
     return (
-        <div className="flex-1 overflow-y-auto bg-[#030712] p-6 lg:p-10 text-slate-200 custom-scrollbar relative">
+        <div className="flex-1 overflow-y-auto bg-[var(--graphite-950)] p-6 lg:p-10 text-slate-200 custom-scrollbar relative">
             {/* Dynamic Background Blur */}
             <div
                 className="absolute top-0 inset-x-0 h-[300px] bg-gradient-to-b from-indigo-900/20 to-transparent pointer-events-none z-0"></div>
@@ -460,12 +460,12 @@ export function Workspace() {
 
                 {googleAuthStatus !== 'connected' ? (
                     <div
-                        className="bg-[#0d1117] border border-dashed border-[#21262d] rounded-3xl p-10 flex flex-col items-center text-center gap-3">
+                        className="bg-[var(--graphite-900)] border border-dashed border-[var(--panel-line)] rounded-3xl p-10 flex flex-col items-center text-center gap-3">
                         <div
-                            className="w-12 h-12 bg-[#161b22] border border-[#21262d] rounded-2xl flex items-center justify-center">
+                            className="w-12 h-12 bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-2xl flex items-center justify-center">
                             <Lock className="h-5 w-5 text-slate-500"/>
                         </div>
-                        <h3 className="text-lg font-bold text-[#f0f6fc]">Workspace actions are locked</h3>
+                        <h3 className="text-lg font-bold text-white">Workspace actions are locked</h3>
                         <p className="text-sm text-slate-400 max-w-md">
                             {googleAuthStatus === 'checking'
                                 ? 'Checking your Google authorization before showing sync, export, and backup actions.'
@@ -483,13 +483,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.1}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <CalendarIcon className="h-6 w-6 text-indigo-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Sync Google
+                                            <h3 className="text-xl font-bold text-white mb-2">Sync Google
                                                 Calendar</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Push your pending tasks and intelligent AI schedules directly into your
@@ -497,7 +497,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleSyncCalendar}
-                                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl h-11 group-hover:shadow-lg group-hover:shadow-indigo-600/20 transition-all font-semibold">
+                                                className="w-full bg-[var(--violet)] hover:brightness-110 text-white rounded-xl h-11 group-hover:shadow-lg group-hover:shadow-[var(--violet)]/20 transition-all font-semibold">
                                             Start Sync <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -506,13 +506,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.15}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <CheckCircle className="h-6 w-6 text-blue-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export to Google
+                                            <h3 className="text-xl font-bold text-white mb-2">Export to Google
                                                 Tasks</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Export all your active tasks into your default Google Tasks list to keep
@@ -520,7 +520,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleSyncTasks}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-blue-500/30 hover:bg-blue-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Sync Tasks <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -529,13 +529,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.2}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-orange-500/50 hover:shadow-lg hover:shadow-orange-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-orange-500/50 hover:shadow-lg hover:shadow-orange-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <CheckCircle className="h-6 w-6 text-orange-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Import from Google
+                                            <h3 className="text-xl font-bold text-white mb-2">Import from Google
                                                 Tasks</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Import tasks from your Google Tasks list into TaskPilot for unified
@@ -543,7 +543,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleImportTasks}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-orange-500/30 hover:bg-orange-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-orange-500/30 hover:bg-orange-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Import Tasks <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -560,13 +560,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.1}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <FileText className="h-6 w-6 text-blue-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Daily
+                                            <h3 className="text-xl font-bold text-white mb-2">Export Daily
                                                 Report</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Generate a beautifully formatted Google Doc containing your daily
@@ -574,7 +574,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleExportDocs}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-blue-500/30 hover:bg-blue-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-blue-500/30 hover:bg-blue-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Generate Report (Docs) <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -583,20 +583,20 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.15}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <Table className="h-6 w-6 text-emerald-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Export Analytics</h3>
+                                            <h3 className="text-xl font-bold text-white mb-2">Export Analytics</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Dump your task metrics, effort estimations, and AI risk scores into
                                                 Google Sheets for deep data analysis and pivot tables.
                                             </p>
                                         </div>
                                         <Button onClick={handleExportSheets}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-emerald-500/30 hover:bg-emerald-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-emerald-500/30 hover:bg-emerald-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Generate Spreadsheet <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -605,13 +605,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.2}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <Presentation className="h-6 w-6 text-amber-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Create
+                                            <h3 className="text-xl font-bold text-white mb-2">Create
                                                 Presentation</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Let AI automatically draft a Google Slides presentation from your
@@ -619,7 +619,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={() => setIsSlidesDialogOpen(true)}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-amber-500/30 hover:bg-amber-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-amber-500/30 hover:bg-amber-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Configure Slides <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -629,7 +629,7 @@ export function Workspace() {
                         </section>
 
                         {/* Backup & Restore */}
-                        <section className="space-y-4 border-t border-[#21262d] pt-8">
+                        <section className="space-y-4 border-t border-[var(--panel-line)] pt-8">
                             <div className="px-1">
                                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">Backup &amp; Restore</h2>
                                 <p className="text-xs text-slate-500 mt-1">Signed, compressed backups of your data
@@ -640,13 +640,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.1}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-teal-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <FileText className="h-6 w-6 text-teal-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Backup Data to
+                                            <h3 className="text-xl font-bold text-white mb-2">Backup Data to
                                                 Drive</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Export all your data (tasks, goals, plans, chats, focus sessions &
@@ -655,7 +655,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handleBackupDB}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-teal-500/30 hover:bg-teal-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-teal-500/30 hover:bg-teal-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Backup to Drive <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -664,13 +664,13 @@ export function Workspace() {
                                 <motion.div initial={{opacity: 0, y: 10}} animate={{opacity: 1, y: 0}}
                                             transition={{duration: 0.4, delay: 0.15}} className="group">
                                     <div
-                                        className="h-full bg-[#0d1117] border border-[#21262d] rounded-3xl p-6 transition-all duration-300 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 flex flex-col justify-between">
+                                        className="h-full bg-[var(--graphite-900)] border border-[var(--panel-line)] rounded-3xl p-6 transition-all duration-300 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 flex flex-col justify-between">
                                         <div>
                                             <div
                                                 className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6">
                                                 <FileText className="h-6 w-6 text-purple-400"/>
                                             </div>
-                                            <h3 className="text-xl font-bold text-[#f0f6fc] mb-2">Restore Data from
+                                            <h3 className="text-xl font-bold text-white mb-2">Restore Data from
                                                 Drive</h3>
                                             <p className="text-sm text-slate-400 mb-6 leading-relaxed">
                                                 Select a backup archive from Google Drive. Its signature is verified
@@ -678,7 +678,7 @@ export function Workspace() {
                                             </p>
                                         </div>
                                         <Button onClick={handlePickFile}
-                                                className="w-full bg-[#161b22] border border-[#21262d] hover:border-purple-500/30 hover:bg-purple-500/10 text-[#f0f6fc] rounded-xl h-11 transition-all font-semibold">
+                                                className="w-full bg-[var(--graphite-900)] border border-[var(--panel-line)] hover:border-purple-500/30 hover:bg-purple-500/10 text-white rounded-xl h-11 transition-all font-semibold">
                                             Open Picker <ArrowRight className="ml-2 w-4 h-4"/>
                                         </Button>
                                     </div>
@@ -692,10 +692,10 @@ export function Workspace() {
 
                 <Dialog open={isSlidesDialogOpen} onOpenChange={setIsSlidesDialogOpen}>
                     <DialogContent
-                        className="sm:max-w-[425px] bg-[#0d1117] text-[#c9d1d9] border-[#30363d] rounded-3xl shadow-2xl">
+                        className="sm:max-w-[425px] bg-[var(--graphite-900)] text-slate-300 border-[var(--panel-line)] rounded-3xl shadow-2xl">
                         <DialogHeader>
-                            <DialogTitle className="text-[#f0f6fc] text-xl">Configure Presentation</DialogTitle>
-                            <DialogDescription className="text-[#8b949e]">
+                            <DialogTitle className="text-white text-xl">Configure Presentation</DialogTitle>
+                            <DialogDescription className="text-slate-400">
                                 Select the format and template style for your Google Slides presentation.
                             </DialogDescription>
                         </DialogHeader>
@@ -703,23 +703,23 @@ export function Workspace() {
                             <div className="space-y-3">
                                 <Label htmlFor="slides-type" className="text-slate-300 font-medium">Presentation
                                     Type</Label>
-                                <Select value={slidesType} onValueChange={setSlidesType}>
+                                <Select value={slidesType} onValueChange={(v) => v && setSlidesType(v)}>
                                     <SelectTrigger id="slides-type"
-                                                   className="bg-[#161b22] border-[#30363d] text-[#c9d1d9] rounded-xl h-11">
+                                                   className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-slate-300 rounded-xl h-11">
                                         <SelectValue placeholder="Select type"/>
                                     </SelectTrigger>
-                                    <SelectContent className="bg-[#161b22] border-[#30363d] text-[#c9d1d9] rounded-xl">
+                                    <SelectContent className="bg-[var(--graphite-900)] border-[var(--panel-line)] text-slate-300 rounded-xl">
                                         <SelectItem value="project-dashboard"
-                                                    className="focus:bg-[#1f242c] focus:text-[#f0f6fc] cursor-pointer">Project
+                                                    className="focus:bg-[var(--graphite-900)] focus:text-white cursor-pointer">Project
                                             Status Dashboard</SelectItem>
                                         <SelectItem value="standup"
-                                                    className="focus:bg-[#1f242c] focus:text-[#f0f6fc] cursor-pointer">Daily
+                                                    className="focus:bg-[var(--graphite-900)] focus:text-white cursor-pointer">Daily
                                             Standup Agenda</SelectItem>
                                         <SelectItem value="sprint-planning"
-                                                    className="focus:bg-[#1f242c] focus:text-[#f0f6fc] cursor-pointer">Sprint
+                                                    className="focus:bg-[var(--graphite-900)] focus:text-white cursor-pointer">Sprint
                                             Planning</SelectItem>
                                         <SelectItem value="progress-report"
-                                                    className="focus:bg-[#1f242c] focus:text-[#f0f6fc] cursor-pointer">Progress
+                                                    className="focus:bg-[var(--graphite-900)] focus:text-white cursor-pointer">Progress
                                             Report</SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -727,11 +727,11 @@ export function Workspace() {
                         </div>
                         <div className="flex justify-end gap-3 mt-2">
                             <Button variant="ghost" onClick={() => setIsSlidesDialogOpen(false)}
-                                    className="text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#161b22] rounded-xl">
+                                    className="text-slate-400 hover:text-slate-300 hover:bg-[var(--graphite-900)] rounded-xl">
                                 Cancel
                             </Button>
                             <Button onClick={handleGenerateSlides}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-6">
+                                    className="bg-[var(--violet)] hover:brightness-110 text-white rounded-xl px-6">
                                 Generate Now
                             </Button>
                         </div>

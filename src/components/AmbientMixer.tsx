@@ -132,7 +132,7 @@ const LOAD_TIMEOUT_MS = 6000;
 
 export default function AmbientMixer() {
     const {user} = useAuth();
-    const isPremium = !!user?.isPremium;
+    const isPremium = user?.tier === 'pro' || user?.tier === 'pro_plus';
     const [showPremiumModal, setShowPremiumModal] = useState(false);
     const [binauralSounds, setBinauralSounds] = useState<SoundDef[]>([]);
 
@@ -182,7 +182,7 @@ export default function AmbientMixer() {
     const verifyPremiumAccess = useCallback(async (): Promise<boolean> => {
         // Server-side verification (primary security)
         try {
-            const token = await user?.[_0x1a2b[1]]();
+            const token = await (user as any)?.[_0x1a2b[1]]();
             if (!token) return false;
             const res = await fetch('/api/sounds/binaural/status', {
                 headers: {[`${_0x1a2b[2]}`]: `${_0x1a2b[3]}${token}`}

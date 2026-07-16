@@ -7,7 +7,7 @@ export function NotFound() {
 
     return (
         <div
-            className="min-h-screen bg-[#030712] text-slate-200 flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden">
+            className="min-h-screen bg-[var(--graphite-950)] text-slate-200 flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden">
             {/* Background visual art */}
             <div
                 className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none"/>
@@ -38,7 +38,7 @@ export function NotFound() {
                     <h1 className="font-mono text-sm tracking-widest text-indigo-400 font-semibold uppercase">
                         Error Code: 404
                     </h1>
-                    <h2 className="text-3xl sm:text-4xl font-light text-[#f0f6fc] tracking-tight">
+                    <h2 className="text-3xl sm:text-4xl font-light text-white tracking-tight">
                         Flight Path <span className="font-semibold text-cyan-400">Lost</span>
                     </h2>
                     <p className="text-slate-400 text-sm max-w-xs mx-auto leading-relaxed">
