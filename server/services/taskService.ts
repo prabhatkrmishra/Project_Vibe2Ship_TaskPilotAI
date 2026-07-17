@@ -1,4 +1,5 @@
 import * as TaskRepository from "../repositories/taskRepository.js";
+import {removeTaskFromPlans} from "../repositories/dailyPlanRepository.js";
 import {processGamificationOnTaskComplete, syncQuestProgress, awardQuestCompletionXP} from "../lib/gamification.js";
 import {getSchedulingMode} from "../lib/scheduling.js";
 
@@ -118,6 +119,9 @@ export const updateTask = async (id: string, userId: string, updateData: any) =>
  */
 export const deleteTask = async (id: string, userId: string) => {
     const deletedTask = await TaskRepository.deleteTaskById(id, userId);
+    if (deletedTask) {
+        await removeTaskFromPlans(userId, id);
+    }
     return deletedTask ? TaskRepository.formatTask(deletedTask) : null;
 };
 

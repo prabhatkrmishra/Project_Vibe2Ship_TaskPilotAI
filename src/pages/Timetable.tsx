@@ -792,9 +792,9 @@ export function Timetable() {
                             <div className="space-y-4">
                                 {!showConfig && (
                                     <div
-                                        className="p-3 bg-indigo-500/5 border border-indigo-500/10 rounded-xl text-[11px] text-slate-400 flex items-center gap-2">
-                                        <span className="text-indigo-400">💡</span>
-                                        <span>Want to customize your daily constraints (like waking up late, gym blocks, or night focus hours)? Click <strong>Customize Routine</strong> at the top right!</span>
+                                        className="p-3 bg-fuchsia-400/[0.06] border border-fuchsia-400/25 rounded-xl text-[11px] text-fuchsia-100/80 flex items-center gap-2 shadow-[0_0_16px_rgba(232,121,249,0.1)]">
+                                        <span className="flex items-center justify-center w-5 h-5 rounded-md shrink-0 bg-fuchsia-400/15 border border-fuchsia-400/30 shadow-[0_0_8px_rgba(232,121,249,0.25)]">💡</span>
+                                        <span>Want to customize your daily constraints (like waking up late, gym blocks, or night focus hours)? Click <strong className="text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.6)]">Customize Routine</strong> at the top right!</span>
                                     </div>
                                 )}
 
@@ -808,7 +808,10 @@ export function Timetable() {
 
                                 {plan.sessions && plan.sessions.length > 0 ? (
                                     <TimeGrid
-                                        sessions={plan.sessions}
+                                        sessions={plan.sessions.filter(s => {
+											if (!s.taskId) return true;
+											return tasks.some(t => t.id === s.taskId) || completedTasks.some(t => t.id === s.taskId);
+										})}
                                         tasks={tasks}
                                         completedTasks={completedTasks}
                                         goals={goals}

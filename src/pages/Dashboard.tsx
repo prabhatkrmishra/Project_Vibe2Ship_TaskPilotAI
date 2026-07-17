@@ -14,7 +14,10 @@ import {
     MessageSquare,
     Clock,
     Headphones,
-    LayoutDashboard
+    LayoutDashboard,
+    ClipboardList,
+    Activity,
+    Trophy
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import {showSuccess, showError, showInfo} from '../lib/toastTheme';
@@ -151,6 +154,7 @@ export function Dashboard() {
     const topTask = [...tasks].sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))[0];
     const focusGoal = goals.find(g => g.type === 'quest' && !g.completed) || goals.find(g => !g.completed) || goals[0];
     const focusGoalTitle = focusGoal?.title || topTask?.title || 'None';
+    const maxHabitStreak = goals.filter(g => g.type === 'habit' && g.streak).reduce((max, g) => Math.max(max, g.streak || 0), 0);
     const productivityScore = tasks.length + completedTasks.length > 0
         ? Math.round((completedTasks.length / (tasks.length + completedTasks.length)) * 100)
         : 0;
@@ -311,7 +315,7 @@ export function Dashboard() {
                 </div>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 flex-grow auto-rows-min">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 flex-grow">
                 {/* Main Plan Area - large block, plus the Active Session card stacked above it */}
                 <div className="col-span-1 md:col-span-2 lg:col-span-8 lg:row-span-3 flex flex-col gap-4 h-full">
                     <ActiveSessionCard plan={plan}/>
@@ -476,11 +480,11 @@ export function Dashboard() {
                     initial={{opacity: 0, x: 20}}
                     animate={{opacity: 1, x: 0}}
                     transition={{duration: 0.5, delay: 0.2}}
-                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex flex-col justify-between transition-transform hover:-translate-y-1"
+                    className="col-span-1 md:col-span-1 lg:col-span-4 bg-gradient-to-b from-indigo-600 to-indigo-900 rounded-3xl p-6 shadow-2xl shadow-indigo-500/10 flex flex-col justify-between transition-transform hover:-translate-y-1 min-h-[340px]"
                 >
                     {/* Workload card */}
                     <div className="flex-grow">
-                        <h3 className="text-xl font-bold text-white mb-6">Pending Workload</h3>
+                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><ClipboardList className="w-5 h-5 text-white/70"/> Pending Workload</h3>
                         {loadingTasks ? (
                             <Loader2 className="w-5 h-5 animate-spin text-white/50"/>
                         ) : (
@@ -518,9 +522,9 @@ export function Dashboard() {
                     transition={{duration: 0.5, delay: 0.3}}
                     className="col-span-1 md:col-span-1 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d]"
                 >
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Pilot Telemetry</h3>
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Activity className="w-4 h-4"/>Pilot Telemetry</h3>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_0_20px_rgba(148,163,184,0.15),0_0_40px_rgba(148,163,184,0.08)] hover:border hover:border-slate-500/30">
                             <CircularProgress progress={Math.min(100, completedTasks.length * 10)} size={64}
                                               color="stroke-indigo-400" trackColor="stroke-[#21262d]">
                                 <span
@@ -529,7 +533,7 @@ export function Dashboard() {
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Tasks<br/>Done
                             </p>
                         </div>
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_0_20px_rgba(148,163,184,0.15),0_0_40px_rgba(148,163,184,0.08)] hover:border hover:border-slate-500/30">
                             <CircularProgress progress={Math.min(100, productivityScore)} size={64}
                                               color="stroke-cyan-400" trackColor="stroke-[#21262d]">
                                 <span className="text-lg font-mono font-bold text-cyan-400">{productivityScore}</span>
@@ -537,7 +541,7 @@ export function Dashboard() {
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Prod<br/>Score
                             </p>
                         </div>
-                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4">
+                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_0_20px_rgba(148,163,184,0.15),0_0_40px_rgba(148,163,184,0.08)] hover:border hover:border-slate-500/30">
                             <CircularProgress progress={tasksAtRisk > 0 ? 100 : 0} size={64}
                                               color={tasksAtRisk > 0 ? "stroke-red-500" : "stroke-emerald-400"}
                                               trackColor="stroke-[#21262d]">
@@ -547,12 +551,20 @@ export function Dashboard() {
                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">At<br/>Risk
                             </p>
                         </div>
+                        <div className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 transition-all duration-300 hover:shadow-[0_0_20px_rgba(148,163,184,0.15),0_0_40px_rgba(148,163,184,0.08)] hover:border hover:border-slate-500/30">
+                            <CircularProgress progress={Math.min(100, maxHabitStreak * 5)} size={64}
+                                              color="stroke-orange-400" trackColor="stroke-[#21262d]">
+                                <span className="text-lg font-mono font-bold text-orange-400">{maxHabitStreak}</span>
+                            </CircularProgress>
+                            <p className="text-[10px] text-slate-500 uppercase font-bold mt-2 text-center">Habit<br/>Streak</p>
+                        </div>
                         <div
-                            className="flex flex-col items-center justify-center bg-[#161b22] rounded-2xl p-4 overflow-hidden">
-                            <Target className="w-8 h-8 text-indigo-400/50 mb-2"/>
-                            <p className="text-xs font-medium text-[#f0f6fc] text-center w-full truncate px-2"
-                               title={focusGoalTitle}>{focusGoalTitle}</p>
-                            <p className="text-[10px] text-slate-500 uppercase font-bold mt-1">Focus</p>
+                            className="col-span-2 flex items-center gap-3 bg-[#161b22] rounded-2xl p-6 overflow-hidden transition-all duration-300 hover:shadow-[0_0_20px_rgba(148,163,184,0.15),0_0_40px_rgba(148,163,184,0.08)] hover:border hover:border-slate-500/30">
+                            <Target className="w-7 h-9 text-indigo-400/50 shrink-0"/>
+                            <div className="flex flex-col min-w-0">
+                                <p className="text-xs font-medium text-[#f0f6fc] truncate" title={focusGoalTitle}>{focusGoalTitle}</p>
+                                <p className="text-[10px] text-slate-500 uppercase font-bold mt-0.5">Current Focus</p>
+                            </div>
                         </div>
                     </div>
                 </motion.div>
@@ -562,14 +574,14 @@ export function Dashboard() {
                     initial={{opacity: 0, x: 20}}
                     animate={{opacity: 1, x: 0}}
                     transition={{duration: 0.5, delay: 0.4}}
-                    className="col-span-1 md:col-span-2 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d] flex flex-col justify-between min-h-[240px]"
+                    className="col-span-1 md:col-span-2 lg:col-span-4 bg-[#0d1117] border border-[#21262d] rounded-3xl p-5 transition-colors hover:border-[#30363d] flex flex-col min-h-[340px]"
                 >
-                    <div className="flex flex-col h-full w-full justify-between gap-4">
+                    <div className="flex flex-col h-full w-full gap-4">
                         <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-2">
-                            <Target className="w-4 h-4 text-cyan-400"/>
+                            <Trophy className="w-4 h-4 text-cyan-400"/>
                             Goals & Habits Monitor
                         </h3>
-                        <div className="w-full flex-grow flex flex-col justify-center">
+                        <div className="w-full flex-grow flex flex-col justify-start">
                             {goals.filter(g => !g.completed).length === 0 ? (
                                 <div className="text-[11px] text-slate-500 italic py-6 text-center">No active goals or
                                     habits defined. Visit Goals & Habits to start tracking.</div>

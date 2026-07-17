@@ -94,12 +94,11 @@ export function Tasks() {
                 const year = selectedDate.getFullYear();
                 const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
                 const day = String(selectedDate.getDate()).padStart(2, '0');
-                const dateStr = formatDate(selectedDate.toISOString());
+                const dateStr = `${year}-${month}-${day}`;
 
-                const data = await plansApi.get(dateStr);
+                const data = await plansApi.get(dateStr).catch(() => null);
                 setTimetableSessions(data?.sessions || []);
-            } catch (err) {
-                console.error("Failed to fetch timetable for task date:", err);
+            } catch {
                 setTimetableSessions([]);
             } finally {
                 setIsLoadingTimetable(false);
@@ -897,7 +896,7 @@ export function Tasks() {
                         className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'all' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>Active
                 </button>
                 <button onClick={() => setFilter('high_risk')}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'high_risk' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>High
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${filter === 'high_risk' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-[#161b22] text-[#8b949e] border-[#21262d] hover:bg-[#21262d]'}`}>At
                     Risk
                 </button>
                 <button onClick={() => setFilter('due_today')}
@@ -956,7 +955,7 @@ export function Tasks() {
                                                         className="w-5 h-5 text-[#8b949e] hover:text-indigo-400 transition-colors"/>
                                                 )}
                                             </button>
-                                            <div className="flex-1 min-w-0 group/task-title">
+                                            <div className="flex-1 min-w-0">
                                                 {editingTaskId === task.id ? (
                                                     <input
                                                         autoFocus
@@ -975,28 +974,28 @@ export function Tasks() {
                                                         className="w-full bg-[#161b22] border border-[#21262d] rounded-xl px-3 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none text-[#f0f6fc] mb-1"
                                                     />
                                                 ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className={`text-lg font-medium text-[#f0f6fc] leading-tight ${task.status === 'completed' ? 'line-through text-[#8b949e]' : ''}`}>{task.title}</h3>
-                                                        {task.status !== 'completed' && (
-                                                            <button
-                                                                onClick={(e) => handleStartEditTask(task.id, task.title, e)}
-                                                                className="opacity-100 sm:opacity-0 sm:group-hover/task-title:opacity-100 transition-opacity text-[#8b949e] hover:text-indigo-400 p-1 rounded shrink-0"
-                                                                title="Edit Task Title"
-                                                            >
-                                                                <Pencil className="w-3.5 h-3.5"/>
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                    <h3 className={`text-lg font-medium text-[#f0f6fc] leading-tight ${task.status === 'completed' ? 'line-through text-[#8b949e]' : ''}`}>{task.title}</h3>
                                                 )}
                                                 <p className={`text-[10px] font-mono font-bold ${countdownColor} mb-2 uppercase tracking-wider`}>{countdownText}</p>
                                                 <p className="text-xs text-[#8b949e] line-clamp-2">{task.description}</p>
                                             </div>
                                         </div>
+                                        <div className="flex items-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {task.status !== 'completed' && (
+                                            <button
+                                                onClick={(e) => handleStartEditTask(task.id, task.title, e)}
+                                                className="text-[#8b949e] hover:text-indigo-400 p-1 rounded shrink-0 transition-colors"
+                                                title="Edit Task Title"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5"/>
+                                            </button>
+                                        )}
                                         <Button variant="ghost" size="icon"
-                                                className="h-6 w-6 text-[#8b949e] hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                                                className="h-6 w-6 text-[#8b949e] hover:text-red-400 transition-colors"
                                                 onClick={() => deleteTask(task)}>
                                             <Trash2 className="w-3 h-3"/>
                                         </Button>
+                                        </div>
                                     </div>
                                     <div className="flex gap-2 mb-6 flex-wrap">
                   <span

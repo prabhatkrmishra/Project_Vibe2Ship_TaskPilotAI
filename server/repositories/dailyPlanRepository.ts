@@ -40,6 +40,12 @@ export const completeSession = (userId: string, date: string, sessionIndex: numb
         {returnDocument: 'after'}
     );
 
+export const removeTaskFromPlans = (userId: string, taskId: string) =>
+    DailyPlanModel.updateMany(
+        {userId, 'sessions.taskId': taskId},
+        {$pull: {sessions: {taskId}}}
+    );
+
 export const formatPlan = (plan: any) => {
     if (!plan) return plan;
     const obj = plan.toObject ? plan.toObject() : {...plan};

@@ -9,7 +9,7 @@ import {generateAIContent, getValidModel} from "../lib/ai.js";
 import {normalizeSessions} from "../lib/scheduling.js";
 import {safeError} from "../lib/utils.js";
 
-const MAX_INPUT = {chat: 20000, journal: 10000, plan: 15000, quest: 5000, analyze: 5000} as const;
+const MAX_INPUT = {chat: 20000, journal: 10000, plan: 50000, quest: 5000, analyze: 5000} as const;
 
 // ─── §5.1: Pure carry-forward extraction ─────────────────────────────────────
 // Extracts unscheduled subtasks from yesterday's plan that need to be

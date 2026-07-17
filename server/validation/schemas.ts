@@ -17,7 +17,7 @@ export const createTaskSchema = z.object({
     status: statusEnum.optional().default('pending'),
     deadline: z.string().optional().default(''),
     estimatedHours: z.number().min(0).max(1000).optional(),
-    goalId: z.string().optional(),
+    goalId: z.string().nullable().optional(),
     subtasks: z.array(subtaskSchema).max(50).optional(),
     schedulingPreference: z.string().optional(),
 });

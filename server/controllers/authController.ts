@@ -354,6 +354,7 @@ async function findOrCreateGoogleUser(googleUid: string, email: string, name: st
     } else {
         if (existingLinkedUser) {
             user = existingLinkedUser;
+            if (!user.emailVerified) user.emailVerified = true;
             if (tokens.refresh_token) {
                 user.googleRefreshToken = encryptToken(tokens.refresh_token);
             }
