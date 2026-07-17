@@ -1,6 +1,6 @@
 import express from "express";
-import {unlockPersonality, setActivePersonality} from "../controllers/authController.ts";
-import {verifyToken} from "../middleware/auth.ts";
+import {unlockPersonality, setActivePersonality} from "../controllers/authController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

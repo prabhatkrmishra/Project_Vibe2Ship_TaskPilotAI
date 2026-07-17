@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb";
-import {sendInternalError, sendNotFound} from "../lib/controllerUtils.ts";
-import {findUserByIdSelect} from "../repositories/userRepository";
+import {connectDB} from "../db/mongodb.js";
+import {sendInternalError, sendNotFound} from "../lib/controllerUtils.js";
+import {findUserByIdSelect} from "../repositories/userRepository.js";
 
 const BINAURAL_SOUNDS = [
     {id: "delta", label: "Delta (2 Hz)", category: "binaural", freqL: 200, freqR: 202},

@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
-import * as TaskService from "../services/taskService.ts";
-import {createTaskSchema, updateTaskSchema} from "../validation/schemas.ts";
-import {sendNotFound, sendInternalError, sendValidationError} from "../lib/controllerUtils.ts";
+import * as TaskService from "../services/taskService.js";
+import {createTaskSchema, updateTaskSchema} from "../validation/schemas.js";
+import {sendNotFound, sendInternalError, sendValidationError} from "../lib/controllerUtils.js";
 
 export const createTask = async (req: Request, res: Response) => {
     try {

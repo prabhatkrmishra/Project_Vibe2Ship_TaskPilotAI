@@ -3,14 +3,14 @@ import cors from "cors";
 import session from "express-session";
 import path from "path";
 import * as fs from "fs";
-import {connectDB} from "./db/mongodb.ts";
-import {JWT_SECRET} from "./config/env";
-import {errorHandler} from "./middleware/errorHandler.ts";
-import {router as apiRouter} from "./routes/index.ts";
-import {googleOAuthRoutes} from "./routes/googleOAuthRoutes.ts";
-import {legacyRegisterRoutes} from "./routes/legacyRegisterRoutes.ts";
-import {webhookRoutes} from "./routes/webhookRoutes.ts";
-import {ensurePricingSeeded} from "./controllers/subscriptionController.ts";
+import {connectDB} from "./db/mongodb.js";
+import {JWT_SECRET} from "./config/env.js";
+import {errorHandler} from "./middleware/errorHandler.js";
+import {router as apiRouter} from "./routes/index.js";
+import {googleOAuthRoutes} from "./routes/googleOAuthRoutes.js";
+import {legacyRegisterRoutes} from "./routes/legacyRegisterRoutes.js";
+import {webhookRoutes} from "./routes/webhookRoutes.js";
+import {ensurePricingSeeded} from "./controllers/subscriptionController.js";
 
 export function createApp() {
     const app = express();

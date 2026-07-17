@@ -1,6 +1,6 @@
 import express from "express";
-import {getCalendarEvents, createCalendarEvent} from "../controllers/calendarController";
-import {verifyToken} from "../middleware/auth";
+import {getCalendarEvents, createCalendarEvent} from "../controllers/calendarController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

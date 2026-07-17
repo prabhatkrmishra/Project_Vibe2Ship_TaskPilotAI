@@ -1,5 +1,5 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth.ts";
+import {verifyToken} from "../middleware/auth.js";
 import {
     createGoal,
     getGoals,
@@ -10,7 +10,7 @@ import {
     getActiveGoals,
     getArchivedGoals,
     getDueTodayGoals
-} from "../controllers/goalController.ts";
+} from "../controllers/goalController.js";
 
 // ─── Goal Routes ──────────────────────────────────────────────────────────────
 // This file defines all routes related to goals.

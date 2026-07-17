@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import {TOTP_ENCRYPTION_KEY} from "../config/env";
+import {TOTP_ENCRYPTION_KEY} from "../config/env.js";
 
 let _encryptionKey: Buffer | null = null;
 

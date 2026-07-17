@@ -1,13 +1,13 @@
-import {connectDB} from "../db/mongodb";
-import {findUserById, findUserByIdSelect} from "../repositories/userRepository";
-import {createTask} from "../repositories/taskRepository";
-import {findGoalsByUserUnsorted} from "../repositories/goalRepository";
-import {findPlanByUserAndDate, upsertPlanSessions, upsertPlanCarryForward} from "../repositories/dailyPlanRepository";
-import {createAIDecision} from "../repositories/aiDecisionRepository";
-import {incrementUsageCounter, decrementUsageCounter} from "../repositories/aiUsageRepository";
-import {generateAIContent, getValidModel} from "../lib/ai";
-import {normalizeSessions} from "../lib/scheduling";
-import {safeError} from "../lib/utils";
+import {connectDB} from "../db/mongodb.js";
+import {findUserById, findUserByIdSelect} from "../repositories/userRepository.js";
+import {createTask} from "../repositories/taskRepository.js";
+import {findGoalsByUserUnsorted} from "../repositories/goalRepository.js";
+import {findPlanByUserAndDate, upsertPlanSessions, upsertPlanCarryForward} from "../repositories/dailyPlanRepository.js";
+import {createAIDecision} from "../repositories/aiDecisionRepository.js";
+import {incrementUsageCounter, decrementUsageCounter} from "../repositories/aiUsageRepository.js";
+import {generateAIContent, getValidModel} from "../lib/ai.js";
+import {normalizeSessions} from "../lib/scheduling.js";
+import {safeError} from "../lib/utils.js";
 
 const MAX_INPUT = {chat: 20000, journal: 10000, plan: 15000, quest: 5000, analyze: 5000} as const;
 

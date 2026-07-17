@@ -1,5 +1,5 @@
 import {Request, Response} from "express";
-import * as AITaskService from "../services/aiTaskService";
+import * as AITaskService from "../services/aiTaskService.js";
 
 export const analyzeTask = async (req: any, res: Response) => {
     try {

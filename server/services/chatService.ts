@@ -1,4 +1,4 @@
-import * as ChatRepository from "../repositories/chatRepository.ts";
+import * as ChatRepository from "../repositories/chatRepository.js";
 
 export const getMessages = async (userId: string, chatId: string | null, limit: number, skip: number) => {
     return await ChatRepository.findMessagesByChatId(userId, chatId, limit, skip);

@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import * as AIDecisionRepo from "../repositories/aiDecisionRepository.ts";
-import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.ts";
+import {connectDB} from "../db/mongodb.js";
+import * as AIDecisionRepo from "../repositories/aiDecisionRepository.js";
+import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.js";
 
 export const getAIDecisions = async (req: any, res: Response) => {
     try {

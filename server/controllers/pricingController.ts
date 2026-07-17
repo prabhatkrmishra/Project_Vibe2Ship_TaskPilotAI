@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import {sendInternalError} from "../lib/controllerUtils.ts";
-import {findAllEnabledPlans} from "../repositories/pricingRepository.ts";
+import {connectDB} from "../db/mongodb.js";
+import {sendInternalError} from "../lib/controllerUtils.js";
+import {findAllEnabledPlans} from "../repositories/pricingRepository.js";
 
 export const getPricingPlans = async (req: Request, res: Response) => {
     try {

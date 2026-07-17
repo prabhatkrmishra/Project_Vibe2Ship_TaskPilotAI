@@ -1,7 +1,7 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth";
-import {backupLimiter} from "../middleware/rateLimit";
-import {exportBackup, signBackup, verifyBackup} from "../controllers/backupController";
+import {verifyToken} from "../middleware/auth.js";
+import {backupLimiter} from "../middleware/rateLimit.js";
+import {exportBackup, signBackup, verifyBackup} from "../controllers/backupController.js";
 
 const router = express.Router();
 

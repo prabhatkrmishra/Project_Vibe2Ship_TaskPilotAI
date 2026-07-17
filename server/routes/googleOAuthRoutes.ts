@@ -1,6 +1,6 @@
 import express from "express";
-import {generateGoogleAuthUrl, oauthCallback} from "../controllers/authController.ts";
-import {authLimiter} from "../middleware/rateLimit.ts";
+import {generateGoogleAuthUrl, oauthCallback} from "../controllers/authController.js";
+import {authLimiter} from "../middleware/rateLimit.js";
 
 const router = express.Router();
 

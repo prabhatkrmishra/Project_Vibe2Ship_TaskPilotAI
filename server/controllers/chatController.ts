@@ -1,10 +1,10 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import {sendValidationError} from "../lib/controllerUtils.ts";
-import {createChatMessageSchema, renameChatSessionSchema} from "../validation/schemas.ts";
-import * as ChatRepo from "../repositories/chatRepository.ts";
-import * as ChatService from "../services/chatService.ts";
-import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.ts";
+import {connectDB} from "../db/mongodb.js";
+import {sendValidationError} from "../lib/controllerUtils.js";
+import {createChatMessageSchema, renameChatSessionSchema} from "../validation/schemas.js";
+import * as ChatRepo from "../repositories/chatRepository.js";
+import * as ChatService from "../services/chatService.js";
+import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.js";
 
 export const getChatsByUser = async (req: any, res: Response) => {
     try {

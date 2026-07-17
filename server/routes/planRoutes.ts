@@ -1,6 +1,6 @@
 import express from "express";
-import {getQuestTrail, getPlanByDate, upsertPlan, completeSession} from "../controllers/planController.ts";
-import {verifyToken} from "../middleware/auth.ts";
+import {getQuestTrail, getPlanByDate, upsertPlan, completeSession} from "../controllers/planController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

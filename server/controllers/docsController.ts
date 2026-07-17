@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
 import {google} from "googleapis";
-import {generateAIContent, getValidModel} from "../lib/ai";
-import {sendInternalError} from "../lib/controllerUtils.ts";
+import {generateAIContent, getValidModel} from "../lib/ai.js";
+import {sendInternalError} from "../lib/controllerUtils.js";
 
 export const createDocument = async (req: Request, res: Response) => {
     try {

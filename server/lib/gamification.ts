@@ -1,4 +1,4 @@
-import {connectDB, User, Task, Goal} from "../db/mongodb";
+import {connectDB, User, Task, Goal} from "../db/mongodb.js";
 
 function localDateStr(d?: Date): string {
     const date = d || new Date();

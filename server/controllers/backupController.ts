@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import {Request, Response} from "express";
-import * as BackupService from "../services/backupService";
-import {signBackupPayload, verifyBackupSignature} from "../lib/backup";
+import * as BackupService from "../services/backupService.js";
+import {signBackupPayload, verifyBackupSignature} from "../lib/backup.js";
 
 export const exportBackup = async (req: any, res: Response) => {
     try {

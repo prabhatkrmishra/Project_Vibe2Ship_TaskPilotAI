@@ -1,5 +1,5 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth.ts";
+import {verifyToken} from "../middleware/auth.js";
 import {
     createTask,
     getTasks,
@@ -11,7 +11,7 @@ import {
     getDueTodayTasks,
     getActiveTasks,
     getCompletedTasks
-} from "../controllers/taskController.ts";
+} from "../controllers/taskController.js";
 
 // ─── Task Routes ──────────────────────────────────────────────────────────────
 // This file defines all routes related to tasks.

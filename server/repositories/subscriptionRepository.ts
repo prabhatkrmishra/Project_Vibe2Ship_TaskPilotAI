@@ -1,4 +1,4 @@
-import {User} from "../db/mongodb.ts";
+import {User} from "../db/mongodb.js";
 
 // ─── Subscription Repository ──────────────────────────────────────────────────
 // This file contains data access methods for the subscriptions array embedded

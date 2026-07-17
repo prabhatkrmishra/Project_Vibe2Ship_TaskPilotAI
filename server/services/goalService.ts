@@ -1,7 +1,7 @@
-import * as GoalRepository from "../repositories/goalRepository.ts";
-import {processGamificationOnGoalComplete, syncQuestProgress} from "../lib/gamification.ts";
-import {getSchedulingMode} from "../lib/scheduling.ts";
-import * as TaskRepository from "../repositories/taskRepository.ts";
+import * as GoalRepository from "../repositories/goalRepository.js";
+import {processGamificationOnGoalComplete, syncQuestProgress} from "../lib/gamification.js";
+import {getSchedulingMode} from "../lib/scheduling.js";
+import * as TaskRepository from "../repositories/taskRepository.js";
 
 // ─── Goal Service ─────────────────────────────────────────────────────────────
 // This file contains business logic for goals, including creation, updating,

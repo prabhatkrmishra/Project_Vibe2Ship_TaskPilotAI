@@ -1,4 +1,4 @@
-import {Task} from "../db/mongodb.ts";
+import {Task} from "../db/mongodb.js";
 
 // ─── Task Repository ──────────────────────────────────────────────────────────
 // This file contains data access methods for Task entities.

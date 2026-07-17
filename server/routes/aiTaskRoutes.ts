@@ -1,10 +1,10 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth";
-import {chatLimiter} from "../middleware/rateLimit";
+import {verifyToken} from "../middleware/auth.js";
+import {chatLimiter} from "../middleware/rateLimit.js";
 import {
     analyzeTask, generateQuestSteps, generateSubtasks, audioJournal,
     generatePlan, autonomousPipeline, chatWithAI, checkAIUsage
-} from "../controllers/aiTaskController";
+} from "../controllers/aiTaskController.js";
 
 const router = express.Router();
 

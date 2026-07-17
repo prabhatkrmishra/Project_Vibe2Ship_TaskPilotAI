@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
 import * as crypto from "crypto";
-import {connectDB} from "../db/mongodb.ts";
-import {sendInternalError, sendNotFound, sendBadRequest} from "../lib/controllerUtils.ts";
+import {connectDB} from "../db/mongodb.js";
+import {sendInternalError, sendNotFound, sendBadRequest} from "../lib/controllerUtils.js";
 import {
     findUserById,
     findUserByIdSelect,
@@ -9,13 +9,13 @@ import {
     findUserWithSubscriptions,
     findOneAndUpdateUser,
     updateOneUser
-} from "../repositories/userRepository.ts";
+} from "../repositories/userRepository.js";
 import {
     findEnabledPlanById,
     findAllEnabledPlans,
     countPricingConfigs,
     insertManyPricingConfigs
-} from "../repositories/pricingRepository.ts";
+} from "../repositories/pricingRepository.js";
 
 const DEFAULT_PRICING: any[] = [
     {

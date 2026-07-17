@@ -1,4 +1,4 @@
-import {ChatMessage} from "../db/mongodb.ts";
+import {ChatMessage} from "../db/mongodb.js";
 
 export const findMessagesByChatId = (userId: string, chatId: string | null, limit: number, skip: number) => {
     const query: any = {userId};

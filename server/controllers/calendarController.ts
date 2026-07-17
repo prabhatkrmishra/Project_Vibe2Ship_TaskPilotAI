@@ -1,8 +1,8 @@
 import {Request, Response} from "express";
 import {google} from "googleapis";
-import {sendValidationError} from "../lib/controllerUtils.ts";
-import {createCalendarEventSchema} from "../validation/schemas.ts";
-import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.ts";
+import {sendValidationError} from "../lib/controllerUtils.js";
+import {createCalendarEventSchema} from "../validation/schemas.js";
+import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.js";
 
 export const getCalendarEvents = async (req: any, res: Response) => {
     try {

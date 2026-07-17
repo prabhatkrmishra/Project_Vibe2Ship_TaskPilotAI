@@ -1,4 +1,4 @@
-import {DailyPlanModel} from "../db/mongodb.ts";
+import {DailyPlanModel} from "../db/mongodb.js";
 
 export const findPlanByUserAndDate = (userId: string, date: string) =>
     DailyPlanModel.findOne({userId, date});

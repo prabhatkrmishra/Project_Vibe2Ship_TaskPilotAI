@@ -1,7 +1,7 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth";
-import {emailLimiter} from "../middleware/rateLimit";
-import {sendEmailHandler} from "../controllers/emailController";
+import {verifyToken} from "../middleware/auth.js";
+import {emailLimiter} from "../middleware/rateLimit.js";
+import {sendEmailHandler} from "../controllers/emailController.js";
 
 const router = express.Router();
 

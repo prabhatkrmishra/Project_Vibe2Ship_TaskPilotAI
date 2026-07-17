@@ -1,4 +1,4 @@
-import {Goal} from "../db/mongodb.ts";
+import {Goal} from "../db/mongodb.js";
 
 // ─── Goal Repository ──────────────────────────────────────────────────────────
 // This file contains data access methods for Goal entities.

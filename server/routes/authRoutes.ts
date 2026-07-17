@@ -17,9 +17,9 @@ import {
     googleCallback,
     sendVerification,
     verifyEmailToken
-} from "../controllers/authController.ts";
-import {verifyToken} from "../middleware/auth.ts";
-import {authLimiter, guestLimiter} from "../middleware/rateLimit.ts";
+} from "../controllers/authController.js";
+import {verifyToken} from "../middleware/auth.js";
+import {authLimiter, guestLimiter} from "../middleware/rateLimit.js";
 
 const router = express.Router();
 

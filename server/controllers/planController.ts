@@ -1,21 +1,21 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import {normalizeSessions} from "../lib/scheduling.ts";
+import {connectDB} from "../db/mongodb.js";
+import {normalizeSessions} from "../lib/scheduling.js";
 import {
     findPlanByUserAndDate,
     findPlansByUser,
     upsertPlanSessions,
     completeSession as completeSessionAtomic,
     formatPlan
-} from "../repositories/dailyPlanRepository.ts";
-import {findTasksByGoal, findTaskByIdForUser, updateTaskById} from "../repositories/taskRepository.ts";
+} from "../repositories/dailyPlanRepository.js";
+import {findTasksByGoal, findTaskByIdForUser, updateTaskById} from "../repositories/taskRepository.js";
 import {
     processGamificationOnTaskComplete,
     processGamificationOnSessionComplete,
     syncQuestProgress,
     awardQuestCompletionXP
-} from "../lib/gamification.ts";
-import {sendInternalError, sendNotFound, sendBadRequest, sendConflict} from "../lib/controllerUtils.ts";
+} from "../lib/gamification.js";
+import {sendInternalError, sendNotFound, sendBadRequest, sendConflict} from "../lib/controllerUtils.js";
 
 export const getPlanByDate = async (req: Request, res: Response) => {
     try {

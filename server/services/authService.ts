@@ -1,19 +1,19 @@
-import * as UserRepository from "../repositories/userRepository.ts";
-import * as TaskRepository from "../repositories/taskRepository.ts";
-import * as GoalRepository from "../repositories/goalRepository.ts";
-import * as ChatRepository from "../repositories/chatRepository.ts";
-import * as DailyPlanRepository from "../repositories/dailyPlanRepository.ts";
-import * as FocusSessionRepository from "../repositories/focusSessionRepository.ts";
-import * as AIUsageRepository from "../repositories/aiUsageRepository.ts";
+import * as UserRepository from "../repositories/userRepository.js";
+import * as TaskRepository from "../repositories/taskRepository.js";
+import * as GoalRepository from "../repositories/goalRepository.js";
+import * as ChatRepository from "../repositories/chatRepository.js";
+import * as DailyPlanRepository from "../repositories/dailyPlanRepository.js";
+import * as FocusSessionRepository from "../repositories/focusSessionRepository.js";
+import * as AIUsageRepository from "../repositories/aiUsageRepository.js";
 import {
     connectDB,
-} from "../db/mongodb.ts";
+} from "../db/mongodb.js";
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import {JWT_SECRET} from "../config/env.ts";
-import {encryptToken, decryptToken} from "../lib/crypto.ts";
-import {sendLoginWarningEmail, sendPasswordResetEmail, sendVerificationEmail} from "./emailService";
+import {JWT_SECRET} from "../config/env.js";
+import {encryptToken, decryptToken} from "../lib/crypto.js";
+import {sendLoginWarningEmail, sendPasswordResetEmail, sendVerificationEmail} from "./emailService.js";
 
 export const registerUser = async (email: string, password: string, name: string, address: string) => {
     await connectDB();

@@ -1,8 +1,8 @@
 import crypto from "crypto";
-import {connectDB} from "../db/mongodb.ts";
-import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.ts";
-import {findEnabledPlanById} from "../repositories/pricingRepository.ts";
-import {findUserById, findUserWithSubscriptions, findOneAndUpdateUser} from "../repositories/userRepository.ts";
+import {connectDB} from "../db/mongodb.js";
+import {sendInternalError, sendBadRequest} from "../lib/controllerUtils.js";
+import {findEnabledPlanById} from "../repositories/pricingRepository.js";
+import {findUserById, findUserWithSubscriptions, findOneAndUpdateUser} from "../repositories/userRepository.js";
 
 const DEFAULT_PRICING: any[] = [
     {

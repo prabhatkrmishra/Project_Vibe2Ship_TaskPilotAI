@@ -1,5 +1,5 @@
-import * as AIDecisionRepository from "../repositories/aiDecisionRepository.ts";
-import {generateAIContent} from "../lib/ai";
+import * as AIDecisionRepository from "../repositories/aiDecisionRepository.js";
+import {generateAIContent} from "../lib/ai.js";
 
 // ─── AI Decision Service ──────────────────────────────────────────────────────
 // This file contains business logic for AI decisions, including creation,

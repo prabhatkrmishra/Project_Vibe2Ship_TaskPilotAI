@@ -5,8 +5,8 @@ import {
     deleteChatSession,
     renameChatSession,
     createChat,
-} from "../controllers/chatController.ts";
-import {verifyToken} from "../middleware/auth.ts";
+} from "../controllers/chatController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

@@ -1,6 +1,6 @@
 import express from "express";
-import {getBinauralStatus, getBinauralSounds} from "../controllers/soundsController";
-import {verifyToken} from "../middleware/auth";
+import {getBinauralStatus, getBinauralSounds} from "../controllers/soundsController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

@@ -1,7 +1,7 @@
 import {Request, Response} from "express";
-import * as GoalService from "../services/goalService.ts";
-import {createGoalSchema, updateGoalSchema} from "../validation/schemas.ts";
-import {sendNotFound, sendInternalError, sendValidationError} from "../lib/controllerUtils.ts";
+import * as GoalService from "../services/goalService.js";
+import {createGoalSchema, updateGoalSchema} from "../validation/schemas.js";
+import {sendNotFound, sendInternalError, sendValidationError} from "../lib/controllerUtils.js";
 
 export const createGoal = async (req: Request, res: Response) => {
     try {

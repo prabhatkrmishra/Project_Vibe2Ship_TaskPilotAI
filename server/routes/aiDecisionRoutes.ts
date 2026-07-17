@@ -1,6 +1,6 @@
 import express from "express";
-import {getAIDecisions, createAIDecision} from "../controllers/aiDecisionController";
-import {verifyToken} from "../middleware/auth";
+import {getAIDecisions, createAIDecision} from "../controllers/aiDecisionController.js";
+import {verifyToken} from "../middleware/auth.js";
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
-import {createApp, initializeDatabase} from "./app.ts";
-import {PORT} from "./config/env.ts";
+import {createApp, initializeDatabase} from "./app.js";
+import {PORT} from "./config/env.js";
 
 async function startServer() {
     try {

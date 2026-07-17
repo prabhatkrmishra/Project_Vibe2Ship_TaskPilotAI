@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
-import {connectDB, User} from "../db/mongodb";
-import {JWT_SECRET} from "../config/env";
+import {connectDB, User} from "../db/mongodb.js";
+import {JWT_SECRET} from "../config/env.js";
 
 export async function verifyToken(req: any, res: any, next: any) {
     const token = req.headers.authorization?.split('Bearer ')[1];

@@ -1,13 +1,13 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth.ts";
-import {paymentLimiter} from "../middleware/rateLimit.ts";
+import {verifyToken} from "../middleware/auth.js";
+import {paymentLimiter} from "../middleware/rateLimit.js";
 import {
     createOrder,
     createPaymentLink,
     verifyPayment,
     cancelSubscription,
     getSubscriptionStatus,
-} from "../controllers/subscriptionController.ts";
+} from "../controllers/subscriptionController.js";
 
 const router = express.Router();
 

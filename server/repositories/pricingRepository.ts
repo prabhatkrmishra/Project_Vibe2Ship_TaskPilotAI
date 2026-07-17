@@ -1,4 +1,4 @@
-import {PricingConfig} from "../db/mongodb.ts";
+import {PricingConfig} from "../db/mongodb.js";
 
 export const findPlanById = (planId: string) =>
     PricingConfig.findOne({planId});

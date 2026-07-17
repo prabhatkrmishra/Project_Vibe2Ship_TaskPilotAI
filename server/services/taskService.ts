@@ -1,6 +1,6 @@
-import * as TaskRepository from "../repositories/taskRepository.ts";
-import {processGamificationOnTaskComplete, syncQuestProgress, awardQuestCompletionXP} from "../lib/gamification.ts";
-import {getSchedulingMode} from "../lib/scheduling.ts";
+import * as TaskRepository from "../repositories/taskRepository.js";
+import {processGamificationOnTaskComplete, syncQuestProgress, awardQuestCompletionXP} from "../lib/gamification.js";
+import {getSchedulingMode} from "../lib/scheduling.js";
 
 
 // ─── Task Service ─────────────────────────────────────────────────────────────

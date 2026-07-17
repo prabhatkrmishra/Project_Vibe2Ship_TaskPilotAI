@@ -1,14 +1,14 @@
 import {Request, Response} from "express";
 import {OAuth2Client} from "google-auth-library";
 import jwt from "jsonwebtoken";
-import {connectDB} from "../db/mongodb.ts";
-import {JWT_SECRET} from "../config/env.ts";
-import {encryptToken} from "../lib/crypto.ts";
-import {sanitizeHtml, safeJsonForScript} from "../lib/sanitize.ts";
-import {sendValidationError, sendBadRequest, sendInternalError} from "../lib/controllerUtils.ts";
-import {registerSchema, loginSchema, changePasswordSchema, resetPasswordSchema} from "../validation/schemas.ts";
-import * as UserRepository from "../repositories/userRepository.ts";
-import * as AuthService from "../services/authService.ts";
+import {connectDB} from "../db/mongodb.js";
+import {JWT_SECRET} from "../config/env.js";
+import {encryptToken} from "../lib/crypto.js";
+import {sanitizeHtml, safeJsonForScript} from "../lib/sanitize.js";
+import {sendValidationError, sendBadRequest, sendInternalError} from "../lib/controllerUtils.js";
+import {registerSchema, loginSchema, changePasswordSchema, resetPasswordSchema} from "../validation/schemas.js";
+import * as UserRepository from "../repositories/userRepository.js";
+import * as AuthService from "../services/authService.js";
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || "")
     .split(",")

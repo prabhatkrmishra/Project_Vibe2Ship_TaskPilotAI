@@ -1,12 +1,12 @@
-import {connectDB} from "../db/mongodb";
-import {stripMongoMeta, safeError} from "../lib/utils";
-import {getCorrectedGamification, findUserById} from "../repositories/userRepository";
-import {findTasksByUser} from "../repositories/taskRepository";
-import {findGoalsByUserUnsorted} from "../repositories/goalRepository";
-import {findPlansByUser} from "../repositories/dailyPlanRepository";
-import {findAllMessagesByUser} from "../repositories/chatRepository";
-import {findAIDecisionsByUser} from "../repositories/aiDecisionRepository";
-import {findSessionsByUser} from "../repositories/focusSessionRepository";
+import {connectDB} from "../db/mongodb.js";
+import {stripMongoMeta, safeError} from "../lib/utils.js";
+import {getCorrectedGamification, findUserById} from "../repositories/userRepository.js";
+import {findTasksByUser} from "../repositories/taskRepository.js";
+import {findGoalsByUserUnsorted} from "../repositories/goalRepository.js";
+import {findPlansByUser} from "../repositories/dailyPlanRepository.js";
+import {findAllMessagesByUser} from "../repositories/chatRepository.js";
+import {findAIDecisionsByUser} from "../repositories/aiDecisionRepository.js";
+import {findSessionsByUser} from "../repositories/focusSessionRepository.js";
 import * as crypto from "crypto";
 
 const BACKUP_FORMAT_VERSION = 1;

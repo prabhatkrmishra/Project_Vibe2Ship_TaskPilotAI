@@ -1,4 +1,4 @@
-import {Goal} from "../db/mongodb.ts";
+import {Goal} from "../db/mongodb.js";
 
 // Determine the scheduling mode for a task based on its subtasks and quest membership.
 // Tasks without subtasks cannot be scheduled — they should be filtered out before reaching here.

@@ -219,12 +219,13 @@ async function openrouterChat(params: {
         },
     });
 
-    const raw = result.choices?.[0]?.message?.content ?? '';
+    const res = result as { choices?: { message?: { content?: any } }[] };
+    const raw = res.choices?.[0]?.message?.content ?? '';
     const content = Array.isArray(raw)
         ? raw.map((item: any) => item?.text || '').join('')
         : typeof raw === 'string' ? raw
             : String(raw);
-    if (!content && result.choices?.length) {
+    if (!content && res.choices?.length) {
         console.warn(`[AI] Empty content from OpenRouter model ${params.model}.`);
     }
     return content;

@@ -1,4 +1,4 @@
-import {AIDecision} from "../db/mongodb.ts";
+import {AIDecision} from "../db/mongodb.js";
 
 // ─── AI Decision Repository ───────────────────────────────────────────────────
 // This file contains data access methods for AI Decision entities.

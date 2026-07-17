@@ -1,4 +1,4 @@
-import {AIUsage} from "../db/mongodb.ts";
+import {AIUsage} from "../db/mongodb.js";
 
 export const findOneUsage = (query: any) =>
     AIUsage.findOne(query);

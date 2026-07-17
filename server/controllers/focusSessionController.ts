@@ -1,14 +1,14 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import {sendValidationError} from "../lib/controllerUtils.ts";
-import {createFocusSessionSchema} from "../validation/schemas.ts";
+import {connectDB} from "../db/mongodb.js";
+import {sendValidationError} from "../lib/controllerUtils.js";
+import {createFocusSessionSchema} from "../validation/schemas.js";
 import {
     createSession,
     findSessionsByUser,
     formatSession,
     getFocusStats
-} from "../repositories/focusSessionRepository.ts";
-import {findUserById, updateUserById} from "../repositories/userRepository.ts";
+} from "../repositories/focusSessionRepository.js";
+import {findUserById, updateUserById} from "../repositories/userRepository.js";
 
 export const createFocusSession = async (req: Request, res: Response) => {
     try {

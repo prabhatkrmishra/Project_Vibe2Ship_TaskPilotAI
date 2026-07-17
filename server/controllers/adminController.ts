@@ -1,8 +1,8 @@
 import {Request, Response} from "express";
-import {connectDB} from "../db/mongodb.ts";
-import * as UserRepository from "../repositories/userRepository.ts";
-import * as PricingRepository from "../repositories/pricingRepository.ts";
-import {sendInternalError, sendNotFound, sendBadRequest} from "../lib/controllerUtils.ts";
+import {connectDB} from "../db/mongodb.js";
+import * as UserRepository from "../repositories/userRepository.js";
+import * as PricingRepository from "../repositories/pricingRepository.js";
+import {sendInternalError, sendNotFound, sendBadRequest} from "../lib/controllerUtils.js";
 
 export const getAllPricingConfigs = async (req: Request, res: Response) => {
     try {

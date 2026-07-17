@@ -1,7 +1,7 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth";
-import {checkAIUsage} from "../controllers/aiTaskController";
-import {createDocument, generateReport, generatePresentation, createSpreadsheet} from "../controllers/docsController";
+import {verifyToken} from "../middleware/auth.js";
+import {checkAIUsage} from "../controllers/aiTaskController.js";
+import {createDocument, generateReport, generatePresentation, createSpreadsheet} from "../controllers/docsController.js";
 
 const router = express.Router();
 

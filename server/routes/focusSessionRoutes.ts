@@ -1,11 +1,11 @@
 import express from "express";
-import {verifyToken} from "../middleware/auth.ts";
+import {verifyToken} from "../middleware/auth.js";
 import {
     createFocusSession,
     getFocusSessionStats,
     getFocusSessionHeatmap,
     getFocusSessions
-} from "../controllers/focusSessionController.ts";
+} from "../controllers/focusSessionController.js";
 
 const router = express.Router();
 

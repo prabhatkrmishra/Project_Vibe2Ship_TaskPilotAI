@@ -1,5 +1,5 @@
 import express from "express";
-import {verifyToken, requireAdmin} from "../middleware/auth.ts";
+import {verifyToken, requireAdmin} from "../middleware/auth.js";
 import {
     getAllPricingConfigs,
     updatePricingConfig,
@@ -8,7 +8,7 @@ import {
     getSubscriptionsOverview,
     makeUserAdmin,
     expireSubscriptions
-} from "../controllers/adminController.ts";
+} from "../controllers/adminController.js";
 
 const router = express.Router();
 

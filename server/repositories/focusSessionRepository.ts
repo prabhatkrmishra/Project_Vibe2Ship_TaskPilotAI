@@ -1,4 +1,4 @@
-import {FocusSession} from "../db/mongodb.ts";
+import {FocusSession} from "../db/mongodb.js";
 
 export const createSession = (data: any) => FocusSession.create(data);
 

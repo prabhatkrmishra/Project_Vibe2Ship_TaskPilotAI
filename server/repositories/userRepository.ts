@@ -1,4 +1,4 @@
-import {User} from "../db/mongodb.ts";
+import {User} from "../db/mongodb.js";
 import * as crypto from 'crypto';
 
 function localDateStr(d?: Date): string {
